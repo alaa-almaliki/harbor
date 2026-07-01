@@ -1,0 +1,20 @@
+# Harbor shared stack (generated). Always-on, loopback-only: Mailpit + Redis.
+name: harbor-shared
+
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"   # SMTP
+      - "127.0.0.1:8025:8025"   # web UI
+    environment:
+      MP_MAX_MESSAGES: "5000"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # persistence OFF (pure cache); 256 logical DBs for per-project indices
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--databases", "256"]
+    ports:
+      - "127.0.0.1:6379:6379"

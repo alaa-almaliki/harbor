@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# harbor — hybrid local PHP dev platform. Single entrypoint / dispatcher.
+set -euo pipefail
+
+HARBOR_VERSION="0.1.0-dev"
+
+# --- resolve HARBOR_ROOT -----------------------------------------------------
+# Honor an explicit env override; otherwise follow symlinks back to this script
+# (bash 3.2 / macOS safe). The launcher must live in the repo or be SYMLINKED to
+# it — a plain copy can't self-locate lib/.
+if [ -z "${HARBOR_ROOT:-}" ] || [ ! -f "${HARBOR_ROOT}/lib/common.sh" ]; then
+  _src="${BASH_SOURCE[0]}"
+  while [ -h "$_src" ]; do
+    _dir="$(cd -P "$(dirname "$_src")" >/dev/null 2>&1 && pwd)"
+    _src="$(readlink "$_src")"
+    case "$_src" in /*) ;; *) _src="$_dir/$_src" ;; esac
+  done
+  _bin_dir="$(cd -P "$(dirname "$_src")" >/dev/null 2>&1 && pwd)"
+  HARBOR_ROOT="$(cd -P "$_bin_dir/.." >/dev/null 2>&1 && pwd)"
+fi
+export HARBOR_ROOT
+
+if [ ! -f "$HARBOR_ROOT/lib/common.sh" ]; then
+  printf 'harbor: cannot locate lib/ (HARBOR_ROOT=%s)\n' "$HARBOR_ROOT" >&2
+  printf 'Install by SYMLINKing the launcher (not copying), or set HARBOR_ROOT:\n' >&2
+  printf '  ln -sf <repo>/bin/harbor /usr/local/bin/harbor\n' >&2
+  printf '  # or: export HARBOR_ROOT=<repo>\n' >&2
+  exit 1
+fi
+
+# --- load libraries ----------------------------------------------------------
+# shellcheck source=lib/common.sh
+. "$HARBOR_ROOT/lib/common.sh"
+# shellcheck source=lib/manifest.sh
+. "$HARBOR_ROOT/lib/manifest.sh"
+# shellcheck source=lib/ports.sh
+. "$HARBOR_ROOT/lib/ports.sh"
+# shellcheck source=lib/launchd.sh
+. "$HARBOR_ROOT/lib/launchd.sh"
+# shellcheck source=lib/doctor.sh
+. "$HARBOR_ROOT/lib/doctor.sh"
+# shellcheck source=lib/tls.sh
+. "$HARBOR_ROOT/lib/tls.sh"
+# shellcheck source=lib/dns.sh
+. "$HARBOR_ROOT/lib/dns.sh"
+# shellcheck source=lib/php.sh
+. "$HARBOR_ROOT/lib/php.sh"
+# shellcheck source=lib/nginx.sh
+. "$HARBOR_ROOT/lib/nginx.sh"
+# shellcheck source=lib/compose.sh
+. "$HARBOR_ROOT/lib/compose.sh"
+# shellcheck source=lib/setup.sh
+. "$HARBOR_ROOT/lib/setup.sh"
+# shellcheck source=lib/link.sh
+. "$HARBOR_ROOT/lib/link.sh"
+# shellcheck source=lib/init.sh
+. "$HARBOR_ROOT/lib/init.sh"
+# shellcheck source=lib/wire.sh
+. "$HARBOR_ROOT/lib/wire.sh"
+# shellcheck source=lib/tools.sh
+. "$HARBOR_ROOT/lib/tools.sh"
+# shellcheck source=lib/toolbox.sh
+. "$HARBOR_ROOT/lib/toolbox.sh"
+# shellcheck source=lib/db.sh
+. "$HARBOR_ROOT/lib/db.sh"
+# shellcheck source=lib/magento.sh
+. "$HARBOR_ROOT/lib/magento.sh"
+# shellcheck source=lib/install.sh
+. "$HARBOR_ROOT/lib/install.sh"
+# shellcheck source=lib/remote.sh
+. "$HARBOR_ROOT/lib/remote.sh"
+# shellcheck source=lib/store.sh
+. "$HARBOR_ROOT/lib/store.sh"
+# shellcheck source=lib/ergo.sh
+. "$HARBOR_ROOT/lib/ergo.sh"
+# shellcheck source=lib/new.sh
+. "$HARBOR_ROOT/lib/new.sh"
+# shellcheck source=lib/completion.sh
+. "$HARBOR_ROOT/lib/completion.sh"
+
+usage() {
+  cat <<EOF
+harbor $HARBOR_VERSION — hybrid local PHP dev platform
+
+Usage: harbor <command> [args]
+
+Host & lifecycle:
+  doctor [<project>]        Host requirements report (+ project PHP extensions)
+  setup | teardown [--purge]  One-time host prep / removal
+  stop | start              Pause/resume Harbor (free its ports for another stack)
+  status | ps | list        Overall status (self-heals) / project table
+  php [<ver>|sync] | xdebug on|off|status
+
+Projects:
+  new <name> <framework>    Scaffold + init + up + wire + install + link + open
+  init <name> [fw]          Allocate + write manifest (--existing for adopted code)
+  link | unlink | wire <name>
+  up | down | restart | destroy | logs <name>
+  open <name>               Open https://<name>.test
+
+Running code & tooling:
+  run <name> <cmd...> | artisan | console | spark | magento <name> ...
+  composer | node | npm <name> ...
+  tool <name> <tool> ... | tools sync <name>
+  install | seed <name>
+
+Consoles & data:
+  mysql | redis | shell <name>
+  db create|drop|backup|import|pull <name> ... | media pull <name>
+  store add|list|rm <name> ...
+
+Shared & misc:
+  secure [host...] | mail [up|down] | completion bash|zsh | version | help
+
+Docs: README.md (usage) · plan.md (design) · CLAUDE.md (contributing)
+EOF
+}
+
+main() {
+  local cmd="${1-}"; shift || true
+  case "$cmd" in
+    ""|help|-h|--help) usage ;;
+    version|-v|--version) printf 'harbor %s\n' "$HARBOR_VERSION" ;;
+    doctor) cmd_doctor "${1-}" ;;
+    setup) cmd_setup "$@" ;;
+    stop) cmd_stop "$@" ;;
+    start) cmd_start "$@" ;;
+    teardown) cmd_teardown "$@" ;;
+    php) cmd_php "$@" ;;
+    xdebug) cmd_xdebug "$@" ;;
+    link) cmd_link "$@" ;;
+    unlink) cmd_unlink "$@" ;;
+    init) cmd_init "$@" ;;
+    up) cmd_up "$@" ;;
+    down) cmd_down "$@" ;;
+    restart) cmd_restart "$@" ;;
+    destroy) cmd_destroy "$@" ;;
+    logs) cmd_logs "$@" ;;
+    wire) cmd_wire "$@" ;;
+    run) cmd_run "$@" ;;
+    composer) cmd_composer "$@" ;;
+    artisan) cmd_artisan "$@" ;;
+    console) cmd_console "$@" ;;
+    spark) cmd_spark "$@" ;;
+    magento) cmd_magento "$@" ;;
+    node) cmd_node "$@" ;;
+    npm) cmd_npm "$@" ;;
+    tool) cmd_tool "$@" ;;
+    tools) cmd_tools "$@" ;;
+    db) cmd_db "$@" ;;
+    install) cmd_install "$@" ;;
+    seed) cmd_seed "$@" ;;
+    store) cmd_store "$@" ;;
+    media) cmd_media "$@" ;;
+    new) cmd_new "$@" ;;
+    open) cmd_open "$@" ;;
+    status) cmd_status "$@" ;;
+    ps|list) cmd_ps "$@" ;;
+    mysql) cmd_mysql "$@" ;;
+    redis) cmd_redis "$@" ;;
+    shell) cmd_shell "$@" ;;
+    secure) cmd_secure "$@" ;;
+    mail) cmd_mail "$@" ;;
+    completion) cmd_completion "$@" ;;
+    *) err "unknown command: $cmd"; echo; usage; exit 1 ;;
+  esac
+}
+
+main "$@"

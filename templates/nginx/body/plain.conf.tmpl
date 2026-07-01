@@ -1,0 +1,14 @@
+    # plain PHP — allow direct file access, fall back to index.php
+    location / {
+        try_files $uri $uri/ /index.php$is_args$args;
+    }
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass unix:{{PHP_SOCK}};
+        include {{BREW_PREFIX}}/etc/nginx/fastcgi.conf;
+        fastcgi_param HTTPS on;
+        fastcgi_read_timeout 600s;
+{{PHP_VALUE_BLOCK}}
+    }
+    location ~ /\.(?!well-known).* { deny all; }

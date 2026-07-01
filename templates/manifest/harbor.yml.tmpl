@@ -1,0 +1,8 @@
+# Harbor project manifest — committable single source of truth. Edit freely.
+framework: {{FRAMEWORK}}
+php: "{{PHP_VER}}"
+services: [{{SERVICES}}]
+db: { name: {{DB_NAME}}, user: {{DB_USER}}, password: {{DB_PASS}}, image: {{DB_IMAGE}} }
+# Optional: node: "20" · docroot: pub · domains: [x.test] · extensions: [imagick]
+# php_ini: { memory_limit: 2G } · tools: [wkhtmltopdf] · multistore: { mode: domain, stores: {} }
+# import: { strip_definers: true } · remote: { host: user@host, db: name, media: /path }

@@ -1,0 +1,12 @@
+# Harbor shellcheck config.
+# Harbor is a sourced-library codebase: bin/harbor sources lib/*.sh, and every
+# lib sources common.sh. Linting each file in isolation produces false positives
+# for variables/functions defined in common.sh — disable those, keep everything else.
+disable=SC2034   # vars set in common.sh, used in other sourced files
+disable=SC2154   # color vars (_c_*) assigned in common.sh
+disable=SC1090   # dynamic `source`/`.` of computed paths
+disable=SC1091   # not following sourced files during isolated lint
+# Intentional literals (not shell expansions): sed regex bodies, nginx $variables
+# embedded in generated config strings, and ssh remote-side command expansion.
+disable=SC2016
+disable=SC2029

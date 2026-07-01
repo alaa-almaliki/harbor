@@ -1,0 +1,33 @@
+; Harbor php-fpm pool for PHP {{VER}} (generated — do not edit by hand).
+; One ondemand pool per version; launched by com.harbor.php-{{VER}} via fpm-exec.sh.
+[global]
+pid = {{PID}}
+error_log = {{ERRLOG}}
+daemonize = no
+
+[www]
+user = {{USER}}
+group = {{GROUP}}
+listen = {{SOCK}}
+listen.owner = {{USER}}
+listen.group = {{GROUP}}
+listen.mode = 0660
+
+pm = ondemand
+pm.max_children = 20
+pm.process_idle_timeout = 30s
+pm.max_requests = 500
+rlimit_files = 10000
+
+catch_workers_output = yes
+clear_env = no
+
+php_admin_value[error_log] = {{ERRLOG}}
+php_admin_flag[log_errors] = on
+php_admin_value[memory_limit] = {{MEMORY_LIMIT}}
+php_admin_value[upload_max_filesize] = 128M
+php_admin_value[post_max_size] = 128M
+php_admin_value[max_execution_time] = 600
+; Trust *.test for server-to-server HTTPS (provider/consumer).
+php_admin_value[openssl.cafile] = {{CA_BUNDLE}}
+php_admin_value[curl.cainfo] = {{CA_BUNDLE}}

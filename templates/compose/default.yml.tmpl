@@ -1,0 +1,26 @@
+# Harbor per-project stack: {{NAME}} (generated). MySQL only; loopback-bound.
+name: harbor-{{NAME}}
+
+services:
+  mysql:
+    image: {{DB_IMAGE}}
+    restart: unless-stopped
+    # native auth plugin so older PHP clients (7.2/7.3) can connect over TCP
+    command: ["--performance-schema=OFF", "--innodb-buffer-pool-size={{MYSQL_POOL}}", "--default-authentication-plugin=mysql_native_password"]
+    environment:
+      MYSQL_DATABASE: "{{DB_NAME}}"
+      MYSQL_USER: "{{DB_USER}}"
+      MYSQL_PASSWORD: "{{DB_PASS}}"
+      MYSQL_ROOT_PASSWORD: "{{DB_ROOT_PASS}}"
+    ports:
+      - "127.0.0.1:{{DB_PORT}}:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p{{DB_ROOT_PASS}}"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+
+volumes:
+  dbdata:

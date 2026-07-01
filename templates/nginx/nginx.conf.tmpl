@@ -1,0 +1,40 @@
+# Harbor-owned nginx config (generated — do not edit by hand).
+# Master runs as root (LaunchDaemon, for :443); workers drop to the user.
+user {{USER}} {{GROUP}};
+worker_processes auto;
+worker_rlimit_nofile 10000;
+pid {{PID}};
+error_log {{LOG_DIR}}/nginx-error.log;
+
+events { worker_connections 1024; }
+
+http {
+    include {{BREW_PREFIX}}/etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    sendfile on;
+    tcp_nopush on;
+    keepalive_timeout 65;
+    client_max_body_size 128M;
+    server_tokens off;
+
+    access_log {{LOG_DIR}}/nginx-access.log;
+
+    # Harbor per-site vhosts (created by `harbor link`)
+    include {{SITES}}/*.conf;
+
+    # Default catch-all so nginx is valid before any site is linked.
+    server {
+        listen 127.0.0.1:80 default_server;
+        server_name _;
+        return 404;
+    }
+    server {
+        listen 127.0.0.1:443 ssl default_server;
+        http2 on;
+        server_name _;
+        ssl_certificate {{CERT}};
+        ssl_certificate_key {{CERT_KEY}};
+        return 404;
+    }
+}

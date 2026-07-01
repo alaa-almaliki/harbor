@@ -1,0 +1,9 @@
+# Harbor-owned dnsmasq config (generated — do not edit by hand).
+# Runs as a Harbor LaunchAgent; brew's dnsmasq.conf is never touched.
+port={{DNS_PORT}}
+listen-address=127.0.0.1
+bind-interfaces
+no-resolv
+no-hosts
+# resolve *.test (and all sub-levels) to loopback
+address=/{{TLD}}/127.0.0.1
