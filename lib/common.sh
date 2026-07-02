@@ -107,6 +107,11 @@ require_name() {
 project_dir()        { printf '%s' "$HARBOR_PROJECTS/$1"; }
 project_harbor_dir() { printf '%s' "$HARBOR_PROJECTS/$1/.harbor"; }
 
+# PATH prefix for running a project's code: <phpdir> <dir> -> project PHP, then
+# committable .harbor/scripts, then generated tool shims, then the host PATH.
+# One source of truth for the "scripts beat shims beat host" precedence.
+project_run_path() { printf '%s:%s/.harbor/scripts:%s/.harbor/bin:%s' "$1" "$2" "$2" "$PATH"; }
+
 # Sanitize + validate a MySQL identifier (db/user name): hyphens -> underscores,
 # then reject anything outside [A-Za-z0-9_] so it can't break/inject backtick SQL.
 db_ident() {

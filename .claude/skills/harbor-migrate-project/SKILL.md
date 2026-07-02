@@ -17,7 +17,7 @@ Code stays on the host; Harbor reads it natively.
 rsync -a /path/to/app/ "$HARBOR_ROOT/projects/<name>/"     # full copy
 # or symlink to keep one source of truth:  ln -s /path/to/app "$HARBOR_ROOT/projects/<name>"
 ```
-(`$HARBOR_ROOT` is the Harbor checkout, e.g. `/Volumes/dev/sites/harbor`.)
+(`$HARBOR_ROOT` is the Harbor checkout, e.g. `~/harbor`.)
 
 ## 2. Pin the PHP version the app needs
 ```bash

@@ -77,7 +77,34 @@ compose.env
 docker-compose.yml
 install.sh
 bin/
-# committable: harbor.yml, import-rules, hooks/
+# committable: harbor.yml, import-rules, hooks/, scripts/
+EOF
+}
+
+# Scaffold a committable per-project scripts dir. Anything executable here is on
+# PATH for `harbor run <name> ...` / `harbor shell <name>`, run under the
+# project's pinned PHP — e.g. .harbor/scripts/invoice -> `harbor run <name> invoice`.
+init_write_scripts() {
+  local d; d="$(project_harbor_dir "$1")/scripts"
+  mkdir -p "$d"
+  [ -f "$d/README.md" ] && return 0
+  cat > "$d/README.md" <<'EOF'
+# Project scripts
+
+Drop executable scripts here (`chmod +x`). They are on PATH — under this
+project's pinned PHP — for:
+
+    harbor run <name> <script> [args...]
+    harbor shell <name>          # then just: <script>
+
+Example — `invoice` (any language; PHP shown):
+
+    #!/usr/bin/env php
+    <?php // .harbor/scripts/invoice — chmod +x me
+    fwrite(STDERR, "generating invoice…\n");
+
+Then: `harbor run <name> invoice`. This dir is committable (unlike the generated
+`.harbor/bin/` tool shims), so scripts travel with the project.
 EOF
 }
 
@@ -125,6 +152,7 @@ cmd_init() {
   init_render_compose "$name" "$framework"
   init_write_connection "$name"
   init_write_gitignore "$name"
+  init_write_scripts "$name"
 
   ok "init $name ($framework, php $phpver) — db port $(ports_load "$name"; echo "$DB_PORT")"
   step "next: harbor up $name  &&  harbor link $name"

@@ -160,25 +160,24 @@ harbor open shop
 ```
 
 ### B. Migrate an existing app into Harbor
-Say the app lives at `/path/to/app` and its data is in an old Docker `db` service.
+Say the app lives at `/path/to/app` (`~/harbor` is used below as the Harbor
+install dir — substitute wherever you cloned it).
 
 ```bash
 # 1. get the code under projects/ (copy, or symlink to keep one source of truth)
-rsync -a /path/to/app/ /Volumes/dev/sites/harbor/projects/myapp/
-#   ln -s /path/to/app /Volumes/dev/sites/harbor/projects/myapp   # alt: symlink
+rsync -a /path/to/app/ ~/harbor/projects/myapp/
+#   ln -s /path/to/app ~/harbor/projects/myapp   # alt: symlink
 
 # 2. pin the PHP version the app needs (see recipe C for EOL versions)
-printf '8.3\n' > /Volumes/dev/sites/harbor/projects/myapp/.php-version
+printf '8.3\n' > ~/harbor/projects/myapp/.php-version
 
 # 3. provision + start (framework auto-detected; override with a positional arg)
 harbor init myapp --existing --php 8.3
 harbor up myapp
 
-# 4. bring the database over
-#    dump from the old source (example: an old compose 'db' service):
-cd /path/to/old-docker && docker compose up -d db
-docker compose exec -T db sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --no-tablespaces "$MYSQL_DATABASE"' | gzip > /tmp/myapp.sql.gz
-docker compose down
+# 4. bring the database over — from a SQL dump of your current database,
+#    produced however your data lives now (e.g. mysqldump):
+mysqldump -h <host> -u <user> -p --single-transaction --no-tablespaces <db> | gzip > /tmp/myapp.sql.gz
 #    import into Harbor (auto-backup, DEFINER-strip, hooks, serialized-safe replace):
 harbor db import myapp /tmp/myapp.sql.gz
 #    optional domain rewrite: harbor db import myapp /tmp/myapp.sql.gz --replace old.com=myapp.test
@@ -290,8 +289,15 @@ remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }
 ```
 
 Generated/runtime files (`connection.env`, `compose.env`, `docker-compose.yml`)
-are gitignored; the manifest, `import-rules`, and `hooks/` are committable, so a
-teammate can clone the repo and `harbor up` to reproduce the same stack.
+are gitignored; the manifest, `import-rules`, `hooks/`, and `scripts/` are
+committable, so a teammate can clone the repo and `harbor up` to reproduce the
+same stack.
+
+**Per-project scripts** — drop executables in `projects/<name>/.harbor/scripts/`
+(`chmod +x`); they're on `PATH` — under the project's pinned PHP — for
+`harbor run <name> <script>` and `harbor shell <name>`. So a `scripts/invoice`
+becomes `harbor run <name> invoice`. Unlike the generated `.harbor/bin/` tool
+shims, this dir is committable, so project-specific commands travel with the app.
 
 ### Ports & shared Redis
 
@@ -424,8 +430,8 @@ clean — the same approach works for any CLI dependency.
 > in-process and still need a `pecl` install for that PHP version — `harbor
 > doctor <name>` tells you which are missing.
 
-> **macOS:** your project path (`/Volumes/…`) and `$TMPDIR` must be in Docker
-> Desktop's file-sharing list; `harbor doctor` checks this and prints the fix.
+> **macOS:** your projects directory and `$TMPDIR` must be in Docker Desktop's
+> file-sharing list; `harbor doctor` checks this and prints the fix.
 
 ---
 
@@ -461,6 +467,7 @@ when your client/IDE sends the trigger.
 |---------|-------------|
 | `harbor php [<ver>]` | Show pool status / set the default version for new sites. |
 | `harbor php sync` | Re-create pools after `brew install`/uninstall of a `php@x`. |
+| `harbor php exec [<ver>] [--xdebug\|--profile] <args...>` | Run the PHP CLI at a chosen version without its full brew path (leading `<ver>` → cwd `.php-version` → default). `--xdebug` attaches the debugger (client `127.0.0.1:9003`, connects immediately); `--profile` writes cachegrind to `var/log/xdebug/`. Just this call — no FPM pool, no brew ini touched. |
 | `harbor xdebug on\|off\|status` | Toggle Xdebug across pools. |
 
 ### Projects
@@ -482,7 +489,7 @@ when your client/IDE sends the trigger.
 
 | Command | Description |
 |---------|-------------|
-| `harbor run <name> <cmd…>` | Run any command under the project's PHP, in its dir. |
+| `harbor run <name> <cmd…>` | Run any command under the project's PHP, in its dir (`.harbor/scripts/` + tool shims on PATH). |
 | `harbor artisan\|console\|spark <name> …` | Framework console passthroughs. |
 | `harbor magento <name> …` | `bin/magento` passthrough (+ local-DX helpers). |
 | `harbor composer <name> …` | Composer under the project's PHP version. |

@@ -41,7 +41,8 @@ Silicon + Homebrew.
    never `brew install`ed for a project.
 10. **Never commit secrets or runtime state.** `connection.env`, `compose.env`,
     generated compose/vhost/shims, `var/` are gitignored. Only the manifest,
-    `import-rules`, and `hooks/` are committable.
+    `import-rules`, `hooks/`, and `scripts/` (per-project scripts, on PATH for
+    `run`/`shell`) are committable.
 
 ---
 

@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Per-project **scripts** dir: `projects/<name>/.harbor/scripts/`. Executables
+  dropped there are on `PATH` — under the project's pinned PHP — for
+  `harbor run <name> <script>` and `harbor shell <name>`, so a `scripts/invoice`
+  becomes `harbor run <name> invoice`. It's committable (unlike the generated
+  `.harbor/bin/` tool shims), so project-specific commands travel with the app;
+  `harbor init` scaffolds it with a README. *(Host footprint: none — inside the
+  project's `.harbor/`.)*
+- `harbor php exec [<ver>] [--xdebug|--profile] <args...>`: run the PHP CLI at a
+  chosen version without typing its full brew path. Version resolves from a
+  leading bare `<ver>` (or `--php <ver>`) → a `.php-version` in the cwd → the
+  Harbor default. `--xdebug` attaches the debugger (`127.0.0.1:9003`, connects
+  immediately via `start_with_request=yes`); `--profile` enables the profiler and
+  writes cachegrind files to `var/log/xdebug/`. Both apply to that single call
+  only — no FPM pool needed, and brew's php ini is never touched. *(Host
+  footprint: none; profiler output stays under `var/`.)*
 - `harbor stop` / `harbor start`: pause/resume Harbor (bootout/bootstrap the
   nginx daemon + dnsmasq/php agents, stop/start the shared stack) so its ports
   (`:80 :443 :6379 :1025 :8025`) can be handed to another Docker stack during

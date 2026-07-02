@@ -112,8 +112,8 @@ rewrites (legacy `.htaccess` equivalents, WordPress/Drupal/PrestaShop, etc.).
 `harbor init`/`new` write the manifest; `up`, `link`, `wire`, `install`, `store`,
 `db`, `import` all **read** it. Editing the manifest + re-running the relevant
 command re-generates derived files (compose, vhost, `connection.env`). Runtime
-state (`connection.env`, `compose.env`, `ports`) is **gitignored**; the manifest
-and `hooks/` are committable (see Safety & shareability).
+state (`connection.env`, `compose.env`, `ports`) is **gitignored**; the manifest,
+`hooks/`, and `scripts/` are committable (see Safety & shareability).
 
 ## Directory layout
 
@@ -158,6 +158,7 @@ harbor/
     .harbor/harbor.yml           # COMMITTABLE manifest (single source of truth)
     .harbor/import-rules         # committable replace rules
     .harbor/hooks/{pre-import.d,post-import.d}/   # committable per-project hooks
+    .harbor/scripts/<script>     # COMMITTABLE per-project scripts (on PATH for run/shell)
     .harbor/{connection.env,connection.txt,compose.env,   # GITIGNORED runtime
              docker-compose.yml,install.sh}
     .harbor/bin/<tool>           # GITIGNORED generated tool shims (wkhtmltopdf, …)
@@ -211,6 +212,7 @@ harbor doctor [--required]            # host requirements report (report-only)
 harbor setup                          # one-time host prep (gated by doctor)
 harbor php [<ver>]                     # show pool status / set default version
 harbor php sync                        # re-create pools after brew install/uninstall php@x
+harbor php exec [<ver>] [--xdebug|--profile] <args...>  # run the CLI at a version (no full path); per-call Xdebug/profiler
 harbor xdebug on|off|status
 harbor new <name> <framework>         # scaffold + init + up + wire + install + link + open
 harbor init <name> [framework] [--existing] [--multistore domain|path] [--php <ver>]
@@ -555,8 +557,8 @@ exec docker run --rm -i \
   `binary => base_path('.harbor/bin/wkhtmltopdf')`); `wire` sets known ones.
 - **Ephemeral by default** (`docker run --rm`, zero resident RAM); a `resident`
   mode keeps a warm container and uses `docker exec` for call-heavy workloads.
-- **macOS:** the project path (`/Volumes/…`) and `$TMPDIR` must be in Docker
-  Desktop's file sharing; `doctor` checks and prints the fix. Shims are gitignored;
+- **macOS:** the projects directory and `$TMPDIR` must be in Docker Desktop's
+  file sharing; `doctor` checks and prints the fix. Shims are gitignored;
   `harbor tools sync <name>` regenerates them.
 - Distinct from PHP **extensions** (e.g. `imagick`), which are in-process and still
   need a pecl install for that version — `tools:` is only for external binaries.

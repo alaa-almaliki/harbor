@@ -31,29 +31,37 @@ _project_php_ver() {
   link_php "$name" "$dir"
 }
 
+# _project_run_env <name> — resolve the environment for running a project's code.
+# Sets _PR_DIR / _PR_VER / _PR_PHPDIR (ports_load-style globals, so `die` fires in
+# the caller's shell) and fails fast if the project dir or its pinned PHP is
+# missing. Shared preamble for run / composer / shell.
+_project_run_env() {
+  local name="$1"
+  _PR_DIR="$(project_dir "$name")"; [ -d "$_PR_DIR" ] || die "no project dir: $_PR_DIR"
+  _PR_VER="$(_project_php_ver "$name")"
+  [ -x "$(php_cli_bin "$_PR_VER")" ] || die "php@$_PR_VER not installed → brew install php@$_PR_VER"
+  _PR_PHPDIR="$(cli_php_pathdir "$_PR_VER")"
+}
+
 cmd_run() {
   require_name "${1-}"; local name="$1"; shift || true
   [ $# -gt 0 ] || die "usage: harbor run <name> <cmd...>"
-  local dir v phpdir shims
-  dir="$(project_dir "$name")"; [ -d "$dir" ] || die "no project dir: $dir"
-  v="$(_project_php_ver "$name")"
-  [ -x "$(php_cli_bin "$v")" ] || die "php@$v not installed → brew install php@$v"
-  phpdir="$(cli_php_pathdir "$v")"; shims="$dir/.harbor/bin"
+  _project_run_env "$name"; local dir="$_PR_DIR" phpdir="$_PR_PHPDIR"
+  # PATH puts .harbor/scripts (committable per-project commands) ahead of tool
+  # shims, so `harbor run <name> invoice` resolves a per-project script.
   if [ $# -eq 1 ]; then
-    ( cd "$dir" && PATH="$phpdir:$shims:$PATH" sh -c "$1" )
+    ( cd "$dir" && PATH="$(project_run_path "$phpdir" "$dir")" sh -c "$1" )
   else
-    ( cd "$dir" && PATH="$phpdir:$shims:$PATH" "$@" )
+    ( cd "$dir" && PATH="$(project_run_path "$phpdir" "$dir")" "$@" )
   fi
 }
 
 cmd_composer() {
   require_name "${1-}"; local name="$1"; shift || true
-  local dir v cli comp phpdir
-  dir="$(project_dir "$name")"; [ -d "$dir" ] || die "no project dir: $dir"
-  v="$(_project_php_ver "$name")"; cli="$(php_cli_bin "$v")"
+  _project_run_env "$name"; local dir="$_PR_DIR" phpdir="$_PR_PHPDIR" cli comp
+  cli="$(php_cli_bin "$_PR_VER")"
   comp="$(command -v composer)" || die "composer not found (brew install composer)"
-  phpdir="$(cli_php_pathdir "$v")"
-  ( cd "$dir" && PATH="$phpdir:$dir/.harbor/bin:$PATH" COMPOSER_MEMORY_LIMIT=-1 "$cli" "$comp" "$@" )
+  ( cd "$dir" && PATH="$(project_run_path "$phpdir" "$dir")" COMPOSER_MEMORY_LIMIT=-1 "$cli" "$comp" "$@" )
 }
 
 # framework console passthroughs (run under project PHP)

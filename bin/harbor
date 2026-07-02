@@ -89,7 +89,8 @@ Host & lifecycle:
   setup | teardown [--purge]  One-time host prep / removal
   stop | start              Pause/resume Harbor (free its ports for another stack)
   status | ps | list        Overall status (self-heals) / project table
-  php [<ver>|sync] | xdebug on|off|status
+  php [<ver>|sync] | php exec [<ver>] [--xdebug|--profile] <args...>
+  xdebug on|off|status
 
 Projects:
   new <name> <framework>    Scaffold + init + up + wire + install + link + open

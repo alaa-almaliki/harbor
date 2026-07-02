@@ -22,10 +22,9 @@ cmd_redis() {
 
 cmd_shell() {
   require_name "${1-}"; local name="$1"
-  local dir v phpdir; dir="$(project_dir "$name")"; [ -d "$dir" ] || die "no project dir: $dir"
-  v="$(_project_php_ver "$name")"; phpdir="$(cli_php_pathdir "$v")"
-  log "shell in $dir (php $v on PATH; exit to leave)"
-  ( cd "$dir" && PATH="$phpdir:$dir/.harbor/bin:$PATH" HARBOR_PROJECT="$name" "${SHELL:-/bin/bash}" )
+  _project_run_env "$name"; local dir="$_PR_DIR" v="$_PR_VER" phpdir="$_PR_PHPDIR"
+  log "shell in $dir (php $v + .harbor/scripts on PATH; exit to leave)"
+  ( cd "$dir" && PATH="$(project_run_path "$phpdir" "$dir")" HARBOR_PROJECT="$name" "${SHELL:-/bin/bash}" )
 }
 
 # harbor secure [host...] — reissue cert (add SAN hosts), reload nginx
