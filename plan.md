@@ -212,7 +212,6 @@ harbor doctor [--required]            # host requirements report (report-only)
 harbor setup                          # one-time host prep (gated by doctor)
 harbor php [<ver>]                     # show pool status / set default version
 harbor php sync                        # re-create pools after brew install/uninstall php@x
-harbor php exec [<ver>] [--xdebug|--profile] <args...>  # run the CLI at a version (no full path); per-call Xdebug/profiler
 harbor xdebug on|off|status
 harbor new <name> <framework>         # scaffold + init + up + wire + install + link + open
 harbor init <name> [framework] [--existing] [--multistore domain|path] [--php <ver>]

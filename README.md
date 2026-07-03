@@ -467,7 +467,6 @@ when your client/IDE sends the trigger.
 |---------|-------------|
 | `harbor php [<ver>]` | Show pool status / set the default version for new sites. |
 | `harbor php sync` | Re-create pools after `brew install`/uninstall of a `php@x`. |
-| `harbor php exec [<ver>] [--xdebug\|--profile] <args...>` | Run the PHP CLI at a chosen version without its full brew path (leading `<ver>` → cwd `.php-version` → default). `--xdebug` attaches the debugger (client `127.0.0.1:9003`, connects immediately); `--profile` writes cachegrind to `var/log/xdebug/`. Just this call — no FPM pool, no brew ini touched. |
 | `harbor xdebug on\|off\|status` | Toggle Xdebug across pools. |
 
 ### Projects

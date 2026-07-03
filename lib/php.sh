@@ -94,98 +94,12 @@ php_status() {
   done
 }
 
-# harbor php exec [<ver>|--php <ver>] [--xdebug] [--profile] [--] <args...>
-# Run the PHP CLI at a chosen version WITHOUT typing its full brew path, with
-# Xdebug (debugger) or the profiler enabled for just this one invocation. This is
-# pure CLI — it needs no FPM pool and never touches brew ini / running pools.
-#
-# Version precedence: a leading bare version (or --php <ver>) -> a `.php-version`
-# in the cwd -> the Harbor default. Xdebug precedence: an explicit --xdebug/
-# --profile flag (start immediately, start_with_request=yes) -> otherwise the
-# global `harbor xdebug` toggle (trigger-based, matching FPM/`harbor run`).
-php_exec() {
-  local ver="" want_xdebug=0 want_profile=0
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --) shift; break ;;
-      -x|--xdebug|--debug) want_xdebug=1; shift ;;
-      --profile|--profiler) want_profile=1; shift ;;
-      --php|-p)
-        shift; [ $# -gt 0 ] || die "harbor php exec: --php needs a version"
-        valid_php_version "$1" || die "unsupported version '$1' (have: $HARBOR_PHP_VERSIONS)"
-        ver="$1"; shift ;;
-      *)
-        # a bare leading version is a convenience selector; anything else starts
-        # the php command line (use --php or -- to disambiguate a literal arg).
-        if [ -z "$ver" ] && valid_php_version "$1"; then ver="$1"; shift; continue; fi
-        break ;;
-    esac
-  done
-
-  if [ -z "$ver" ]; then
-    [ -f .php-version ] && ver="$(tr -d ' \n\r' < .php-version)"
-    [ -z "$ver" ] && ver="$(default_php)"
-  fi
-  valid_php_version "$ver" || die "unsupported version '$ver' (have: $HARBOR_PHP_VERSIONS)"
-  local cli; cli="$(php_cli_bin "$ver")"
-  [ -x "$cli" ] || die "php@$ver not installed → brew install php@$ver"
-  [ $# -gt 0 ] || die "usage: harbor php exec [<ver>] [--xdebug|--profile] <args...>  (e.g. -r 'echo PHP_VERSION;')"
-
-  # Build Xdebug -d flags for THIS call only (never touches brew ini / pools).
-  local dflags="" mode="" swr="yes"
-  if [ "$want_xdebug" -eq 1 ] || [ "$want_profile" -eq 1 ]; then
-    [ "$want_xdebug" -eq 1 ] && mode="debug,develop"
-    [ "$want_profile" -eq 1 ] && mode="${mode:+$mode,}profile"
-  elif [ "$(xdebug_state)" = "on" ]; then
-    mode="debug,develop"; swr="trigger"
-  fi
-
-  if [ -n "$mode" ]; then
-    # Add zend_extension only when the version's own config doesn't already load
-    # xdebug (a double-load is fatal). The `$cli -m` probe lives here, not on the
-    # common no-xdebug path. A missing .so is fatal when explicitly requested,
-    # else skipped so the run still proceeds.
-    if ! "$cli" -m 2>/dev/null | grep -qi '^xdebug$'; then
-      local so
-      if so="$(xdebug_so_for "$ver")"; then
-        dflags="-d zend_extension=$so"
-      elif [ "$want_xdebug" -eq 1 ] || [ "$want_profile" -eq 1 ]; then
-        die "xdebug.so not found for php@$ver → pecl install xdebug (or a prebuilt .so for EOL php)"
-      else
-        warn "xdebug is on but not installed for php@$ver — running without it"; mode=""
-      fi
-    fi
-  fi
-
-  if [ -n "$mode" ]; then
-    dflags="$dflags -d xdebug.mode=$mode -d xdebug.start_with_request=$swr"
-    dflags="$dflags -d xdebug.client_host=127.0.0.1 -d xdebug.client_port=9003 -d xdebug.discover_client_host=false"
-    case "$mode" in
-      *profile*)
-        local pdir="$HARBOR_LOG_DIR/xdebug"; mkdir -p "$pdir"
-        dflags="$dflags -d xdebug.output_dir=$pdir"
-        warn "xdebug profiler on — cachegrind.out.* -> $pdir" ;;
-    esac
-    case "$mode" in
-      *debug*) warn "xdebug debugger on (client 127.0.0.1:9003, start_with_request=$swr)" ;;
-    esac
-  else
-    # Nothing requested: neutralize a brew-loaded xdebug so plain CLI stays fast.
-    # Harmless (-d on an unloaded extension is a silent no-op), so no probe needed.
-    dflags="-d xdebug.mode=off"
-  fi
-
-  # shellcheck disable=SC2086
-  exec "$cli" $dflags "$@"
-}
-
-# harbor php [<ver>|sync|exec ...]
+# harbor php [<ver>|sync]
 cmd_php() {
   local arg="${1-}"
   case "$arg" in
     "")   php_status ;;
     sync) php_sync ;;
-    exec) shift; php_exec "$@" ;;
     *)
       valid_php_version "$arg" || die "unsupported version '$arg' (have: $HARBOR_PHP_VERSIONS)"
       [ -x "$(php_fpm_bin "$arg")" ] || die "php@$arg not installed → brew install php@$arg"
