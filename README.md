@@ -296,8 +296,9 @@ same stack.
 **Per-project scripts** — drop executables in `projects/<name>/.harbor/scripts/`
 (`chmod +x`); they're on `PATH` — under the project's pinned PHP — for
 `harbor run <name> <script>` and `harbor shell <name>`. So a `scripts/invoice`
-becomes `harbor run <name> invoice`. Unlike the generated `.harbor/bin/` tool
-shims, this dir is committable, so project-specific commands travel with the app.
+becomes `harbor run <name> invoice` — or just `harbor run invoice` from inside the
+project (the name is inferred from your cwd). Unlike the generated `.harbor/bin/`
+tool shims, this dir is committable, so project-specific commands travel with the app.
 
 ### Ports & shared Redis
 
@@ -530,16 +531,17 @@ when your client/IDE sends the trigger.
 | `harbor open <name>` | Open the site in your browser. |
 | `harbor logs <name> [service] [-f]` | Tail project/service logs. |
 | `harbor logs nginx\|php\|dnsmasq [-f]` | Tail Harbor's own platform-service logs. |
+| `harbor logs clear [all\|nginx\|php\|dnsmasq\|<name>]` | Truncate Harbor's log files in place (default `all`; `<name>` clears that site's nginx logs). Safe while daemons run — keeps the inode. nginx logs are user-owned so no sudo is needed; *legacy* root-owned logs are chowned to you once by `harbor setup`/`harbor secure`. |
 
 ### Running code
 
 | Command | Description |
 |---------|-------------|
-| `harbor run <name> <cmd…>` | Run any command under the project's PHP, in its dir (`.harbor/scripts/` + tool shims on PATH). |
-| `harbor artisan\|console\|spark <name> …` | Framework console passthroughs. |
-| `harbor magento <name> …` | `bin/magento` passthrough (+ local-DX helpers). |
-| `harbor composer <name> …` | Composer under the project's PHP version. |
-| `harbor node\|npm <name> …` | Node/npm via nvm + `.nvmrc`. |
+| `harbor run [<name>] <cmd…>` | Run any command under the project's PHP, in its dir (`.harbor/scripts/` + tool shims on PATH). `<name>` is optional when you're inside the project (cwd under `projects/<name>/` or in a `harbor shell`). |
+| `harbor artisan\|console\|spark [<name>] …` | Framework console passthroughs. |
+| `harbor magento [<name>] …` | `bin/magento` passthrough (+ local-DX helpers). |
+| `harbor composer [<name>] …` | Composer under the project's PHP version. |
+| `harbor node\|npm [<name>] …` | Node/npm via nvm + `.nvmrc`. |
 | `harbor tool <name> <tool> …` | Run a containerized CLI tool (wkhtmltopdf, …). |
 | `harbor tools sync <name>` | (Re)generate tool shims from the manifest. |
 | `harbor install <name>` | Framework installer (Magento `setup:install`, Laravel migrate, …). |
@@ -549,9 +551,12 @@ when your client/IDE sends the trigger.
 
 | Command | Description |
 |---------|-------------|
-| `harbor mysql <name>` | MySQL client into the project DB. |
-| `harbor redis <name>` | redis-cli scoped to the project's DB index. |
-| `harbor shell <name>` | Shell in the project dir with its PHP/Node on PATH. |
+| `harbor mysql [<name>]` | MySQL client into the project DB. |
+| `harbor redis [<name>]` | redis-cli scoped to the project's DB index. |
+| `harbor shell [<name>]` | Shell in the project dir with its PHP/Node on PATH. |
+
+> For all of the above, `<name>` is optional when you're inside a project (cwd under
+> `projects/<name>/`, or in a `harbor shell`); an explicit existing-project arg wins.
 
 ### Databases
 

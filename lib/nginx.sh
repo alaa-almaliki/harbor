@@ -4,6 +4,47 @@
 
 nginx_bin() { command -v nginx; }
 
+# Pre-create nginx log files owned by the invoking user. nginx's root master
+# open()s logs with O_APPEND|O_CREAT and never chowns an existing file, so a
+# born-user-owned log stays ours after nginx (re)opens it on start/reload — root
+# still writes to it, but WE can truncate it (`harbor logs clear`) without sudo.
+# Only creates missing files; a pre-existing root-owned log is left as-is.
+nginx_ensure_logs() {
+  local f
+  for f in "$@"; do [ -e "$f" ] || : > "$f"; done
+}
+
+# One-time migration: chown any legacy root-owned nginx logs (created before
+# Harbor pre-created them user-owned) to the invoking user, so `harbor logs clear`
+# works without sudo thereafter. chown keeps the file + nginx's open fd (root
+# keeps writing) — no content loss, no reload. No-op once all are user-owned.
+# §8: an announced, bounded sudo touchpoint (only Harbor's own var/log files).
+nginx_migrate_logs() {
+  local f legacy="" me; me="$(id -un)"
+  for f in "$HARBOR_LOG_DIR"/nginx-*.log "$HARBOR_LOG_DIR"/site-*.log; do
+    [ -f "$f" ] || continue
+    [ -O "$f" ] || legacy="$legacy $f"
+  done
+  [ -n "$legacy" ] || return 0
+  log "sudo: chown $(printf '%s' "$legacy" | wc -w | tr -d ' ') legacy root-owned nginx log(s) -> $me (so you can clear them)"
+  # shellcheck disable=SC2086
+  sudo chown "$me" $legacy || warn "some legacy logs could not be chowned (left as-is)"
+}
+
+# ensure the global + every linked site's log files exist (user-owned), parsing
+# the log paths straight out of each rendered site conf.
+nginx_ensure_logs_all() {
+  ensure_dirs
+  nginx_ensure_logs "$HARBOR_LOG_DIR/nginx-error.log" "$HARBOR_LOG_DIR/nginx-access.log"
+  local c logs
+  for c in "$HARBOR_NGINX_SITES"/*.conf; do
+    [ -f "$c" ] || continue
+    logs="$(awk '/(access|error)_log[[:space:]]/{print $2}' "$c" | tr -d ';')"
+    # shellcheck disable=SC2086
+    [ -n "$logs" ] && nginx_ensure_logs $logs
+  done
+}
+
 nginx_render_conf() {
   mkdir -p "$HARBOR_NGINX_SITES"
   USER="$HARBOR_USER" \
@@ -29,6 +70,11 @@ nginx_setup() {
   local nbin label tmp
   nbin="$(nginx_bin)" || die "nginx not found (brew install nginx)"
   nginx_render_conf
+  # pre-create logs (incl. the launchd stdout) user-owned before the root daemon
+  # opens them, and chown any legacy root-owned ones from a prior install
+  nginx_ensure_logs_all
+  nginx_ensure_logs "$HARBOR_LOG_DIR/nginx.launchd.log"
+  nginx_migrate_logs
   nginx_test || die "nginx config test failed"
   label="$HARBOR_LD_PREFIX.nginx"
   tmp="$HARBOR_RUN/$label.plist"
@@ -43,6 +89,7 @@ nginx_setup() {
 # reload after a vhost change (Phase 4+)
 nginx_reload() {
   local nbin; nbin="$(nginx_bin)" || die "nginx not found"
+  nginx_ensure_logs_all   # so any new/removed site log is reopened user-owned
   nginx_test || die "nginx config test failed"
   log "reloading nginx (sudo — signals the root LaunchDaemon on :80/:443)"
   sudo "$nbin" -s reload -c "$HARBOR_NGINX_CONF" 2>/dev/null \

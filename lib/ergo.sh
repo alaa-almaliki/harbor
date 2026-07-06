@@ -9,19 +9,19 @@ cmd_open() {
 }
 
 cmd_mysql() {
-  require_name "${1-}"; local name="$1"; shift || true
+  resolve_project "${1:-}" "harbor mysql [<name>] [args...]"; [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
   _db_load "$name"; _db_up_check "$name"
   project_compose "$name" exec -e MYSQL_PWD="$DB_ROOT_PASSWORD" mysql mysql -uroot "$(db_ident "$name")" "$@"
 }
 
 cmd_redis() {
-  require_name "${1-}"; local name="$1"; shift || true
+  resolve_project "${1:-}" "harbor redis [<name>] [args...]"; [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
   ports_load "$name" || die "not initialized: $name"
   docker exec -it "$HARBOR_SHARED_REDIS" redis-cli -n "$REDIS_DB_CACHE" "$@"
 }
 
 cmd_shell() {
-  require_name "${1-}"; local name="$1"
+  resolve_project "${1:-}" "harbor shell [<name>]"; [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
   _project_run_env "$name"; local dir="$_PR_DIR" v="$_PR_VER" phpdir="$_PR_PHPDIR"
   log "shell in $dir (php $v + .harbor/scripts on PATH; exit to leave)"
   ( cd "$dir" && PATH="$(project_run_path "$phpdir" "$dir")" HARBOR_PROJECT="$name" "${SHELL:-/bin/bash}" )
@@ -35,6 +35,7 @@ cmd_secure() {
   else
     tls_setup >/dev/null
   fi
+  nginx_migrate_logs   # chown any legacy root-owned nginx logs to you (one-time)
   nginx_reload
   ok "certificate reissued"
 }

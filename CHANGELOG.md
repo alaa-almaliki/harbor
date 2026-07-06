@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `harbor logs clear [all|nginx|php|dnsmasq|<name>]`: truncate Harbor's log files
+  under `var/log/` in place (default `all`; `<name>` = that site's nginx logs).
+  Truncates rather than deletes, so daemons keep their open handles (no orphaned
+  inode, effective immediately).
+- **nginx logs are now user-owned.** Harbor pre-creates the global and per-site
+  nginx log files before its root master opens them (`open()` with `O_CREAT`
+  never chowns an existing file), so they're born user-owned — root still writes,
+  but you can `harbor logs clear` them without sudo. Applied on `setup` and every
+  `nginx` reload/`link`. Legacy root-owned logs from before this change are
+  auto-migrated by `harbor setup` / `harbor secure`, which `sudo chown` them to
+  you in place (content kept, no reload) — an announced, bounded new sudo
+  touchpoint (§8; only Harbor's own `var/log` files), idempotent once migrated.
 - **Optional backing services via compose-fragment assembly.** The per-project
   `docker-compose.yml` is now assembled from one fragment per service
   (`templates/compose/services/<svc>.yml.tmpl` + optional `volumes/<svc>…`) driven
@@ -54,6 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shellcheck-clean.
 
 ### Changed
+- **Optional `<name>` for the in-project commands.** `run`, `composer`, `artisan`,
+  `console`, `spark`, `magento`, `node`, `npm`, `shell`, `mysql`, and `redis` now
+  infer the project when you omit the name — from `$HARBOR_PROJECT` (set by
+  `harbor shell`) or from the cwd being under `projects/<name>/` (symlinked projects
+  resolved). So `harbor run invoice` / `harbor artisan migrate` / `harbor mysql`
+  work from a project dir; an explicit existing-project arg still wins. (Reusable
+  `resolve_project`/`cwd_project` helpers in `common.sh`.)
 - Templating: added `render_str` (renders a template to stdout) so compose
   fragments can be concatenated; `render` now wraps it. Existing `render` calls
   are unchanged.
@@ -67,6 +86,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pool value (e.g. `PHP_MEMORY_LIMIT`, default 2G) as the default a project can
   raise/lower. `error_log` and the CA-bundle paths stay `php_admin_value`
   (Harbor-owned/security). Run `harbor php sync` to apply to running pools.
+- **Magento on-demand static assets now materialize in developer mode.** The
+  Magento vhost body (`templates/nginx/body/magento.conf.tmpl`) routed missing
+  static files to `static.php?resource=$1`, but inside the file-extension
+  `location ~* \.(js|css|woff|ttf|…)$` block `$1` is the matched *extension*, so
+  `static.php` received `resource=ttf` (→ "Requested path 'ttf' is wrong", 404).
+  Assets already on disk (e.g. merged CSS) were served by `try_files`, but every
+  file generated on first request (fonts, images, individual JS/CSS) 404'd and
+  `pub/static/<area>/` never populated. Now uses Magento's canonical
+  `if (!-f $request_filename) { rewrite ^/static/?(.*)$ /static.php?resource=$1 last; }`,
+  whose own capture is the full resource path. Re-run `harbor link <name>` to
+  regenerate the vhost (affects every Magento project).
 
 ### Added
 - Committed Claude Code **Agent Skills** (`.claude/skills/`): `harbor-new-project`,

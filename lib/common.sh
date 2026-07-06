@@ -112,6 +112,35 @@ project_harbor_dir() { printf '%s' "$HARBOR_PROJECTS/$1/.harbor"; }
 # One source of truth for the "scripts beat shims beat host" precedence.
 project_run_path() { printf '%s:%s/.harbor/scripts:%s/.harbor/bin:%s' "$1" "$2" "$2" "$PATH"; }
 
+# Infer the current project: $HARBOR_PROJECT (exported by `harbor shell`), else the
+# projects/<name> dir (real or symlinked) that contains the cwd. Prints the name
+# and returns 0, or returns 1 if the cwd isn't inside a project.
+cwd_project() {
+  [ -n "${HARBOR_PROJECT:-}" ] && { printf '%s' "$HARBOR_PROJECT"; return 0; }
+  local cwd d name real; cwd="$(pwd -P)"
+  for d in "$HARBOR_PROJECTS"/*/; do
+    [ -d "$d" ] || continue
+    name="$(basename "$d")"
+    real="$(cd -P "$d" 2>/dev/null && pwd -P)" || continue
+    case "$cwd/" in "$real/"*) printf '%s' "$name"; return 0 ;; esac
+  done
+  return 1
+}
+
+# Resolve the target project for a command that takes an optional leading <name>.
+# Sets _RP_NAME to the project and _RP_SHIFT=1 when arg1 WAS the name (caller must
+# then `shift`). Precedence: an explicit arg1 naming an existing project -> the
+# current project (cwd/$HARBOR_PROJECT). Dies with <usage> if neither resolves.
+resolve_project() {
+  local arg1="${1:-}" usage="${2:-harbor run [<name>] <cmd...>}"
+  _RP_NAME=""; _RP_SHIFT=0
+  if [ -n "$arg1" ] && valid_name "$arg1" && [ -d "$(project_dir "$arg1")" ]; then
+    _RP_NAME="$arg1"; _RP_SHIFT=1; return 0
+  fi
+  _RP_NAME="$(cwd_project)" && return 0
+  die "no project given and not inside one → $usage"
+}
+
 # Sanitize + validate a MySQL identifier (db/user name): hyphens -> underscores,
 # then reject anything outside [A-Za-z0-9_] so it can't break/inject backtick SQL.
 db_ident() {

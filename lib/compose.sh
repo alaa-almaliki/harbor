@@ -121,8 +121,39 @@ cmd_destroy() {
   ok "destroyed: $name"
 }
 
+# Truncate matching log files in place (keep the inode so running daemons keep
+# their open handles — rm would orphan the file until restart). nginx runs as
+# root, so its logs are root-owned and NOT ours to truncate; those are collected
+# into _LOGS_LOCKED (Harbor never sudo's on its own — §8). Sets _LOGS_CLEARED.
+_logs_truncate() {
+  _LOGS_CLEARED=0; _LOGS_LOCKED=""
+  local f
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    if [ -w "$f" ]; then : > "$f"; _LOGS_CLEARED=$((_LOGS_CLEARED + 1))
+    else _LOGS_LOCKED="$_LOGS_LOCKED $f"; fi
+  done
+}
+
+# harbor logs clear [all|nginx|php|dnsmasq|<name>]
+_logs_clear() {
+  local target="${1:-all}"
+  case "$target" in
+    all)      _logs_truncate "$HARBOR_LOG_DIR"/*.log ;;
+    nginx)    _logs_truncate "$HARBOR_LOG_DIR"/nginx-*.log "$HARBOR_LOG_DIR"/site-*.log ;;
+    php)      _logs_truncate "$HARBOR_LOG_DIR"/php-*.log ;;
+    dnsmasq)  _logs_truncate "$HARBOR_LOG_DIR"/dnsmasq.log ;;
+    *) require_name "$target"; _logs_truncate "$HARBOR_LOG_DIR"/site-"$target".*.log ;;
+  esac
+  ok "cleared $_LOGS_CLEARED log file(s) ($target)"
+  if [ -n "$_LOGS_LOCKED" ]; then
+    warn "$(printf '%s' "$_LOGS_LOCKED" | wc -w | tr -d ' ') legacy root-owned log(s) — run 'harbor secure' once to chown them to you (then this works sudo-free)"
+  fi
+}
+
 cmd_logs() {
   case "${1-}" in
+    clear)   shift; _logs_clear "${1-}" ;;
     nginx)   shift; tail -n 200 ${1:+-F} "$HARBOR_LOG_DIR"/nginx-*.log 2>/dev/null || warn "no nginx logs yet" ;;
     php)     shift; tail -n 200 ${1:+-F} "$HARBOR_LOG_DIR"/php-*.log 2>/dev/null || warn "no php logs yet" ;;
     dnsmasq) shift; tail -n 200 ${1:+-F} "$HARBOR_LOG_DIR"/dnsmasq.log 2>/dev/null || warn "no dnsmasq log yet" ;;

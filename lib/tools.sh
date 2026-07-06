@@ -44,8 +44,11 @@ _project_run_env() {
 }
 
 cmd_run() {
-  require_name "${1-}"; local name="$1"; shift || true
-  [ $# -gt 0 ] || die "usage: harbor run <name> <cmd...>"
+  # <name> is optional when run inside a project (cwd under projects/<name> or a
+  # `harbor shell`); an explicit existing-project arg still wins.
+  resolve_project "${1:-}" "harbor run [<name>] <cmd...>"; local name="$_RP_NAME"
+  [ "$_RP_SHIFT" = 1 ] && shift
+  [ $# -gt 0 ] || die "usage: harbor run [<name>] <cmd...>  (omit <name> inside a project)"
   _project_run_env "$name"; local dir="$_PR_DIR" phpdir="$_PR_PHPDIR"
   # PATH puts .harbor/scripts (committable per-project commands) ahead of tool
   # shims, so `harbor run <name> invoice` resolves a per-project script.
@@ -57,18 +60,18 @@ cmd_run() {
 }
 
 cmd_composer() {
-  require_name "${1-}"; local name="$1"; shift || true
+  resolve_project "${1:-}" "harbor composer [<name>] <args...>"; [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
   _project_run_env "$name"; local dir="$_PR_DIR" phpdir="$_PR_PHPDIR" cli comp
   cli="$(php_cli_bin "$_PR_VER")"
   comp="$(command -v composer)" || die "composer not found (brew install composer)"
   ( cd "$dir" && PATH="$(project_run_path "$phpdir" "$dir")" COMPOSER_MEMORY_LIMIT=-1 "$cli" "$comp" "$@" )
 }
 
-# framework console passthroughs (run under project PHP)
-cmd_artisan() { require_name "${1-}"; local n="$1"; shift; cmd_run "$n" php artisan "$@"; }
-cmd_console() { require_name "${1-}"; local n="$1"; shift; cmd_run "$n" php bin/console "$@"; }
-cmd_spark()   { require_name "${1-}"; local n="$1"; shift; cmd_run "$n" php spark "$@"; }
-cmd_magento() { require_name "${1-}"; local n="$1"; shift; cmd_run "$n" php bin/magento "$@"; }
+# framework console passthroughs (run under project PHP; <name> optional inside a project)
+cmd_artisan() { resolve_project "${1:-}" "harbor artisan [<name>] <args...>"; [ "$_RP_SHIFT" = 1 ] && shift; cmd_run "$_RP_NAME" php artisan "$@"; }
+cmd_console() { resolve_project "${1:-}" "harbor console [<name>] <args...>"; [ "$_RP_SHIFT" = 1 ] && shift; cmd_run "$_RP_NAME" php bin/console "$@"; }
+cmd_spark()   { resolve_project "${1:-}" "harbor spark [<name>] <args...>";   [ "$_RP_SHIFT" = 1 ] && shift; cmd_run "$_RP_NAME" php spark "$@"; }
+cmd_magento() { resolve_project "${1:-}" "harbor magento [<name>] <args...>"; [ "$_RP_SHIFT" = 1 ] && shift; cmd_run "$_RP_NAME" php bin/magento "$@"; }
 
 # ── node / npm via nvm ──────────────────────────────────────────────────────
 _nvm_run() {
@@ -96,5 +99,5 @@ _nvm_run() {
     exec "$prog" "$@"
   )
 }
-cmd_node() { require_name "${1-}"; local n="$1"; shift; _nvm_run "$n" node "$@"; }
-cmd_npm()  { require_name "${1-}"; local n="$1"; shift; _nvm_run "$n" npm "$@"; }
+cmd_node() { resolve_project "${1:-}" "harbor node [<name>] <args...>"; [ "$_RP_SHIFT" = 1 ] && shift; _nvm_run "$_RP_NAME" node "$@"; }
+cmd_npm()  { resolve_project "${1:-}" "harbor npm [<name>] <args...>";  [ "$_RP_SHIFT" = 1 ] && shift; _nvm_run "$_RP_NAME" npm "$@"; }

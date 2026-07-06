@@ -9,9 +9,12 @@
         location ~ ^/static/version\d*/ { rewrite ^/static/version\d*/(.*)$ /static/$1 last; }
         location ~* \.(ico|jpg|jpeg|png|gif|svg|svgz|webp|js|css|eot|ttf|otf|woff|woff2|json|map)$ {
             add_header Cache-Control "public, max-age=31536000";
-            try_files $uri $uri/ /static.php?resource=$1;
+            # Developer mode: materialise assets not yet on disk via static.php. The rewrite's
+            # own capture ($1 = full path after /static/) is what must reach static.php — inside
+            # this extension location the location-regex $1 would only be the file extension.
+            if (!-f $request_filename) { rewrite ^/static/?(.*)$ /static.php?resource=$1 last; }
         }
-        try_files $uri $uri/ /static.php?resource=$1;
+        if (!-f $request_filename) { rewrite ^/static/?(.*)$ /static.php?resource=$1 last; }
     }
 
     location /media/ {

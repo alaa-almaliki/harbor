@@ -96,17 +96,17 @@ Projects:
   init <name> [fw]          Allocate + write manifest (--existing for adopted code)
   render <name>             Regenerate compose+connection from the manifest (after editing services: versions)
   link | unlink | wire <name>
-  up | down | restart | destroy | logs <name>
+  up | down | restart | destroy | logs <name> | logs clear [target]
   open <name>               Open https://<name>.test
 
 Running code & tooling:
-  run <name> <cmd...> | artisan | console | spark | magento <name> ...
-  composer | node | npm <name> ...
+  run | artisan | console | spark | magento | composer | node | npm [<name>] ...
+                            ( <name> optional inside a project dir / harbor shell )
   tool <name> <tool> ... | tools sync <name>
   install | seed <name>
 
 Consoles & data:
-  mysql | redis | shell <name>
+  mysql | redis | shell [<name>]   ( <name> optional inside a project )
   db create|drop|backup|import|pull <name> ... | media pull <name>
   store add|list|rm <name> ...
 

@@ -24,6 +24,7 @@ _harbor() {
   case "\$prev" in
     php) COMPREPLY=(\$(compgen -W "$HARBOR_PHP_VERSIONS sync" -- "\$cur")); return ;;
     xdebug) COMPREPLY=(\$(compgen -W "on off status" -- "\$cur")); return ;;
+    logs) COMPREPLY=(\$(compgen -W "clear nginx php dnsmasq \$(ls \"$HARBOR_PROJECTS\" 2>/dev/null)" -- "\$cur")); return ;;
     db) COMPREPLY=(\$(compgen -W "create drop backup import pull" -- "\$cur")); return ;;
     store) COMPREPLY=(\$(compgen -W "add list rm" -- "\$cur")); return ;;
   esac
@@ -44,6 +45,7 @@ _harbor() {
   case "\${words[CURRENT-1]}" in
     php) compadd ${HARBOR_PHP_VERSIONS} sync; return ;;
     xdebug) compadd on off status; return ;;
+    logs) compadd clear nginx php dnsmasq \$(ls "$HARBOR_PROJECTS" 2>/dev/null); return ;;
     db) compadd create drop backup import pull; return ;;
     store) compadd add list rm; return ;;
   esac
