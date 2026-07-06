@@ -35,7 +35,6 @@ cmd_secure() {
   else
     tls_setup >/dev/null
   fi
-  nginx_migrate_logs   # chown any legacy root-owned nginx logs to you (one-time)
   nginx_reload
   ok "certificate reissued"
 }

@@ -33,11 +33,9 @@ Silicon + Homebrew.
    pre-Harbor state. If you add something that touches the system, add its undo.
 7. **Idempotent.** Every command is safe to re-run. Setup, sync, render, allocate
    must converge, not duplicate.
-8. **Surface sudo.** The allowed sudo touchpoints are the nginx LaunchDaemon,
-   `/etc/resolver/test`, and a bounded one-time `chown` of legacy root-owned nginx
-   logs in `var/log/` (via `nginx_migrate_logs`, run by `setup`/`secure`; idempotent).
-   Never run `sudo` silently — announce it and explain why. Add no new sudo without
-   explicit human sign-off.
+8. **Surface sudo.** The only allowed sudo touchpoints are the nginx
+   LaunchDaemon and `/etc/resolver/test`. Never run `sudo` silently — announce it
+   and explain why. Add no new sudo without explicit human sign-off.
 9. **No host installs for app dependencies.** External binaries (wkhtmltopdf,
    ghostscript, soffice, ffmpeg…) are containerized via shims (manifest `tools:`),
    never `brew install`ed for a project.

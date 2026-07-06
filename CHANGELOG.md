@@ -12,14 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under `var/log/` in place (default `all`; `<name>` = that site's nginx logs).
   Truncates rather than deletes, so daemons keep their open handles (no orphaned
   inode, effective immediately).
-- **nginx logs are now user-owned.** Harbor pre-creates the global and per-site
-  nginx log files before its root master opens them (`open()` with `O_CREAT`
-  never chowns an existing file), so they're born user-owned — root still writes,
-  but you can `harbor logs clear` them without sudo. Applied on `setup` and every
-  `nginx` reload/`link`. Legacy root-owned logs from before this change are
-  auto-migrated by `harbor setup` / `harbor secure`, which `sudo chown` them to
-  you in place (content kept, no reload) — an announced, bounded new sudo
-  touchpoint (§8; only Harbor's own `var/log` files), idempotent once migrated.
+- **nginx logs are user-owned.** Harbor pre-creates the global and per-site nginx
+  log files before its root master opens them (`open()` with `O_CREAT` never
+  chowns an existing file), so they're born user-owned — root still writes, but you
+  can `harbor logs clear` them without sudo. Applied on `setup` and every `nginx`
+  reload/`link`.
 - **Optional backing services via compose-fragment assembly.** The per-project
   `docker-compose.yml` is now assembled from one fragment per service
   (`templates/compose/services/<svc>.yml.tmpl` + optional `volumes/<svc>…`) driven

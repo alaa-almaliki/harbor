@@ -531,7 +531,7 @@ when your client/IDE sends the trigger.
 | `harbor open <name>` | Open the site in your browser. |
 | `harbor logs <name> [service] [-f]` | Tail project/service logs. |
 | `harbor logs nginx\|php\|dnsmasq [-f]` | Tail Harbor's own platform-service logs. |
-| `harbor logs clear [all\|nginx\|php\|dnsmasq\|<name>]` | Truncate Harbor's log files in place (default `all`; `<name>` clears that site's nginx logs). Safe while daemons run — keeps the inode. nginx logs are user-owned so no sudo is needed; *legacy* root-owned logs are chowned to you once by `harbor setup`/`harbor secure`. |
+| `harbor logs clear [all\|nginx\|php\|dnsmasq\|<name>]` | Truncate Harbor's log files in place (default `all`; `<name>` clears that site's nginx logs). Safe while daemons run — keeps the inode. nginx logs are user-owned, so no sudo is needed. |
 
 ### Running code
 
