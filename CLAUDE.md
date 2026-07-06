@@ -162,9 +162,20 @@ and **[SemVer](https://semver.org)**.
   + `CHANGELOG.md`.
 - **New framework** → add nginx + compose + env templates, docroot detection,
   installer/seed/wire branches. Keep auto-detection but allow manifest override.
-- **New backing service** → prefer per-project (compose template + allocator slot)
-  unless it's tiny and clearly shared (justify in `plan.md`). Bind `127.0.0.1`,
-  add a healthcheck, add RAM caps.
+- **New backing service** → per-project, via **compose fragment assembly**: add
+  `templates/compose/services/<svc>.yml.tmpl` (the `services:` block) and, if it
+  needs a named volume, `templates/compose/volumes/<svc>.yml.tmpl`; claim the next
+  free port offset in `ports.sh` (`_ports_write`) and render `{{<SVC>_PORT}}`; add
+  its host/port to `connection.env` (`init_write_connection`). Make the image a
+  `{{<SVC>_IMAGE}}` var fed by `_service_image` (add a `_service_image_default`
+  case) so the version is overridable — the manifest `services:` is a
+  `{ svc: "image" }` map, so `services.<svc>` is the pin (→ config `<SVC>_IMAGE`
+  → default). Users opt in by adding a `services:` entry; `harbor render <name>`
+  regenerates the stack (and migrates legacy list-format manifests). Bind
+  `127.0.0.1`, add a healthcheck, add RAM caps. (MySQL-compatible engines like
+  **MariaDB** are not a new service — they're a `services.mysql: "mariadb:…"`
+  image swap; keep the compose service named `mysql` so `harbor mysql`/`db` keep
+  working, and make engine-specific server flags conditional in `_db_command`.)
 - **New CLI tool** → add to the `tools:` catalog (name→image); never a host install.
 
 ## 7. After every change — required checklist

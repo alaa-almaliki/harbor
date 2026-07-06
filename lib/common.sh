@@ -140,18 +140,25 @@ harbor_with_lock() {
 }
 
 # --- Templating --------------------------------------------------------------
-# render <template> <out> ; substitutes {{KEY}} with the value of env var KEY.
-render() {
-  local tpl="$1" out="$2" content key val
+# render_str <template> ; substitutes {{KEY}} with the value of env var KEY and
+# prints the result to stdout (so fragments can be concatenated).
+render_str() {
+  local tpl="$1" content key val
   [ -f "$tpl" ] || die "template not found: $tpl"
-  mkdir -p "$(dirname "$out")"
   content="$(cat "$tpl")"
   while [[ "$content" =~ \{\{([A-Z_][A-Z0-9_]*)\}\} ]]; do
     key="${BASH_REMATCH[1]}"
     eval "val=\${$key-}"
     content="${content//\{\{$key\}\}/$val}"
   done
-  printf '%s\n' "$content" > "$out"
+  printf '%s\n' "$content"
+}
+
+# render <template> <out> ; substitutes {{KEY}} with the value of env var KEY.
+render() {
+  local tpl="$1" out="$2"
+  mkdir -p "$(dirname "$out")"
+  render_str "$tpl" > "$out"
 }
 
 # --- PHP version helpers -----------------------------------------------------

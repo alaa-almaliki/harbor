@@ -1,12 +1,8 @@
-# Harbor per-project stack: {{NAME}} (generated). MySQL only; loopback-bound.
-name: harbor-{{NAME}}
-
-services:
+  # Primary database (MySQL or MariaDB via services.mysql). DB_COMMAND is engine-aware.
   mysql:
     image: {{DB_IMAGE}}
     restart: unless-stopped
-    # native auth plugin so older PHP clients (7.2/7.3) can connect over TCP
-    command: ["--performance-schema=OFF", "--innodb-buffer-pool-size={{MYSQL_POOL}}", "--default-authentication-plugin=mysql_native_password"]
+    command: {{DB_COMMAND}}
     environment:
       MYSQL_DATABASE: "{{DB_NAME}}"
       MYSQL_USER: "{{DB_USER}}"
@@ -21,6 +17,3 @@ services:
       interval: 5s
       timeout: 3s
       retries: 40
-
-volumes:
-  dbdata:

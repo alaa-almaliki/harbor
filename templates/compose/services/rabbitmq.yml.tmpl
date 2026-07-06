@@ -1,0 +1,13 @@
+  rabbitmq:
+    image: {{RABBITMQ_IMAGE}}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:{{RABBITMQ_PORT}}:5672"
+      - "127.0.0.1:{{RABBITMQ_UI_PORT}}:15672"
+    volumes:
+      - mqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 30

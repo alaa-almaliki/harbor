@@ -24,10 +24,14 @@ clear_env = no
 
 php_admin_value[error_log] = {{ERRLOG}}
 php_admin_flag[log_errors] = on
-php_admin_value[memory_limit] = {{MEMORY_LIMIT}}
-php_admin_value[upload_max_filesize] = 128M
-php_admin_value[post_max_size] = 128M
-php_admin_value[max_execution_time] = 600
-; Trust *.test for server-to-server HTTPS (provider/consumer).
+; Resource tunables: pool DEFAULTS as php_value so a project can raise/lower them
+; via its manifest `php_ini:` (nginx PHP_VALUE) or ini_set(). php_admin_value would
+; lock them and silently ignore per-project overrides.
+php_value[memory_limit] = {{MEMORY_LIMIT}}
+php_value[upload_max_filesize] = 128M
+php_value[post_max_size] = 128M
+php_value[max_execution_time] = 600
+; Trust *.test for server-to-server HTTPS (provider/consumer). Kept as
+; php_admin_value — Harbor-owned paths, apps must not repoint them.
 php_admin_value[openssl.cafile] = {{CA_BUNDLE}}
 php_admin_value[curl.cainfo] = {{CA_BUNDLE}}

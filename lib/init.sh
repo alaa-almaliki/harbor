@@ -2,7 +2,8 @@
 # init.sh — provision a project's Harbor state: manifest, port/redis allocation,
 # rendered compose, connection files. Does NOT scaffold app code (that's `new`).
 
-# services line for the manifest, by framework
+# default services line for the manifest, by framework (comma-separated — the
+# manifest `services:` list, once written, is the source of truth thereafter)
 _init_services() {
   case "$1" in
     magento) echo "mysql, opensearch, rabbitmq" ;;
@@ -10,25 +11,140 @@ _init_services() {
   esac
 }
 
-# render the per-project compose file from the manifest + allocation
-init_render_compose() {
-  local name="$1" framework="$2" tmpl
-  ports_load "$name" || die "ports not allocated for $name"
-  case "$framework" in
-    magento) tmpl="$HARBOR_TEMPLATES/compose/magento.yml.tmpl" ;;
-    *)       tmpl="$HARBOR_TEMPLATES/compose/default.yml.tmpl" ;;
+# the stack's services (space-separated): manifest `services:` (map keys or list
+# items — manifest_map_keys handles both) -> framework default
+_project_services() {
+  local name="$1" framework="$2" list
+  list="$(manifest_map_keys "$(manifest_path "$name")" services)"
+  [ -n "$list" ] || list="$(_init_services "$framework" | tr ',' ' ')"
+  printf '%s' "$list"
+}
+
+# the db server command line — engine-aware. MariaDB rejects MySQL 8's
+# `--default-authentication-plugin` flag (and defaults to native auth anyway).
+_db_command() {
+  local image="$1" pool="$2"
+  case "$image" in
+    *mariadb*) printf '["--performance-schema=OFF", "--innodb-buffer-pool-size=%s"]' "$pool" ;;
+    *)         printf '["--performance-schema=OFF", "--innodb-buffer-pool-size=%s", "--default-authentication-plugin=mysql_native_password"]' "$pool" ;;
   esac
-  local ident; ident="$(db_ident "$name")"
+}
+
+# baked-in default image (pinned version) for a bundled service.
+_service_image_default() {
+  case "$1" in
+    mysql)         echo "mysql:8.0" ;;
+    opensearch)    echo "opensearchproject/opensearch:2.19.0" ;;
+    elasticsearch) echo "docker.elastic.co/elasticsearch/elasticsearch:8.15.3" ;;
+    rabbitmq)      echo "rabbitmq:3.13-management-alpine" ;;
+    meilisearch)   echo "getmeili/meilisearch:v1.12" ;;
+    *)             echo "" ;;
+  esac
+}
+
+# is the manifest `services:` a flow map ({svc: image}) rather than a list ([svc])?
+_services_is_map() {
+  local raw; raw="$(manifest_get "$(manifest_path "$1")" services "")"
+  case "$(_mf_trim "$raw")" in \{*) return 0 ;; *) return 1 ;; esac
+}
+
+# resolve a service's image: manifest `services.<svc>` (the map value) -> for the
+# db, the legacy `db.image` -> global config `<SVC>_IMAGE` -> baked-in default.
+_service_image() {
+  local name="$1" svc="$2" v="" ckey
+  ckey="$(printf '%s_IMAGE' "$svc" | tr '[:lower:]' '[:upper:]')"
+  _services_is_map "$name" && v="$(manifest_get "$(manifest_path "$name")" "services.$svc" "")"
+  [ -z "$v" ] && [ "$svc" = mysql ] && v="$(manifest_get "$(manifest_path "$name")" db.image "")"
+  [ -n "$v" ] && { printf '%s' "$v"; return 0; }
+  config_get "$ckey" "$(_service_image_default "$svc")"
+}
+
+# build the "svc: \"image\", ..." body for services: { ... }, resolving each
+# service's image at its current precedence. Args after <name> are service names.
+_services_map_body() {
+  local name="$1" svc out="" img; shift
+  for svc in "$@"; do
+    img="$(_service_image "$name" "$svc")"
+    if [ -z "$out" ]; then out="$svc: \"$img\""; else out="$out, $svc: \"$img\""; fi
+  done
+  printf '%s' "$out"
+}
+
+# migrate a legacy list-format `services:` (or `db.image`) into the explicit
+# `services: { svc: image, ... }` map, in place, preserving the rest of the
+# manifest. No-op once already a map. Lets `harbor render` upgrade old projects.
+_materialize_services() {
+  local name="$1" mf names body tmp
+  mf="$(manifest_path "$name")"
+  [ -f "$mf" ] || return 0
+  _services_is_map "$name" && return 0
+  names="$(manifest_map_keys "$mf" services)"
+  [ -n "$names" ] || return 0
+  # shellcheck disable=SC2086  # word-split the service names
+  body="$(_services_map_body "$name" $names)"
+  [ -n "$body" ] || return 0
+  tmp="$mf.tmp.$$"
+  # rewrite the services: line as a map; drop the now-redundant db.image field
+  awk -v svc="services: { $body }" '
+    /^services:/ { print svc; next }
+    /^db:/       { sub(/,[[:space:]]*image:[[:space:]]*[^},[:space:]]*/, ""); print; next }
+    { print }
+  ' "$mf" > "$tmp" && mv "$tmp" "$mf"
+  step "materialized explicit service versions in $mf"
+}
+
+# render the per-project compose file from the manifest + allocation, assembling
+# one fragment per service in `services:`.
+init_render_compose() {
+  local name="$1" framework="$2" services svc
+  ports_load "$name" || die "ports not allocated for $name"
+  # shellcheck disable=SC2046  # word-split the service list into positionals
+  set -- $(_project_services "$name" "$framework")
+  [ "$#" -gt 0 ] || die "no services resolved for $name (empty services: in manifest?)"
+  # validate every service has a fragment BEFORE truncating the output file
+  for svc in "$@"; do
+    [ -f "$HARBOR_TEMPLATES/compose/services/$svc.yml.tmpl" ] || \
+      die "unknown service '$svc' in $name → add templates/compose/services/$svc.yml.tmpl"
+  done
+  local ident image pool
+  ident="$(db_ident "$name")"
+  image="$(_service_image "$name" mysql)"
+  pool="$(config_get MYSQL_BUFFER_POOL 256M)"
   NAME="$name" \
-  DB_IMAGE="$(setting_get "$name" db.image MYSQL_IMAGE mysql:8.0)" \
+  DB_IMAGE="$image" \
+  DB_COMMAND="$(_db_command "$image" "$pool")" \
   DB_NAME="$ident" DB_USER="$ident" DB_PASS="$ident" \
   DB_ROOT_PASS="$(config_get MYSQL_ROOT_PASSWORD root)" \
   DB_PORT="$DB_PORT" \
-  MYSQL_POOL="$(config_get MYSQL_BUFFER_POOL 256M)" \
+  OPENSEARCH_IMAGE="$(_service_image "$name" opensearch)" \
   OS_HEAP="$(config_get OPENSEARCH_HEAP 512m)" \
   OPENSEARCH_PORT="$OPENSEARCH_PORT" \
+  ELASTICSEARCH_IMAGE="$(_service_image "$name" elasticsearch)" \
+  ELASTIC_PORT="$ELASTIC_PORT" \
+  ES_HEAP="$(config_get ELASTICSEARCH_HEAP 512m)" \
+  RABBITMQ_IMAGE="$(_service_image "$name" rabbitmq)" \
   RABBITMQ_PORT="$RABBITMQ_PORT" RABBITMQ_UI_PORT="$RABBITMQ_UI_PORT" \
-  render "$tmpl" "$(project_harbor_dir "$name")/docker-compose.yml"
+  MEILISEARCH_IMAGE="$(_service_image "$name" meilisearch)" \
+  MEILI_PORT="$MEILI_PORT" \
+  MEILI_MASTER_KEY="$(config_get MEILI_MASTER_KEY harbor-local-meili-master)" \
+  MEILI_MEMORY="$(config_get MEILI_INDEXING_MEMORY 512Mb)" \
+  _compose_assemble "$@" > "$(project_harbor_dir "$name")/docker-compose.yml"
+}
+
+# harbor render <name> — regenerate derived stack files (docker-compose.yml +
+# connection.env) from the manifest, WITHOUT touching the manifest itself. Run
+# after editing `services:`, then `harbor up <name>` to apply.
+cmd_render() {
+  require_name "${1-}"; local name="$1"
+  local mf; mf="$(manifest_path "$name")"
+  [ -f "$mf" ] || die "not initialized: $name → harbor init $name"
+  ports_ensure "$name" || die "ports not allocated for $name → harbor init $name"
+  ports_load "$name"
+  _materialize_services "$name"   # upgrade a legacy list-format services: in place
+  local framework; framework="$(manifest_get "$mf" framework "")"
+  init_render_compose "$name" "$framework"
+  init_write_connection "$name"
+  ok "rendered $name stack: $(_project_services "$name" "$framework") — harbor up $name to apply"
 }
 
 # Harbor-owned connection files (source of truth for `wire`, Phase 6)
@@ -57,6 +173,10 @@ OPENSEARCH_HOST=127.0.0.1
 OPENSEARCH_PORT=$OPENSEARCH_PORT
 RABBITMQ_HOST=127.0.0.1
 RABBITMQ_PORT=$RABBITMQ_PORT
+MEILISEARCH_HOST=http://127.0.0.1:$MEILI_PORT
+MEILISEARCH_KEY=$(config_get MEILI_MASTER_KEY harbor-local-meili-master)
+ELASTICSEARCH_HOST=127.0.0.1
+ELASTICSEARCH_PORT=$ELASTIC_PORT
 EOF
   cat > "$hdir/connection.txt" <<EOF
 Harbor connection info for "$name"
@@ -66,6 +186,8 @@ Harbor connection info for "$name"
   Mailpit    smtp 127.0.0.1:1025   ui http://localhost:8025
   OpenSearch 127.0.0.1:$OPENSEARCH_PORT
   RabbitMQ   amqp 127.0.0.1:$RABBITMQ_PORT   ui http://localhost:$RABBITMQ_UI_PORT
+  Meilisearch http://127.0.0.1:$MEILI_PORT   key: $(config_get MEILI_MASTER_KEY harbor-local-meili-master)
+  Elasticsearch http://127.0.0.1:$ELASTIC_PORT   (security disabled for local dev)
 EOF
 }
 
@@ -140,12 +262,14 @@ cmd_init() {
 
   ports_allocate "$name" >/dev/null
 
-  # manifest
-  local ident; ident="$(db_ident "$name")"
+  # manifest — services written as an explicit { svc: "image", ... } map so every
+  # version is visible and editable in place
+  local ident svcnames; ident="$(db_ident "$name")"
+  svcnames="$(_init_services "$framework" | tr ',' ' ')"
+  # shellcheck disable=SC2086  # word-split the service names
   FRAMEWORK="$framework" PHP_VER="$phpver" \
-  SERVICES="$(_init_services "$framework")" \
+  SERVICES_MAP="$(_services_map_body "$name" $svcnames)" \
   DB_NAME="$ident" DB_USER="$ident" DB_PASS="$ident" \
-  DB_IMAGE="$(config_get MYSQL_IMAGE mysql:8.0)" \
   render "$HARBOR_TEMPLATES/manifest/harbor.yml.tmpl" "$(manifest_path "$name")"
   [ -n "$msopt" ] && warn "multistore '$msopt' requested — add 'multistore: { mode: $msopt, stores: {} }' to the manifest"
 

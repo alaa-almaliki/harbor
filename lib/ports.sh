@@ -6,8 +6,10 @@
 # project instead gets a 4-index block on the shared instance. Persisted to
 # var/ports/<name> (KEY=VALUE). bash 3.2 safe (no associative arrays).
 #
-# Block offsets (keep < HARBOR_PORT_BLOCK):
-#   DB=0  OPENSEARCH=1  RABBITMQ=2  RABBITMQ_UI=3
+# Block offsets (keep < HARBOR_PORT_BLOCK; offsets 6-19 are free for new services):
+#   DB=0  OPENSEARCH=1  RABBITMQ=2  RABBITMQ_UI=3  MEILI=4  ELASTIC=5
+# To add an optional service, claim the next free offset in _ports_write and
+# render {{<SVC>_PORT}} in its compose fragment.
 # Redis DB indices: base = index*4 -> cache, page_cache, session, spare
 
 ports_file() { printf '%s' "$HARBOR_PORTS_DIR/$1"; }
@@ -35,6 +37,8 @@ _ports_write() {
     echo "OPENSEARCH_PORT=$(( base + 1 ))"
     echo "RABBITMQ_PORT=$(( base + 2 ))"
     echo "RABBITMQ_UI_PORT=$(( base + 3 ))"
+    echo "MEILI_PORT=$(( base + 4 ))"
+    echo "ELASTIC_PORT=$(( base + 5 ))"
     echo "REDIS_DB_CACHE=$redis"
     echo "REDIS_DB_PAGE=$(( redis + 1 ))"
     echo "REDIS_DB_SESSION=$(( redis + 2 ))"
@@ -68,6 +72,19 @@ ports_load() {
 }
 
 ports_release() { rm -f "$(ports_file "$1")"; }
+
+# Backfill a project's ports file with any slots added since it was written.
+# Ports are deterministic from the persisted HARBOR_INDEX, so re-writing is a
+# no-op except for newly-added offsets — lets an existing project adopt a new
+# optional service without re-allocating. Idempotent, lock-guarded.
+ports_ensure() {
+  local name="$1" file idx
+  file="$(ports_file "$name")"
+  [ -f "$file" ] || return 1
+  idx="$(grep -E '^HARBOR_INDEX=' "$file" 2>/dev/null | cut -d= -f2)"
+  [ -n "$idx" ] || return 1
+  harbor_with_lock "ports" _ports_write "$name" "$idx"
+}
 
 # Is a TCP port currently listening on 127.0.0.1? (best-effort, for fail-fast)
 port_in_use() {

@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Optional backing services via compose-fragment assembly.** The per-project
+  `docker-compose.yml` is now assembled from one fragment per service
+  (`templates/compose/services/<svc>.yml.tmpl` + optional `volumes/<svc>…`) driven
+  by the manifest `services:`, instead of two fixed whole-stack templates.
+  Bundled: `mysql`, `opensearch`, `elasticsearch`, `rabbitmq`, `meilisearch`. Add a
+  service by dropping a fragment + a `ports.sh` slot — no new template per combination.
+- **`services:` is an explicit `{ name: "image:tag" }` map** written by `harbor
+  init` with pinned versions, so every service's version is visible and editable in
+  place — change a value and `harbor render`, no separate key to add. The DB image
+  lives in `services.mysql` (the `db:` map is just credentials); resolution is
+  `services.<svc>` → config `<SVC>_IMAGE` → baked-in default. Legacy list-format
+  manifests (`services: [ … ]` + `db.image`) are migrated in place on the next
+  `harbor render`.
+- **Elasticsearch** opt-in service: single node, `xpack.security` disabled for
+  local dev, loopback `127.0.0.1:<base+5>`, heap-capped (`ELASTICSEARCH_HEAP`),
+  healthcheck; host/port in `connection.txt`.
+- **Meilisearch** opt-in service: loopback `127.0.0.1:<base+4>`, healthcheck,
+  indexing-memory cap; host + master key written to `connection.txt`/`connection.env`
+  for Laravel Scout. `ports_ensure` backfills new port slots so existing projects
+  can adopt a service via `harbor render` without re-allocating.
+- `harbor render <name>`: regenerate a project's `docker-compose.yml` +
+  `connection.env` from the manifest — the missing "edit the manifest, re-run the
+  command" path for `services:` version changes (also materializes a legacy
+  list-format `services:` into the map).
+- **MariaDB support** as a MySQL-compatible image swap on the `mysql` entry (e.g.
+  `services: { mysql: "mariadb:11.4" }`). The compose service stays named `mysql`
+  (so `harbor mysql`/`db` keep working) and Harbor emits an engine-aware server
+  command — MariaDB drops MySQL 8's `--default-authentication-plugin` flag, which
+  it rejects.
 - Per-project **scripts** dir: `projects/<name>/.harbor/scripts/`. Executables
   dropped there are on `PATH` — under the project's pinned PHP — for
   `harbor run <name> <script>` and `harbor shell <name>`, so a `scripts/invoice`
@@ -23,6 +52,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flag only.)*
 - `.shellcheckrc` (sourced-library false positives) — codebase is now
   shellcheck-clean.
+
+### Changed
+- Templating: added `render_str` (renders a template to stdout) so compose
+  fragments can be concatenated; `render` now wraps it. Existing `render` calls
+  are unchanged.
+
+### Fixed
+- Per-project `php_ini:` resource limits now actually apply. The FPM pool set
+  `memory_limit` / `upload_max_filesize` / `post_max_size` / `max_execution_time`
+  as `php_admin_value`, which PHP-FPM does not let a site's `PHP_VALUE` (how the
+  manifest `php_ini:` is injected) or `ini_set()` override — so those keys were
+  silently clamped to the pool default. They are now `php_value`, keeping the
+  pool value (e.g. `PHP_MEMORY_LIMIT`, default 2G) as the default a project can
+  raise/lower. `error_log` and the CA-bundle paths stay `php_admin_value`
+  (Harbor-owned/security). Run `harbor php sync` to apply to running pools.
 
 ### Added
 - Committed Claude Code **Agent Skills** (`.claude/skills/`): `harbor-new-project`,

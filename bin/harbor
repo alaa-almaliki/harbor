@@ -94,6 +94,7 @@ Host & lifecycle:
 Projects:
   new <name> <framework>    Scaffold + init + up + wire + install + link + open
   init <name> [fw]          Allocate + write manifest (--existing for adopted code)
+  render <name>             Regenerate compose+connection from the manifest (after editing services: versions)
   link | unlink | wire <name>
   up | down | restart | destroy | logs <name>
   open <name>               Open https://<name>.test
@@ -131,6 +132,7 @@ main() {
     link) cmd_link "$@" ;;
     unlink) cmd_unlink "$@" ;;
     init) cmd_init "$@" ;;
+    render) cmd_render "$@" ;;
     up) cmd_up "$@" ;;
     down) cmd_down "$@" ;;
     restart) cmd_restart "$@" ;;

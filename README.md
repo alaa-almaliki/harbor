@@ -281,8 +281,8 @@ docroot: pub                # override the auto-detected web root (optional)
 domains: [shop.test]        # extra hostnames beyond <name>.test (optional)
 extensions: [imagick, redis]    # required PHP extensions (doctor validates)
 php_ini: { memory_limit: 2G, "opcache.validate_timestamps": 1 }
-services: [mysql, opensearch, rabbitmq]   # per-project stack
-db:        { name: shop, user: shop, password: shop, image: mysql:8.0 }
+services: { mysql: "mysql:8.0", opensearch: "opensearchproject/opensearch:2.19.0", rabbitmq: "rabbitmq:3.13-management-alpine" }
+db:        { name: shop, user: shop, password: shop }   # image lives in services.mysql
 multistore: { mode: domain, stores: { de: de.shop.test, fr: fr.shop.test } }
 import:    { strip_definers: true, rules: import-rules }
 remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }
@@ -396,6 +396,52 @@ Customizations supported per project:
   the same PHP version can differ.
 - **Extensions** — `extensions:` is validated by `harbor doctor <name>`.
 
+### Optional backing services
+
+Each project's stack is assembled from the manifest `services:` map — one compose
+**fragment** per service — where each entry is `<name>: "<image:tag>"`, so every
+version is explicit and editable in place. Bundled: `mysql`, `opensearch`,
+`elasticsearch`, `rabbitmq`, `meilisearch` (a plain project defaults to just
+`mysql`; Magento to mysql + opensearch + rabbitmq). `harbor init` writes the map
+with pinned defaults:
+
+```yaml
+services: { mysql: "mysql:8.0", meilisearch: "getmeili/meilisearch:v1.12" }
+```
+To **change a version**, edit the value; to **add** a service, add a line; then:
+```bash
+harbor render <name>              # regenerate docker-compose.yml + connection.env
+harbor up <name>                  # apply
+```
+A machine-wide default for a fresh project's pin comes from `~/.config/harbor/config`
+(`OPENSEARCH_IMAGE`, `ELASTICSEARCH_IMAGE`, `RABBITMQ_IMAGE`, `MEILISEARCH_IMAGE`,
+`MYSQL_IMAGE` — uppercased service name + `_IMAGE`).
+
+**MariaDB** isn't a separate service — it's a MySQL-compatible image swap on the
+`mysql` entry, so `harbor mysql`/`db import`/wiring keep working:
+
+```yaml
+services: { mysql: "mariadb:11.4" }   # then: harbor render <name> && harbor up <name>
+```
+
+Harbor emits an engine-aware server command (MariaDB doesn't take MySQL 8's
+`--default-authentication-plugin`), so the swap boots cleanly.
+
+Meilisearch's host + key land in `.harbor/connection.txt` (Laravel Scout:
+`SCOUT_DRIVER=meilisearch`, `MEILISEARCH_HOST`, `MEILISEARCH_KEY`).
+
+**Adding another service** (e.g. Postgres, Valkey): drop a
+`templates/compose/services/<svc>.yml.tmpl` (loopback bind, healthcheck, RAM cap,
+`{{<SVC>_IMAGE}}` for the version) and, if it has a named volume,
+`templates/compose/volumes/<svc>.yml.tmpl`; add a `_service_image_default` case,
+claim the next free port offset in `lib/ports.sh` (`_ports_write`), and add its
+host/port to `connection.env`. Then `services: { <svc>: "…" }` picks it up.
+(`meilisearch` is the worked example.)
+
+> Projects created before the map format (`services: [ … ]` + `db.image`) are
+> migrated in place the next time you run `harbor render` — the pinned versions
+> are filled in and the redundant `db.image` folded into `services.mysql`.
+
 ---
 
 ## Containerized CLI tools (no host installs)
@@ -475,6 +521,7 @@ when your client/IDE sends the trigger.
 |---------|-------------|
 | `harbor new <name> <framework>` | Scaffold + init + up + wire + install + link + open. |
 | `harbor init <name> [framework]` | Allocate ports, write manifest (`--existing` for adopted code). |
+| `harbor render <name>` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:` versions); materializes a legacy list-format `services:` into the explicit map. |
 | `harbor link <name> [--wildcard]` | Create the `https://<name>.test` vhost. |
 | `harbor unlink <name>` | Remove the vhost. |
 | `harbor wire <name> [--print]` | Inject DB/Redis/mail config into the app (surgical, never clobbers). |

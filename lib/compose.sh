@@ -24,6 +24,29 @@ shared_down() {
 # ── per-project stacks ──────────────────────────────────────────────────────
 project_compose_file() { printf '%s' "$(project_harbor_dir "$1")/docker-compose.yml"; }
 
+# _compose_assemble <svc...> — print a docker-compose.yml on stdout by concatenating
+# per-service fragments (templates/compose/services/<svc>.yml.tmpl) under one
+# `services:` header, then their volume decls under one `volumes:` footer. Render
+# vars ({{DB_PORT}} …) must be set by the caller. Callers validate service names
+# first (see init_render_compose) so this never emits a partial file mid-run.
+_compose_assemble() {
+  local svc frag any=0
+  render_str "$HARBOR_TEMPLATES/compose/header.yml.tmpl"
+  for svc in "$@"; do
+    frag="$HARBOR_TEMPLATES/compose/services/$svc.yml.tmpl"
+    [ -f "$frag" ] || die "unknown service '$svc' → add templates/compose/services/$svc.yml.tmpl"
+    render_str "$frag"
+  done
+  for svc in "$@"; do [ -f "$HARBOR_TEMPLATES/compose/volumes/$svc.yml.tmpl" ] && any=1; done
+  if [ "$any" -eq 1 ]; then
+    printf 'volumes:\n'
+    for svc in "$@"; do
+      frag="$HARBOR_TEMPLATES/compose/volumes/$svc.yml.tmpl"
+      [ -f "$frag" ] && render_str "$frag"
+    done
+  fi
+}
+
 project_compose() {
   local name="$1"; shift
   local f; f="$(project_compose_file "$name")"

@@ -27,7 +27,7 @@ dnsmasq; mkcert (CA installed); Docker 29.4 + compose v2; Composer 2.9; node via
 | **Service topology** | **Per-project compose stacks**; **manual `harbor up`/`down` only** (no auto-stop). |
 | **Shared services** | **Mailpit** (SMTP `127.0.0.1:1025`, UI `:8025`) and **Redis** (`127.0.0.1:6379`), one shared stack, always on. |
 | **Redis hygiene** | `databases 256`, **persistence off** (`--save "" --appendonly no`). Per-project DB-index block + key prefix. **Flush-on-down**: `harbor down <name>` runs `FLUSHDB` on that project's indices only. |
-| **DB engine** | **MySQL 8.0** for every framework (MariaDB dropped). Per-project override via manifest `db.image` (e.g. `mysql:8.4`). |
+| **DB engine** | **MySQL 8.0** default; per-project override (incl. MariaDB) via the `mysql` entry in the manifest `services:` map (e.g. `mysql: "mariadb:11.4"`). |
 | **Domains** | `.test` via dnsmasq `address=/test/127.0.0.1` (covers all sub-levels). |
 | **TLS** | One shared cert whose SAN list (`var/cert-sans`) carries an **exact `<name>.test` per linked site** (+ `*.<name>.test` for subdomain stores). A bare `*.test` is kept only as best-effort — **Secure Transport / browsers reject wildcards directly under the reserved `.test` TLD**, so trust comes from the exact SANs. `harbor link` adds the host's SAN and reissues; `harbor secure` rebuilds. |
 | **Server-to-server TLS** | Harbor builds a combined CA bundle (`certs/harbor-ca-bundle.pem` = system bundle + mkcert root CA) and points host PHP at it (`openssl.cafile` / `curl.cainfo`), so projects can call each other over `https://<name>.test` (provider/consumer) with TLS actually verifying — no `verify=false` hacks. |
@@ -99,7 +99,7 @@ domains: [shop.test, myclient.com]   # extra server_names beyond <name>.test
 extensions: [imagick, redis]         # required PHP extensions (doctor validates)
 tools:     [wkhtmltopdf, ghostscript]   # containerized CLI tools (shimmed; no host install)
 php_ini:   { memory_limit: 2G, "opcache.validate_timestamps": 1 }   # per-project ini
-services: [mysql, opensearch, rabbitmq]   # per-project stack (redis/mailpit are shared)
+services: { mysql: "mysql:8.0", opensearch: "opensearchproject/opensearch:2.19.0", rabbitmq: "rabbitmq:3.13-management-alpine" }   # name: image (redis/mailpit shared)
 db:        { name: shop, user: shop, password: shop, image: mysql:8.0 }
 multistore: { mode: domain, stores: { de: de.shop.test, fr: fr.shop.test } }
 import:    { strip_definers: true, rules: import-rules }   # hooks live in .harbor/hooks/
@@ -143,7 +143,8 @@ harbor/
     nginx/snippets/*.conf.tmpl   # shared fastcgi / ssl snippets
     dnsmasq/harbor.conf.tmpl     # own dnsmasq instance (port 5354)
     launchd/{nginx,php,dnsmasq}.plist.tmpl
-    compose/{shared,default,magento}.yml.tmpl
+    compose/shared.yml.tmpl · compose/header.yml.tmpl
+    compose/services/<svc>.yml.tmpl · compose/volumes/<svc>.yml.tmpl   # per-service fragments
     env/{laravel,symfony,codeigniter}.tmpl
   etc/                           # RENDERED, Harbor-OWNED config (source of truth)
     nginx/nginx.conf             # included by Harbor's nginx only
@@ -215,6 +216,7 @@ harbor php sync                        # re-create pools after brew install/unin
 harbor xdebug on|off|status
 harbor new <name> <framework>         # scaffold + init + up + wire + install + link + open
 harbor init <name> [framework] [--existing] [--multistore domain|path] [--php <ver>]
+harbor render <name>                  # regenerate compose+connection from the manifest (services: versions)
 harbor link <name> [--wildcard]       # nginx vhost <name>.test
 harbor unlink <name>
 harbor wire <name> [--print]          # inject config into the app (surgical)
@@ -346,9 +348,14 @@ rendered into Harbor's `etc/`; nothing is written into brew dirs):
   manifest + framework template with host ports bound to `127.0.0.1`; write
   `compose.env`, `connection.env/.txt`. Works on **existing** code with
   `--existing` (no scaffold).
-- Compose by framework (driven by manifest `services`):
-  - plain / Laravel / Symfony / CodeIgniter → **mysql** only (uses shared redis + mailpit)
-  - Magento → **mysql + opensearch + rabbitmq**
+- Compose is **assembled from fragments** driven by the manifest `services:` list —
+  one `templates/compose/services/<svc>.yml.tmpl` per service under a shared
+  `header` + `volumes` footer. Defaults: plain/Laravel/Symfony/CodeIgniter →
+  **mysql** only (shared redis + mailpit); Magento → **mysql + opensearch +
+  rabbitmq**. Edit `services:` and `harbor render <name>` to change the stack.
+  `mysql` is the primary-DB slot; each entry's value is its image, so a
+  MySQL-compatible engine (MariaDB) is a `mysql: "mariadb:11.4"` swap, with an
+  engine-aware server command (`_db_command`).
 - **Invariant:** containers mount only their own data volumes — **never project
   source**. PHP on the host reads the code natively (fast FS, native Xdebug).
 - **Invariant:** all ports/UIs publish to `127.0.0.1` only (never `0.0.0.0`) — no

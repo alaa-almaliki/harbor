@@ -1,8 +1,10 @@
 # Harbor project manifest — committable single source of truth. Edit freely.
 framework: {{FRAMEWORK}}
 php: "{{PHP_VER}}"
-services: [{{SERVICES}}]
-db: { name: {{DB_NAME}}, user: {{DB_USER}}, password: {{DB_PASS}}, image: {{DB_IMAGE}} }
+# services: each entry is <name>: "<image:tag>". Bump a version by editing the
+# value; use MariaDB via  mysql: "mariadb:11.4" ; add a service with a new line.
+services: { {{SERVICES_MAP}} }
+db: { name: {{DB_NAME}}, user: {{DB_USER}}, password: {{DB_PASS}} }
 # Optional: node: "20" · docroot: pub · domains: [x.test] · extensions: [imagick]
 # php_ini: { memory_limit: 2G } · tools: [wkhtmltopdf] · multistore: { mode: domain, stores: {} }
 # import: { strip_definers: true } · remote: { host: user@host, db: name, media: /path }
