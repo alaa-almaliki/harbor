@@ -514,6 +514,7 @@ when your client/IDE sends the trigger.
 |---------|-------------|
 | `harbor php [<ver>]` | Show pool status / set the default version for new sites. |
 | `harbor php sync` | Re-create pools after `brew install`/uninstall of a `php@x`. |
+| `harbor php use <ver>` | Switch the **brew-linked** CLI `php` (plain terminal / IDE / global composer): unlinks the current version, links `<ver>`. Independent of Harbor's per-project pinning — `harbor run`/nginx still use each project's own version. |
 | `harbor xdebug on\|off\|status` | Toggle Xdebug across pools. |
 
 ### Projects

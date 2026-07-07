@@ -95,11 +95,52 @@ php_status() {
 }
 
 # harbor php [<ver>|sync]
+# brew formula currently providing `$(brew --prefix)/bin/php` (php@8.4 or php),
+# by resolving the symlink into the Cellar. Empty if nothing is linked.
+_php_current_formula() {
+  local t; t="$(readlink "$BREW_PREFIX/bin/php" 2>/dev/null)" || return 1
+  case "$t" in
+    */Cellar/*) t="${t#*/Cellar/}"; printf '%s' "${t%%/*}" ;;   # php@8.4  |  php
+    *) return 1 ;;
+  esac
+}
+
+# harbor php use <ver> — switch the brew-linked CLI `php` (what you get in a plain
+# terminal / IDE / global composer). Unlinks the current version and links <ver>.
+# Note: this is separate from Harbor's per-project pinning — `harbor run`/nginx
+# always use each project's own version regardless of what's linked here.
+php_use() {
+  local ver="${1-}"
+  [ -n "$ver" ] || die "usage: harbor php use <ver>"
+  valid_php_version "$ver" || die "unsupported version '$ver' (have: $HARBOR_PHP_VERSIONS)"
+  [ -x "$(php_cli_bin "$ver")" ] || die "php@$ver not installed → brew install php@$ver"
+  need_cmd brew
+
+  local cur; cur="$(_php_current_formula || true)"
+  if [ -n "$cur" ]; then step "unlink $cur"; brew unlink "$cur" >/dev/null 2>&1 || true; fi
+
+  step "link php@$ver"
+  if ! brew link --overwrite --force "php@$ver" >/dev/null 2>&1; then
+    # the newest version may only exist as the unversioned `php` formula
+    case " $(brew list --versions php 2>/dev/null) " in
+      *" php $ver."*|*" php $ver "*) brew link --overwrite --force php >/dev/null 2>&1 || true ;;
+    esac
+  fi
+
+  local now; now="$("$BREW_PREFIX/bin/php" -v 2>/dev/null | head -1)"
+  case "$now" in
+    "PHP $ver."*) ok "linked php CLI -> $now" ;;
+    *) die "link didn't take (php -v: ${now:-none}) — try: brew link --overwrite --force php@$ver" ;;
+  esac
+  step "open a new terminal (or run 'hash -r') if your shell still resolves the old php"
+}
+
 cmd_php() {
   local arg="${1-}"
   case "$arg" in
     "")   php_status ;;
     sync) php_sync ;;
+    use)  shift; php_use "${1-}" ;;
     *)
       valid_php_version "$arg" || die "unsupported version '$arg' (have: $HARBOR_PHP_VERSIONS)"
       [ -x "$(php_fpm_bin "$arg")" ] || die "php@$arg not installed → brew install php@$arg"

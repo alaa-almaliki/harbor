@@ -22,7 +22,8 @@ _harbor() {
     COMPREPLY=(\$(compgen -W "\$cmds" -- "\$cur")); return
   fi
   case "\$prev" in
-    php) COMPREPLY=(\$(compgen -W "$HARBOR_PHP_VERSIONS sync" -- "\$cur")); return ;;
+    php) COMPREPLY=(\$(compgen -W "$HARBOR_PHP_VERSIONS sync use" -- "\$cur")); return ;;
+    use) COMPREPLY=(\$(compgen -W "$HARBOR_PHP_VERSIONS" -- "\$cur")); return ;;
     xdebug) COMPREPLY=(\$(compgen -W "on off status" -- "\$cur")); return ;;
     logs) COMPREPLY=(\$(compgen -W "clear nginx php dnsmasq \$(ls \"$HARBOR_PROJECTS\" 2>/dev/null)" -- "\$cur")); return ;;
     db) COMPREPLY=(\$(compgen -W "create drop backup import pull" -- "\$cur")); return ;;
@@ -43,7 +44,8 @@ _harbor() {
   cmds=(${_HARBOR_CMDS})
   if (( CURRENT == 2 )); then compadd \$cmds; return; fi
   case "\${words[CURRENT-1]}" in
-    php) compadd ${HARBOR_PHP_VERSIONS} sync; return ;;
+    php) compadd ${HARBOR_PHP_VERSIONS} sync use; return ;;
+    use) compadd ${HARBOR_PHP_VERSIONS}; return ;;
     xdebug) compadd on off status; return ;;
     logs) compadd clear nginx php dnsmasq \$(ls "$HARBOR_PROJECTS" 2>/dev/null); return ;;
     db) compadd create drop backup import pull; return ;;

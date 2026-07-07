@@ -75,6 +75,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unchanged.
 
 ### Added
+- `harbor php use <ver>`: switch the **brew-linked** CLI `php` (what a plain
+  terminal / IDE / global composer resolves) — unlinks the currently-linked
+  version and `brew link --overwrite --force`s the requested one, verifying `php
+  -v` afterwards. Separate from Harbor's per-project pinning: `harbor run`/nginx
+  always use each project's own version regardless of what's linked here. (Touches
+  brew's own link symlinks only — reversible via another `use`; no config-dir
+  writes.)
 - `harbor db import --force` (also honored by `db pull`): pass `--force` to
   `mysql` so it skips statements the server rejects and continues, instead of
   aborting the whole load. Unblocks prod dumps that `INSERT` explicit values into
