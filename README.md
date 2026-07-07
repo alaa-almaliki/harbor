@@ -565,7 +565,7 @@ when your client/IDE sends the trigger.
 | `harbor db create <name> [db] [user] [pass]` | Create DB + user (defaults: db=project, user=db, pass=db). |
 | `harbor db drop <name> [db]` | Drop a database (confirm-gated). |
 | `harbor db backup <name> [db] [file]` | Dump to `backups/db/<name>/<timestamp>.sql.gz`. |
-| `harbor db import <name> <file> [db]` | Hookable import pipeline (see above). |
+| `harbor db import <name> <file> [db]` | Hookable import pipeline (see above). `--force` skips server-rejected statements (e.g. generated-column inserts) instead of aborting. |
 | `harbor db pull <name>` | Pull a remote dump straight into the import pipeline. |
 | `harbor media pull <name>` | rsync remote media/storage. |
 | `harbor redis flush [<name>]` | Flush a project's Redis indices (or the whole instance). |

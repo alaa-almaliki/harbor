@@ -71,10 +71,10 @@ _run_hooks() {
   done
 }
 
-# harbor db import <name> <file> [db] [--no-backup --keep-definers --no-hooks --no-rules --stream-replace --reconfigure --replace OLD=NEW]
+# harbor db import <name> <file> [db] [--no-backup --keep-definers --no-hooks --no-rules --stream-replace --reconfigure --force --replace OLD=NEW]
 db_import() {
   require_name "${1-}"; local name="$1"; shift
-  local file="" db="" nobackup=0 keepdef=0 nohooks=0 norules=0 streamrep=0 reconf=0
+  local file="" db="" nobackup=0 keepdef=0 nohooks=0 norules=0 streamrep=0 reconf=0 force=0
   local -a replaces=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -84,6 +84,7 @@ db_import() {
       --no-rules) norules=1; shift ;;
       --stream-replace) streamrep=1; shift ;;
       --reconfigure) reconf=1; shift ;;
+      --force) force=1; shift ;;
       --replace) replaces+=("${2-}"); shift 2 ;;
       --*) die "unknown option: $1" ;;
       *) if [ -z "$file" ]; then file="$1"; else db="$1"; fi; shift ;;
@@ -123,7 +124,9 @@ db_import() {
   # 2. strip DEFINER
   if [ "$keepdef" = 0 ]; then
     step "stripping DEFINER clauses"
-    sed -i '' -E 's/DEFINER=`[^`]*`@`[^`]*`//g; s/DEFINER=[^ ]*@[^ ]* //g; s/SQL SECURITY DEFINER//g' "$work"
+    # LC_ALL=C: process the dump byte-wise so BSD sed doesn't choke ("illegal
+    # byte sequence") on non-UTF-8 bytes in latin1/binary column data.
+    LC_ALL=C sed -i '' -E 's/DEFINER=`[^`]*`@`[^`]*`//g; s/DEFINER=[^ ]*@[^ ]* //g; s/SQL SECURITY DEFINER//g' "$work"
   fi
 
   # build rules file (import-rules + --replace)
@@ -162,8 +165,13 @@ db_import() {
   fi
 
   # 4. load
+  # --force: skip statements the server rejects (e.g. explicit values for a
+  # generated column, like Laravel Pulse's key_hash) instead of aborting.
+  local forceflag=""
+  [ "$force" = 1 ] && { forceflag="--force"; step "loading with --force (rejected statements skipped, not aborted)"; }
   log "loading into '$db' (FK checks off)"
-  { echo "SET FOREIGN_KEY_CHECKS=0;"; cat "$work"; echo "SET FOREIGN_KEY_CHECKS=1;"; } | _db_mysql "$name" "$db"
+  # shellcheck disable=SC2086
+  { echo "SET FOREIGN_KEY_CHECKS=0;"; cat "$work"; echo "SET FOREIGN_KEY_CHECKS=1;"; } | _db_mysql "$name" $forceflag "$db"
 
   # 5. serialized-safe search/replace (post-load), unless stream-replace already did it
   if [ "$streamrep" = 0 ] && [ -s "$rulesf" ]; then

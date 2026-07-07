@@ -74,7 +74,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fragments can be concatenated; `render` now wraps it. Existing `render` calls
   are unchanged.
 
+### Added
+- `harbor db import --force` (also honored by `db pull`): pass `--force` to
+  `mysql` so it skips statements the server rejects and continues, instead of
+  aborting the whole load. Unblocks prod dumps that `INSERT` explicit values into
+  a **generated column** (e.g. Laravel Pulse's `pulse_aggregates.key_hash` →
+  `ERROR 3105`); the offending rows are skipped (those tables land empty).
+
 ### Fixed
+- `harbor db import`/`db pull`: DEFINER stripping no longer dies with
+  `sed: RE error: illegal byte sequence` on dumps containing non-UTF-8 bytes
+  (latin1/binary column data). The DEFINER `sed` now runs under `LC_ALL=C` so BSD
+  sed processes the dump byte-wise (matching the serialized-safe replace step,
+  which already did).
 - Per-project `php_ini:` resource limits now actually apply. The FPM pool set
   `memory_limit` / `upload_max_filesize` / `post_max_size` / `max_execution_time`
   as `php_admin_value`, which PHP-FPM does not let a site's `PHP_VALUE` (how the
