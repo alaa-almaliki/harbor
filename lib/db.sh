@@ -17,21 +17,56 @@ _db_up_check() {
   project_compose "$1" ps -q mysql 2>/dev/null | grep -q . || die "stack not running — run: harbor up $1"
 }
 
-# harbor db create <name> [db] [user] [pass]
-db_create() {
-  require_name "${1-}"; local name="$1"; _db_load "$name"; _db_up_check "$name"
-  local db user pass ident pesc; ident="$(db_ident "$name")"
-  db="${2:-$ident}"; user="${3:-$db}"; pass="${4:-$db}"
-  db="$(db_ident "$db")"; user="$(db_ident "$user")"   # db_ident validates -> injection-safe
-  # escape the password for a single-quoted SQL literal (\ then ') — MySQL default mode
-  pesc="${pass//\\/\\\\}"; pesc="${pesc//\'/\'\'}"
-  log "creating database '$db' + user '$user'"
-  _db_mysql "$name" <<SQL
+# Shared SQL/dump helpers (used by db.sh + sandbox.sh). Identifier validation is
+# db_ident (common.sh); these are the DB-domain emitters.
+
+# Escape a password for a single-quoted SQL literal (\ then '), MySQL default mode.
+sql_quote_pass() { local p="$1"; p="${p//\\/\\\\}"; printf '%s' "${p//\'/\'\'}"; }
+
+# Decompress a dump ($1) to a working file ($2), by extension: .sql.gz/.gz, .zip,
+# or plain copy.
+_db_decompress() {
+  case "$1" in
+    *.sql.gz|*.gz) gunzip -c "$1" > "$2" ;;
+    *.zip)         unzip -p "$1" > "$2" ;;
+    *)             cp "$1" "$2" ;;
+  esac
+}
+
+# Emit a dump file ($1) wrapped so foreign-key checks are off during load (lets
+# out-of-order rows/constraints load cleanly). Pipe into a mysql runner.
+_fk_wrapped() { echo "SET FOREIGN_KEY_CHECKS=0;"; cat "$1"; echo "SET FOREIGN_KEY_CHECKS=1;"; }
+
+# Emit idempotent SQL to (re)provision a database + user with a password. The
+# ALTER USER line ensures the password matches the requested one even when the
+# user already existed (CREATE USER IF NOT EXISTS alone would keep the old one).
+# db/user must be pre-validated with db_ident; pass is free-form (escaped here).
+sql_create_db_user() {
+  local db="$1" user="$2" pass="$3" pesc; pesc="$(sql_quote_pass "$pass")"
+  cat <<SQL
 CREATE DATABASE IF NOT EXISTS \`$db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '$user'@'%' IDENTIFIED BY '$pesc';
+ALTER USER '$user'@'%' IDENTIFIED BY '$pesc';
 GRANT ALL PRIVILEGES ON \`$db\`.* TO '$user'@'%';
 FLUSH PRIVILEGES;
 SQL
+}
+
+# Strip DEFINER=/SQL SECURITY DEFINER from a dump file in place so a missing prod
+# user can't break the import. LC_ALL=C: process byte-wise so BSD sed doesn't
+# choke ("illegal byte sequence") on non-UTF-8 bytes in latin1/binary columns.
+strip_definers() {
+  LC_ALL=C sed -i '' -E 's/DEFINER=`[^`]*`@`[^`]*`//g; s/DEFINER=[^ ]*@[^ ]* //g; s/SQL SECURITY DEFINER//g' "$1"
+}
+
+# harbor db create <name> [db] [user] [pass]
+db_create() {
+  require_name "${1-}"; local name="$1"; _db_load "$name"; _db_up_check "$name"
+  local db user pass ident; ident="$(db_ident "$name")"
+  db="${2:-$ident}"; user="${3:-$db}"; pass="${4:-$db}"
+  db="$(db_ident "$db")"; user="$(db_ident "$user")"   # db_ident validates -> injection-safe
+  log "creating database '$db' + user '$user'"
+  sql_create_db_user "$db" "$user" "$pass" | _db_mysql "$name"
   ok "db '$db' ready (user '$user')"
 }
 
@@ -115,18 +150,12 @@ db_import() {
   trap "rm -rf '$tmpd'" EXIT
   local work="$tmpd/dump.sql"
   log "decompressing $file"
-  case "$file" in
-    *.sql.gz|*.gz) gunzip -c "$file" > "$work" ;;
-    *.zip) unzip -p "$file" > "$work" ;;
-    *) cp "$file" "$work" ;;
-  esac
+  _db_decompress "$file" "$work"
 
   # 2. strip DEFINER
   if [ "$keepdef" = 0 ]; then
     step "stripping DEFINER clauses"
-    # LC_ALL=C: process the dump byte-wise so BSD sed doesn't choke ("illegal
-    # byte sequence") on non-UTF-8 bytes in latin1/binary column data.
-    LC_ALL=C sed -i '' -E 's/DEFINER=`[^`]*`@`[^`]*`//g; s/DEFINER=[^ ]*@[^ ]* //g; s/SQL SECURITY DEFINER//g' "$work"
+    strip_definers "$work"
   fi
 
   # build rules file (import-rules + --replace)
@@ -171,7 +200,7 @@ db_import() {
   [ "$force" = 1 ] && { forceflag="--force"; step "loading with --force (rejected statements skipped, not aborted)"; }
   log "loading into '$db' (FK checks off)"
   # shellcheck disable=SC2086
-  { echo "SET FOREIGN_KEY_CHECKS=0;"; cat "$work"; echo "SET FOREIGN_KEY_CHECKS=1;"; } | _db_mysql "$name" $forceflag "$db"
+  _fk_wrapped "$work" | _db_mysql "$name" $forceflag "$db"
 
   # 5. serialized-safe search/replace (post-load), unless stream-replace already did it
   if [ "$streamrep" = 0 ] && [ -s "$rulesf" ]; then

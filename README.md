@@ -327,7 +327,7 @@ harbor db sandbox list                         # what's in there
 harbor db sandbox backup test                  # -> backups/db/sandbox/
 harbor db sandbox restore test dump.sql.gz     # load a dump (.sql/.gz/.zip)
 harbor db sandbox console [test]               # interactive mysql shell
-harbor db sandbox drop test                    # drop one database
+harbor db sandbox drop test [user]             # drop a database (+ its user)
 harbor db sandbox down | destroy               # stop (keep data) | drop the volume
 harbor db sandbox status
 ```

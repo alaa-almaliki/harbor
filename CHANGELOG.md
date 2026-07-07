@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`harbor db sandbox <sub>`: a project-independent scratch MySQL** on
   `127.0.0.1:3306` for testing and checking things out, with its own lifecycle so
   you can create and destroy throwaway databases without attaching them to a
-  project. Subcommands: `create <db> [user] [pass]`, `drop <db>`, `list`,
+  project. Subcommands: `create <db> [user] [pass]`, `drop <db> [user]`, `list`,
   `backup <db> [file]`, `restore <db> <file>`, `console [db]`, `up`, `down`,
   `destroy`, `status`. A Harbor-owned singleton stack (`docker/sandbox.yml`, from
   `templates/compose/sandbox.yml.tmpl`) — loopback-only, RAM-capped, lazily started
@@ -84,6 +84,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Templating: added `render_str` (renders a template to stdout) so compose
   fragments can be concatenated; `render` now wraps it. Existing `render` calls
   are unchanged.
+
+### Fixed
+- **Containerized tool shims now work with entrypoint-based images.** The generated
+  `.harbor/bin/<bin>` shim appended the binary name as a command argument, which
+  double-invoked images that set the binary as their `ENTRYPOINT` (wkhtmltopdf,
+  pandoc, ffmpeg, ghostscript) — e.g. `wkhtmltopdf wkhtmltopdf …`, misparsing the
+  first real argument as an input URL. Shims now default to
+  `docker run --entrypoint <bin>` so the binary runs once. Images whose entrypoint
+  does required init (s6-overlay wrappers like `linuxserver/libreoffice`) instead
+  use `mode: command` — the binary runs as the container CMD *through* the image's
+  `/init`, so it isn't bypassed. The catalog carries the mode; override per tool
+  with manifest `tools.<name>.mode: entrypoint|command`. Re-run
+  `harbor tools sync <name>` to regenerate existing shims.
+- **`wkhtmltopdf` catalog image tag corrected** to `surnet/alpine-wkhtmltopdf:3.23.4-0.12.6-full`;
+  the previous `3.0.1-0.12.6-full` tag does not exist on Docker Hub (pull 404'd).
 
 ### Added
 - `harbor php use <ver>`: switch the **brew-linked** CLI `php` (what a plain

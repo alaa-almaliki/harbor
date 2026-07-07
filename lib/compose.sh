@@ -4,6 +4,10 @@
 HARBOR_SHARED_COMPOSE="$HARBOR_DOCKER/docker-compose.yml"
 HARBOR_SHARED_REDIS="harbor-shared-redis-1"   # container name from shared.yml (name: harbor-shared)
 
+# die unless the Docker daemon is reachable (shared by every stack that shells to
+# `docker compose` — shared, per-project, and the sandbox)
+require_docker() { docker info >/dev/null 2>&1 || die "docker daemon not running — start Docker/OrbStack"; }
+
 shared_render() {
   mkdir -p "$HARBOR_DOCKER"
   render "$HARBOR_TEMPLATES/compose/shared.yml.tmpl" "$HARBOR_SHARED_COMPOSE"
@@ -11,7 +15,7 @@ shared_render() {
 
 shared_up() {
   shared_render
-  docker info >/dev/null 2>&1 || die "docker daemon not running — start Docker/OrbStack"
+  require_docker
   step "starting shared stack (mailpit :1025/:8025 + redis :6379)"
   docker compose -f "$HARBOR_SHARED_COMPOSE" up -d >/dev/null
 }
@@ -54,13 +58,13 @@ project_compose() {
   docker compose -f "$f" "$@"
 }
 
-# block until all containers with a healthcheck report healthy
-_wait_ready() {
-  local name="$1" max="${2:-90}" i=0 ids st pend
-  ids="$(project_compose "$name" ps -q 2>/dev/null)" || return 0
+# Poll until every given container id reports healthy (a container with no
+# healthcheck counts as ready). $1 = whitespace-separated ids, $2 = max tries
+# (2s each). Emits progress dots; returns 1 on timeout. Shared by project stacks
+# and the sandbox (lib/sandbox.sh) — the caller prints the intro + result line.
+_wait_healthy_ids() {
+  local ids="$1" max="${2:-90}" i=0 st pend states
   [ -n "$ids" ] || return 0
-  printf '   waiting for services to be healthy'
-  local states
   while [ "$i" -lt "$max" ]; do
     # one docker inspect for all containers; a container with no healthcheck -> "none"
     # shellcheck disable=SC2086
@@ -69,9 +73,19 @@ _wait_ready() {
     for st in $states; do
       case "$st" in healthy|none) : ;; *) pend="x" ;; esac
     done
-    [ -z "$pend" ] && { printf ' ready\n'; return 0; }
+    [ -z "$pend" ] && return 0
     printf '.'; i=$((i + 1)); sleep 2
   done
+  return 1
+}
+
+# block until all of a project's containers with a healthcheck report healthy
+_wait_ready() {
+  local name="$1" max="${2:-90}" ids
+  ids="$(project_compose "$name" ps -q 2>/dev/null)" || return 0
+  [ -n "$ids" ] || return 0
+  printf '   waiting for services to be healthy'
+  if _wait_healthy_ids "$ids" "$max"; then printf ' ready\n'; return 0; fi
   printf '\n'; warn "timeout waiting for health (continuing)"; return 1
 }
 
@@ -87,7 +101,7 @@ redis_flush_project() {
 
 cmd_up() {
   require_name "${1-}"; local name="$1"
-  docker info >/dev/null 2>&1 || die "docker daemon not running — start Docker/OrbStack"
+  require_docker
   log "starting stack: $name"
   project_compose "$name" up -d
   _wait_ready "$name" || true

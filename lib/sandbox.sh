@@ -27,82 +27,82 @@ sandbox_render() {
   render "$HARBOR_TEMPLATES/compose/sandbox.yml.tmpl" "$HARBOR_SANDBOX_COMPOSE"
 }
 
-_sandbox_compose() {
-  [ -f "$HARBOR_SANDBOX_COMPOSE" ] || sandbox_render
-  docker compose -f "$HARBOR_SANDBOX_COMPOSE" "$@"
-}
+# Never renders — callers that need the stack up go through sandbox_up (which
+# renders explicitly). Read-only callers stay side-effect free, so querying a
+# never-started sandbox doesn't write docker/sandbox.yml to disk.
+_sandbox_compose() { docker compose -f "$HARBOR_SANDBOX_COMPOSE" "$@"; }
 
-_sandbox_running() { _sandbox_compose ps -q mysql 2>/dev/null | grep -q .; }
+# A missing compose file means "never started" -> stopped, without rendering it.
+_sandbox_running() {
+  [ -f "$HARBOR_SANDBOX_COMPOSE" ] || return 1
+  _sandbox_compose ps -q mysql 2>/dev/null | grep -q .
+}
 
 # root mysql / mysqldump inside the container
 _sandbox_mysql()     { _sandbox_compose exec -T -e MYSQL_PWD="$(_sandbox_root)" mysql mysql -uroot "$@"; }
 _sandbox_mysqldump() { _sandbox_compose exec -T -e MYSQL_PWD="$(_sandbox_root)" mysql mysqldump -uroot "$@"; }
 
 sandbox_up() {
-  docker info >/dev/null 2>&1 || die "docker daemon not running — start Docker/OrbStack"
+  require_docker
   sandbox_render
   local port; port="$(_sandbox_port)"
   step "starting sandbox MySQL ($(_sandbox_image)) on 127.0.0.1:$port"
   if ! _sandbox_compose up -d 2>/dev/null; then
     die "sandbox failed to start — is 127.0.0.1:$port already in use? (set SANDBOX_MYSQL_PORT in $HARBOR_CONFIG)"
   fi
-  # wait for the healthcheck to report ready before returning
-  local i=0
+  # wait for the healthcheck to report ready before returning (shared with projects)
   printf '   waiting for mysql'
-  while [ "$i" -lt 45 ]; do
-    case "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
-              "$(_sandbox_compose ps -q mysql 2>/dev/null)" 2>/dev/null)" in
-      healthy|none) printf ' ready\n'; return 0 ;;
-    esac
-    printf '.'; i=$((i + 1)); sleep 2
-  done
-  printf '\n'; warn "timeout waiting for sandbox health (continuing)"
+  if _wait_healthy_ids "$(_sandbox_compose ps -q mysql 2>/dev/null)" 45; then
+    printf ' ready\n'
+  else
+    printf '\n'; warn "timeout waiting for sandbox health (continuing)"
+  fi
 }
 
 # bring the stack up on demand for a command that needs it
 _sandbox_ensure() { _sandbox_running || sandbox_up; }
 
-# escape a password for a single-quoted SQL literal (\ then '); MySQL default mode
-_sql_quote_pass() { local p="$1"; p="${p//\\/\\\\}"; printf '%s' "${p//\'/\'\'}"; }
-
 # harbor db sandbox create <db> [user] [pass]
 sandbox_create() {
   local db="${1-}"; [ -n "$db" ] || die "usage: harbor db sandbox create <db> [user] [pass]"
   _sandbox_ensure
-  local user pass pesc port; db="$(db_ident "$db")"
-  user="$(db_ident "${2:-$db}")"; pass="${3:-$db}"; pesc="$(_sql_quote_pass "$pass")"
-  port="$(_sandbox_port)"
+  local user pass port; db="$(db_ident "$db")"
+  user="$(db_ident "${2:-$db}")"; pass="${3:-$db}"; port="$(_sandbox_port)"
   log "creating database '$db' + user '$user' on sandbox"
-  _sandbox_mysql <<SQL
-CREATE DATABASE IF NOT EXISTS \`$db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '$user'@'%' IDENTIFIED BY '$pesc';
-GRANT ALL PRIVILEGES ON \`$db\`.* TO '$user'@'%';
-FLUSH PRIVILEGES;
-SQL
+  # shared emitter (idempotent; ALTER USER keeps the password in sync with what
+  # we print below, even when the user already existed)
+  sql_create_db_user "$db" "$user" "$pass" | _sandbox_mysql
   ok "sandbox db ready:"
   printf '  host/port : 127.0.0.1:%s\n  database  : %s\n  user/pass : %s / %s\n' "$port" "$db" "$user" "$pass"
 }
 
-# harbor db sandbox drop <db>   (drops the database and its same-named user, if any)
+# harbor db sandbox drop <db> [user]   (drops the database and the user; user
+# defaults to the db name — pass it explicitly to clean up a custom-named user)
 sandbox_drop() {
-  local db="${1-}"; [ -n "$db" ] || die "usage: harbor db sandbox drop <db>"
+  local db="${1-}"; [ -n "$db" ] || die "usage: harbor db sandbox drop <db> [user]"
   _sandbox_ensure; db="$(db_ident "$db")"
-  confirm "DROP DATABASE \`$db\` on the sandbox? This is destructive." || { warn "aborted"; return 1; }
+  local user; user="$(db_ident "${2:-$db}")"
+  confirm "DROP DATABASE \`$db\` (and user '$user') on the sandbox? This is destructive." || { warn "aborted"; return 1; }
   _sandbox_mysql <<SQL
 DROP DATABASE IF EXISTS \`$db\`;
-DROP USER IF EXISTS '$db'@'%';
+DROP USER IF EXISTS '$user'@'%';
 FLUSH PRIVILEGES;
 SQL
-  ok "dropped sandbox database '$db'"
+  ok "dropped sandbox database '$db' (user '$user')"
+}
+
+# print the user databases (no system schemas); assumes the stack is already up
+_sandbox_list_dbs() {
+  _sandbox_mysql -N -e "SHOW DATABASES;" \
+    | grep -Ev '^(information_schema|performance_schema|mysql|sys)$' \
+    | sed 's/^/  /' || true
 }
 
 # harbor db sandbox list
 sandbox_list() {
   _sandbox_ensure
   log "sandbox databases:"
-  _sandbox_mysql -N -e "SHOW DATABASES;" \
-    | grep -Ev '^(information_schema|performance_schema|mysql|sys)$' \
-    | sed 's/^/  /' || true
+  _sandbox_list_dbs
 }
 
 # harbor db sandbox backup <db> [file]
@@ -126,17 +126,13 @@ sandbox_restore() {
   trap "rm -rf '$tmpd'" EXIT
   local work="$tmpd/dump.sql"
   log "decompressing $file"
-  case "$file" in
-    *.sql.gz|*.gz) gunzip -c "$file" > "$work" ;;
-    *.zip)         unzip -p "$file" > "$work" ;;
-    *)             cp "$file" "$work" ;;
-  esac
-  # strip DEFINER for portability (LC_ALL=C so BSD sed tolerates non-UTF-8 bytes)
+  _db_decompress "$file" "$work"
+  # strip DEFINER for portability (shared with db_import)
   step "stripping DEFINER clauses"
-  LC_ALL=C sed -i '' -E 's/DEFINER=`[^`]*`@`[^`]*`//g; s/DEFINER=[^ ]*@[^ ]* //g; s/SQL SECURITY DEFINER//g' "$work"
+  strip_definers "$work"
   _sandbox_mysql -e "CREATE DATABASE IF NOT EXISTS \`$db\` CHARACTER SET utf8mb4;"
   log "loading into sandbox '$db' (FK checks off)"
-  { echo "SET FOREIGN_KEY_CHECKS=0;"; cat "$work"; echo "SET FOREIGN_KEY_CHECKS=1;"; } | _sandbox_mysql "$db"
+  _fk_wrapped "$work" | _sandbox_mysql "$db"
   rm -rf "$tmpd"; trap - EXIT
   ok "restore complete -> $db"
 }
@@ -165,7 +161,7 @@ sandbox_status() {
   local port; port="$(_sandbox_port)"
   if _sandbox_running; then
     printf 'sandbox : running  127.0.0.1:%s  (%s)\n' "$port" "$(_sandbox_image)"
-    sandbox_list
+    log "sandbox databases:"; _sandbox_list_dbs   # already confirmed up — no re-ensure
   else
     printf 'sandbox : stopped  (would bind 127.0.0.1:%s)\n' "$port"
     step "start it with any command, e.g.: harbor db sandbox create test"
