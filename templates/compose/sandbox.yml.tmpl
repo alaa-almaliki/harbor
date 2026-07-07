@@ -1,0 +1,23 @@
+# Harbor sandbox MySQL (generated). Project-independent scratch database server,
+# loopback-only on {{MYSQL_PORT}}. Do not edit — regenerate with `harbor db sandbox up`.
+name: harbor-sandbox
+
+services:
+  mysql:
+    image: {{MYSQL_IMAGE}}
+    restart: unless-stopped
+    command: {{DB_COMMAND}}
+    environment:
+      MYSQL_ROOT_PASSWORD: "{{MYSQL_ROOT_PASS}}"
+    ports:
+      - "127.0.0.1:{{MYSQL_PORT}}:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p{{MYSQL_ROOT_PASS}}"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+
+volumes:
+  dbdata:

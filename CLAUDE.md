@@ -177,6 +177,17 @@ and **[SemVer](https://semver.org)**.
   image swap; keep the compose service named `mysql` so `harbor mysql`/`db` keep
   working, and make engine-specific server flags conditional in `_db_command`.)
 - **New CLI tool** → add to the `tools:` catalog (name→image); never a host install.
+- **Singleton (non-project) stack** → for something Harbor owns but no project owns
+  (the shared mailpit+redis stack; the `db sandbox` MySQL), render a standalone
+  compose from a `templates/compose/<name>.yml.tmpl` to `docker/<name>.yml` with its
+  own `name:` and volumes — do **not** put it under `projects/` or give it a
+  port-allocator slot. Still bind `127.0.0.1`, healthcheck, RAM-cap. Prefer **lazy
+  start** (bring it up on first use) over always-on to keep RAM low. It must be
+  reversible from `teardown` (stop it) and `teardown --purge` (drop its volume),
+  and its generated `docker/<name>.yml` must be gitignored. The sandbox may bind a
+  standard port (`:3306`) rather than the `20000+` range precisely because it's the
+  obvious "just give me one" server — make the port config-overridable and fail
+  fast with a fix hint when it's already in use.
 
 ## 7. After every change — required checklist
 

@@ -131,6 +131,7 @@ harbor/
     compose.sh                   # shared stack + per-project stack lifecycle
     manifest.sh                  # parse/write .harbor/harbor.yml + global config
     wire.sh store.sh db.sh       # config injection, multistore, dumps/seed
+    sandbox.sh                   # project-independent scratch MySQL (harbor db sandbox)
     remote.sh                    # db pull / media pull over ssh
     magento.sh                   # magento passthrough + local-DX helpers
     tools.sh                     # composer / node / npm wrappers
@@ -239,6 +240,8 @@ harbor db drop   <name> [db]               # destructive (confirm)
 harbor db backup <name> [db] [file]        # -> backups/db/<name>/<ts>.sql.gz
 harbor db import <name> <file> [db]        # decompress→strip-definer→hooks→load→replace
 harbor db pull  <name>                     # ssh mysqldump from remote -> import pipeline
+harbor db sandbox create|drop|list|backup|restore|console|up|down|destroy|status
+                                           # project-independent scratch MySQL on 127.0.0.1:3306
 harbor media pull <name>                   # rsync remote media/storage
 harbor mysql|redis|shell <name>       # open a console into the project's services
 harbor open <name>                    # open https://<name>.test in the browser
@@ -457,6 +460,18 @@ allocator keeps their stacks from colliding. A consumer calls a provider at
 - **Auto-provisioned primary DB**: `init` sets `MYSQL_DATABASE/USER/PASSWORD` from
   the same convention, so the project's main DB+user exist on first container boot;
   `db create` is for *additional* databases.
+- **Sandbox DB** (`harbor db sandbox <sub>`, `lib/sandbox.sh`): a project-*independent*
+  scratch MySQL for testing/checking things out — a **Harbor-owned singleton stack**
+  (`docker/sandbox.yml` from `templates/compose/sandbox.yml.tmpl`, compose name
+  `harbor-sandbox`), deliberately on the standard `127.0.0.1:3306` so it's the
+  obvious "just give me a database" server. Unlike per-project stacks it is *not*
+  under `projects/`, uses no port-allocator slot, and is **lazily started** on first
+  use (low-RAM ethos). Same credential convention as `db create`; identifiers go
+  through `db_ident`. `create/drop/list/backup/restore/console/up/down/destroy/status`.
+  Reversible: `teardown` runs `sandbox_down`, `teardown --purge` runs
+  `sandbox_destroy` (drops the `harbor-sandbox` data volume). Port/image overridable
+  via config `SANDBOX_MYSQL_PORT` / `SANDBOX_MYSQL_IMAGE` (a `mariadb:*` image swaps
+  the engine, reusing the engine-aware `_db_command`).
 - `harbor seed <name>` dispatches framework seeders under the project PHP.
 
 ## Remote data sync (`db pull` / `media pull`)

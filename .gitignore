@@ -32,8 +32,9 @@
 !/projects/.gitkeep
 
 # ─────────────────── Generated shared docker stack (from templates/) ───────────────────
-# Keep docker/ for any committed base assets; ignore the generated compose file.
+# Keep docker/ for any committed base assets; ignore the generated compose files.
 /docker/docker-compose.yml
+/docker/sandbox.yml
 
 # ───────────────────────────── Stray runtime artifacts ─────────────────────────────
 *.log

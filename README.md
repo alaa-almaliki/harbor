@@ -315,6 +315,31 @@ using a simple convention: **if user/password aren't specified, the database nam
 is used for both**, and the database name defaults to the project name. So
 `harbor db create shop` creates database `shop`, user `shop`, password `shop`.
 
+### Sandbox — throwaway databases, no project
+
+For quick testing and checking things out, Harbor runs an optional
+**project-independent** MySQL server on `127.0.0.1:3306` — spin up databases and
+tear them down without attaching them to a project:
+
+```bash
+harbor db sandbox create test [user] [pass]   # first use auto-starts the server
+harbor db sandbox list                         # what's in there
+harbor db sandbox backup test                  # -> backups/db/sandbox/
+harbor db sandbox restore test dump.sql.gz     # load a dump (.sql/.gz/.zip)
+harbor db sandbox console [test]               # interactive mysql shell
+harbor db sandbox drop test                    # drop one database
+harbor db sandbox down | destroy               # stop (keep data) | drop the volume
+harbor db sandbox status
+```
+
+Same credential convention as projects (user/pass default to the database name).
+It's a Harbor-owned singleton: loopback-only, lazily started, and fully
+reversible — `harbor teardown` stops it, `harbor teardown --purge` drops its data
+volume. The port and image are overridable in `~/.config/harbor/config`
+(`SANDBOX_MYSQL_PORT`, `SANDBOX_MYSQL_IMAGE`); set a `mariadb:*` image to run
+MariaDB instead. Because it binds the standard `:3306`, stop any other local MySQL
+first (or change the port).
+
 ---
 
 ## Running projects side by side

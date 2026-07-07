@@ -26,7 +26,8 @@ _harbor() {
     use) COMPREPLY=(\$(compgen -W "$HARBOR_PHP_VERSIONS" -- "\$cur")); return ;;
     xdebug) COMPREPLY=(\$(compgen -W "on off status" -- "\$cur")); return ;;
     logs) COMPREPLY=(\$(compgen -W "clear nginx php dnsmasq \$(ls \"$HARBOR_PROJECTS\" 2>/dev/null)" -- "\$cur")); return ;;
-    db) COMPREPLY=(\$(compgen -W "create drop backup import pull" -- "\$cur")); return ;;
+    db) COMPREPLY=(\$(compgen -W "create drop backup import pull sandbox" -- "\$cur")); return ;;
+    sandbox) COMPREPLY=(\$(compgen -W "create drop list backup restore console up down destroy status" -- "\$cur")); return ;;
     store) COMPREPLY=(\$(compgen -W "add list rm" -- "\$cur")); return ;;
   esac
   projects=\$(ls "$HARBOR_PROJECTS" 2>/dev/null)
@@ -48,7 +49,8 @@ _harbor() {
     use) compadd ${HARBOR_PHP_VERSIONS}; return ;;
     xdebug) compadd on off status; return ;;
     logs) compadd clear nginx php dnsmasq \$(ls "$HARBOR_PROJECTS" 2>/dev/null); return ;;
-    db) compadd create drop backup import pull; return ;;
+    db) compadd create drop backup import pull sandbox; return ;;
+    sandbox) compadd create drop list backup restore console up down destroy status; return ;;
     store) compadd add list rm; return ;;
   esac
   projects=(\$(ls "$HARBOR_PROJECTS" 2>/dev/null))

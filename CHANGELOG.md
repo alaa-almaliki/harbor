@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`harbor db sandbox <sub>`: a project-independent scratch MySQL** on
+  `127.0.0.1:3306` for testing and checking things out, with its own lifecycle so
+  you can create and destroy throwaway databases without attaching them to a
+  project. Subcommands: `create <db> [user] [pass]`, `drop <db>`, `list`,
+  `backup <db> [file]`, `restore <db> <file>`, `console [db]`, `up`, `down`,
+  `destroy`, `status`. A Harbor-owned singleton stack (`docker/sandbox.yml`, from
+  `templates/compose/sandbox.yml.tmpl`) — loopback-only, RAM-capped, lazily started
+  on first use. Reversible: `harbor teardown` stops it, `--purge` drops its data
+  volume. Port/image overridable via `SANDBOX_MYSQL_PORT` / `SANDBOX_MYSQL_IMAGE`
+  (a `mariadb:*` image runs MariaDB). *Host footprint:* one Docker container +
+  named volume (`harbor-sandbox`) bound to `127.0.0.1:3306` while running.
 - `harbor logs clear [all|nginx|php|dnsmasq|<name>]`: truncate Harbor's log files
   under `var/log/` in place (default `all`; `<name>` = that site's nginx logs).
   Truncates rather than deletes, so daemons keep their open handles (no orphaned

@@ -82,7 +82,9 @@ cmd_teardown() {
   log "removing dnsmasq + resolver";  dns_teardown
   log "removing php pools";           php_remove_pools
   log "stopping shared stack";        shared_down
+  log "stopping sandbox MySQL";       sandbox_down
   if [ "$purge" = "1" ]; then
+    HARBOR_YES=1 sandbox_destroy >/dev/null 2>&1 || true
     rm -rf "$HARBOR_ETC"
     tls_teardown
     rm -f "$HARBOR_RUN"/*.sock "$HARBOR_RUN"/*.pid

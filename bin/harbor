@@ -63,6 +63,8 @@ fi
 . "$HARBOR_ROOT/lib/toolbox.sh"
 # shellcheck source=lib/db.sh
 . "$HARBOR_ROOT/lib/db.sh"
+# shellcheck source=lib/sandbox.sh
+. "$HARBOR_ROOT/lib/sandbox.sh"
 # shellcheck source=lib/magento.sh
 . "$HARBOR_ROOT/lib/magento.sh"
 # shellcheck source=lib/install.sh
@@ -108,6 +110,8 @@ Running code & tooling:
 Consoles & data:
   mysql | redis | shell [<name>]   ( <name> optional inside a project )
   db create|drop|backup|import|pull <name> ... | media pull <name>
+  db sandbox create|drop|list|backup|restore|console|up|down|destroy|status
+                            Project-independent scratch MySQL on 127.0.0.1:3306
   store add|list|rm <name> ...
 
 Shared & misc:

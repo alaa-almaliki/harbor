@@ -204,11 +204,12 @@ EOF
 cmd_db() {
   local sub="${1-}"; shift || true
   case "$sub" in
+    sandbox) cmd_db_sandbox "$@" ;;
     create) db_create "$@" ;;
     drop)   db_drop "$@" ;;
     backup) db_backup "$@" ;;
     import) db_import "$@" ;;
     pull)   db_pull "$@" ;;
-    *) die "usage: harbor db create|drop|backup|import|pull <name> ..." ;;
+    *) die "usage: harbor db create|drop|backup|import|pull <name> ...  |  harbor db sandbox <sub>" ;;
   esac
 }
