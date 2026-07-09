@@ -157,6 +157,14 @@ and **[SemVer](https://semver.org)**.
 
 ## 6. Extension points (how to add things)
 
+- **Agent skill for projects** → the canonical guidance a coding agent needs to
+  *use* Harbor on an app lives in `ai/skills/harbor/` (`SKILL.md` + `reference.md`).
+  `cmd_init` (`init_write_agent_skills`) copies it into every project at
+  `projects/<name>/.claude/skills/harbor/`, non-clobbering. When you add/change a
+  **project-facing** command, flag, or workflow, update `ai/skills/harbor/` too (it's
+  the source of truth for that copy) alongside `README.md`/`plan.md`/`CHANGELOG.md`.
+  (The repo-level `.claude/skills/harbor-*` skills are for building/adopting Harbor
+  — a different audience; keep the two in sync but don't conflate them.)
 - **New command** → add a dispatch case in `bin/harbor`, implement in the relevant
   `lib/*.sh`, add completion, update the command tables in `README.md` + `plan.md`
   + `CHANGELOG.md`.

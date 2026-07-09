@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Projects are seeded with an agent skill.** `harbor init` (and therefore
+  `harbor new`), plus `harbor render` for already-existing projects, copies
+  `ai/skills/harbor/` into the project at
+  `projects/<name>/.claude/skills/harbor/` (`SKILL.md` + `reference.md`), so any
+  coding agent working in that project knows how to drive Harbor for the app —
+  run commands under the pinned PHP, DB import/backup/sandbox, logs, Xdebug,
+  manifest config, containerized tools — without re-reading Harbor each time.
+  Committable (travels with the app) and non-clobbering, so a re-init never
+  overwrites project-side edits (delete the dir to pull a fresh copy). The
+  canonical source lives in `ai/skills/harbor/`.
 - **`harbor db sandbox <sub>`: a project-independent scratch MySQL** on
   `127.0.0.1:3306` for testing and checking things out, with its own lifecycle so
   you can create and destroy throwaway databases without attaching them to a

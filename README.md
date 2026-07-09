@@ -300,6 +300,13 @@ becomes `harbor run <name> invoice` — or just `harbor run invoice` from inside
 project (the name is inferred from your cwd). Unlike the generated `.harbor/bin/`
 tool shims, this dir is committable, so project-specific commands travel with the app.
 
+**Agent skill** — `harbor init`/`harbor new` also seed the project with a Claude
+Code skill at `.claude/skills/harbor/`, so a coding agent working on the app knows
+how to drive Harbor (run commands under the pinned PHP, DB import/backup/sandbox,
+logs, Xdebug, manifest config, containerized tools) without re-reading the whole
+tool. It's committable and non-clobbering — delete the dir to pull a fresh copy on
+the next `init`.
+
 ### Ports & shared Redis
 
 Each project receives a contiguous block of host ports (`base = 20000 + N*20`),

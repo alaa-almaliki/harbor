@@ -144,6 +144,7 @@ cmd_render() {
   local framework; framework="$(manifest_get "$mf" framework "")"
   init_render_compose "$name" "$framework"
   init_write_connection "$name"
+  init_write_agent_skills "$name"   # seed existing projects too (non-clobbering)
   ok "rendered $name stack: $(_project_services "$name" "$framework") — harbor up $name to apply"
 }
 
@@ -230,6 +231,21 @@ Then: `harbor run <name> invoice`. This dir is committable (unlike the generated
 EOF
 }
 
+# Seed the project with Harbor's agent skill so any coding agent working in
+# projects/<name>/ knows how to drive Harbor for this app without re-reading the
+# whole tool. Copied from ai/skills/harbor -> <project>/.claude/skills/harbor.
+# Committable (travels with the app); non-clobbering, so a re-init never
+# overwrites project-side edits — delete the dir to pull a fresh copy.
+init_write_agent_skills() {
+  local name="$1" src dest
+  src="$HARBOR_ROOT/ai/skills/harbor"
+  [ -d "$src" ] || return 0
+  dest="$(project_dir "$name")/.claude/skills/harbor"
+  [ -e "$dest" ] && return 0
+  mkdir -p "$(dirname "$dest")"
+  cp -R "$src" "$dest"
+}
+
 cmd_init() {
   require_name "${1-}"; local name="$1"; shift || true
   local framework="" phpopt="" msopt="" existing=0
@@ -277,6 +293,7 @@ cmd_init() {
   init_write_connection "$name"
   init_write_gitignore "$name"
   init_write_scripts "$name"
+  init_write_agent_skills "$name"
 
   ok "init $name ($framework, php $phpver) — db port $(ports_load "$name"; echo "$DB_PORT")"
   step "next: harbor up $name  &&  harbor link $name"
