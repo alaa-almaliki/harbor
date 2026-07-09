@@ -1,8 +1,11 @@
 # Harbor reference (for this project)
 
 Full command surface and config schema. `SKILL.md` covers the daily workflow;
-this is the lookup table. Throughout, **`<name>` is optional when your cwd is
-inside the project** — omit it and Harbor infers the name from the directory.
+this is the lookup table. **Only the passthrough/console commands** — `run`,
+`artisan`, `console`, `spark`, `magento`, `composer`, `node`, `npm`, `mysql`,
+`redis`, `shell` — **infer the project from your cwd** (shown as `[<name>]`,
+optional). **Every other command needs an explicit `<name>`** (shown without
+brackets); name-less it errors with `project name required`.
 
 ---
 
@@ -19,9 +22,9 @@ inside the project** — omit it and Harbor infers the name from the directory.
 | `harbor composer [<name>] …` | Composer under the pinned PHP. |
 | `harbor node\|npm [<name>] …` | Node/npm via nvm + `.nvmrc`. |
 | `harbor tool <name> <tool> …` | Run a containerized CLI tool once. |
-| `harbor tools sync [<name>]` | (Re)generate tool shims from the manifest. |
-| `harbor install [<name>]` | Framework installer (Laravel migrate, Magento `setup:install`, …). |
-| `harbor seed [<name>]` | Framework seeders / migrations. |
+| `harbor tools sync <name>` | (Re)generate tool shims from the manifest. |
+| `harbor install <name>` | Framework installer (Laravel migrate, Magento `setup:install`, …). |
+| `harbor seed <name>` | Framework seeders / migrations. |
 
 ### Consoles
 | Command | What it does |
@@ -33,15 +36,15 @@ inside the project** — omit it and Harbor infers the name from the directory.
 ### Project stack lifecycle
 | Command | What it does |
 |---|---|
-| `harbor up [<name>]` | Start the project's Docker stack (waits for health). |
-| `harbor down [<name>]` | Stop it (keeps MySQL volume; flushes its Redis indices). |
-| `harbor restart [<name>]` | Restart the stack. |
-| `harbor render [<name>]` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:`). |
-| `harbor destroy [<name>] [--files]` | Remove stack + volumes + vhost + ports (confirm-gated; `--files` also deletes the code). |
-| `harbor link [<name>] [--wildcard]` | Create/refresh the `https://<name>.test` vhost (adds cert SAN, reloads nginx). |
-| `harbor unlink [<name>]` | Remove the vhost. |
-| `harbor open [<name>]` | Open the site in the browser. |
-| `harbor wire [<name>] [--print]` | Inject DB/Redis/mail into the app config (surgical, never clobbers). |
+| `harbor up <name>` | Start the project's Docker stack (waits for health). |
+| `harbor down <name>` | Stop it (keeps MySQL volume; flushes its Redis indices). |
+| `harbor restart <name>` | Restart the stack. |
+| `harbor render <name>` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:`). |
+| `harbor destroy <name> [--files]` | Remove stack + volumes + vhost + ports (confirm-gated; `--files` also deletes the code). |
+| `harbor link <name> [--wildcard]` | Create/refresh the `https://<name>.test` vhost (adds cert SAN, reloads nginx). |
+| `harbor unlink <name>` | Remove the vhost. |
+| `harbor open <name>` | Open the site in the browser. |
+| `harbor wire <name> [--print]` | Inject DB/Redis/mail into the app config (surgical, never clobbers). |
 
 ### Databases
 | Command | What it does |
@@ -82,8 +85,8 @@ standard `:3306`, stop any other local MySQL first.
 ### Logs & health
 | Command | What it does |
 |---|---|
-| `harbor logs [<name>] [service] [-f]` | Tail project/service container logs. |
-| `harbor logs nginx\|php\|dnsmasq [-f]` | Tail Harbor's platform-service logs. |
+| `harbor logs <name> [service] [-f]` | Tail a project's container logs (name required). |
+| `harbor logs nginx\|php\|dnsmasq [-f]` | Tail Harbor's platform-service logs (name-less). |
 | `harbor logs clear [all\|nginx\|php\|dnsmasq\|<name>]` | Truncate log files in place. |
 | `harbor doctor [<name>]` | Host requirements (+ a project's PHP extensions). Report-only. |
 | `harbor status` / `harbor ps` | Pools, linked sites, running stacks, ports. |
@@ -123,7 +126,7 @@ Each entry in `services:` is `<name>: "<image:tag>"` — one compose fragment pe
 service, version explicit. Bundled: `mysql`, `opensearch`, `elasticsearch`,
 `rabbitmq`, `meilisearch`. A plain project defaults to just `mysql`; Magento to
 `mysql + opensearch + rabbitmq`. To change a version, edit the value; to add a
-service, add a line; then `harbor render && harbor up`.
+service, add a line; then `harbor render <name> && harbor up <name>`.
 
 **MariaDB** is not a separate service — swap the `mysql` image:
 `services: { mysql: "mariadb:11.4" }` (keeps `harbor mysql`/`db import`/wiring

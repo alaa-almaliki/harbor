@@ -35,20 +35,30 @@ harbor magento <cmd…>    # bin/magento passthrough
 is whatever brew last linked — usually the wrong version — and has none of the
 DB/Redis/mail environment. `harbor run php -v` shows the version you actually get.
 
-### `<name>` is optional here — omit it
-When your shell's cwd is inside this project (`projects/<name>/…`), Harbor infers
-the name. So from the project directory:
+### When you can omit `<name>` — and when you can't
+**Only the passthrough/console commands infer the project from your cwd:**
+`run`, `artisan`, `console`, `spark`, `magento`, `composer`, `node`, `npm`,
+`mysql`, `redis`, `shell`. From inside the project dir, drop the name:
 
 ```bash
-harbor artisan migrate            # not: harbor artisan <name> migrate
+harbor artisan migrate            # infers the project from cwd (not: harbor artisan <name> …)
 harbor composer install
-harbor up                         # start THIS project's stack
-harbor logs -f
+harbor mysql -e "SELECT 1;"
 ```
 
-If you're **not** in the project dir, pass the name as the first arg
-(`harbor artisan <name> migrate`). An explicit valid name always wins. Everything
-below omits `<name>` — add it back if you run from elsewhere.
+**Every other command needs an explicit `<name>`** — `up`, `down`, `restart`,
+`render`, `link`, `unlink`, `wire`, `logs <name>`, `db …`, `destroy`,
+`tools sync`, `doctor <name>`. Name-less they error (`project name required`, or
+`invalid project name '--flag'` if a flag lands first):
+
+```bash
+harbor up <name>                  # NOT: harbor up   → err project name required
+harbor logs <name> -f
+harbor db backup <name>
+```
+
+An explicit valid name always wins, so passing it everywhere is safe. Below, the
+passthrough/console examples omit `<name>`; the rest show it — copy that split.
 
 ---
 
@@ -63,16 +73,18 @@ harbor run <script>                   # .harbor/scripts/<script> is on PATH (see
 ```
 
 ### Database
+`mysql` infers the project (needs the stack **up**); the `db …` subcommands take
+the project name as their first arg:
 ```bash
-harbor mysql                          # interactive client into THIS project's DB
+harbor mysql                          # infers project; interactive client into its DB
 harbor mysql -e "SELECT COUNT(*) FROM users;"
-harbor db backup                      # -> backups/db/<name>/<timestamp>.sql.gz
-harbor db import <file> [db]          # hookable pipeline: DEFINER-strip, replace, scrub
-harbor db import <file> --force       #   skip server-rejected rows instead of aborting
-harbor db import <file> --replace old.com=<name>.test
-harbor db pull                        # ssh mysqldump from prod -> straight into import
-harbor db create <db> [user] [pass]   # extra DB (defaults: db name for all three)
-harbor db drop <db>                   # confirm-gated
+harbor db backup <name>               # -> backups/db/<name>/<timestamp>.sql.gz
+harbor db import <name> <file> [db]   # hookable pipeline: DEFINER-strip, replace, scrub
+harbor db import <name> <file> --force        # skip server-rejected rows instead of aborting
+harbor db import <name> <file> --replace old.com=<name>.test
+harbor db pull <name>                 # ssh mysqldump from prod -> straight into import
+harbor db create <name> [db] [user] [pass]    # extra DB (db/user/pass default to <name>)
+harbor db drop <name> [db]            # confirm-gated
 ```
 `db import` auto-backs-up first (`--no-backup` to skip) and runs
 `.harbor/hooks/pre-import.d/` + `post-import.d/` (credential scrub, etc.).
@@ -85,21 +97,21 @@ harbor db sandbox down                # stop, KEEP data   (destroy = drop the vo
 ```
 Use `down`, not `destroy`, for cleanup — `destroy` drops the volume and every DB in it.
 
-### Stack lifecycle (the Docker services, not PHP)
+### Stack lifecycle (the Docker services, not PHP) — needs `<name>`
 ```bash
-harbor up                             # start MySQL (+ OpenSearch/RabbitMQ for Magento)
-harbor down                           # stop (keeps the MySQL volume; flushes its Redis)
-harbor restart
-harbor destroy                        # remove containers + volumes + vhost (confirm-gated)
+harbor up <name>                      # start MySQL (+ OpenSearch/RabbitMQ for Magento)
+harbor down <name>                    # stop (keeps the MySQL volume; flushes its Redis)
+harbor restart <name>
+harbor destroy <name>                 # remove containers + volumes + vhost (confirm-gated)
 ```
 PHP is host-side and always on — `up`/`down` only move the Docker services.
 
 ### Logs (first stop when a page 500s)
 ```bash
-harbor logs -f                        # this project's container logs
-harbor logs php                       # Harbor's PHP-FPM log (fatals, stack traces)
-harbor logs nginx                     # nginx access/error
-harbor logs clear                     # truncate in place (safe while running)
+harbor logs <name> -f                 # this project's container logs (name required)
+harbor logs php                       # Harbor's PHP-FPM log — name-less (platform log)
+harbor logs nginx                     # nginx access/error — name-less
+harbor logs clear                     # truncate in place — name-less; safe while running
 ```
 Also check the app's own log (`storage/logs/laravel.log`, `var/log/`, …).
 
@@ -151,21 +163,21 @@ services: { mysql: "mysql:8.0" }   # add opensearch/rabbitmq/meilisearch/elastic
 tools: [wkhtmltopdf, ghostscript]  # containerized CLI binaries (see below)
 ```
 
-After editing the manifest:
+After editing the manifest (all of these need an explicit `<name>`):
 | You changed… | Run |
 |---|---|
-| `services:` (add/version a DB/search/queue) | `harbor render && harbor up` |
-| `php:` (and `.php-version`) | `harbor link` (re-points the vhost to the new pool) |
-| `docroot:` / `domains:` | `harbor link` |
-| `extensions:` | `harbor doctor` (validates; install missing PHP ext via `pecl`) |
+| `services:` (add/version a DB/search/queue) | `harbor render <name> && harbor up <name>` |
+| `php:` (and `.php-version`) | `harbor link <name>` (re-points the vhost to the new pool) |
+| `docroot:` / `domains:` | `harbor link <name>` |
+| `extensions:` | `harbor doctor <name>` (validates; install missing PHP ext via `pecl`) |
 
 **YAML nesting must use flow style** (`{…}` / `[…]`) — Harbor's parser doesn't do
 block maps/sequences. Write `services: { mysql: "mysql:8.0" }`, not an indented block.
 
-### Wiring app config (never clobbers)
+### Wiring app config (never clobbers) — needs `<name>`
 ```bash
-harbor wire                # inject DB/Redis/mail into the app config, surgically
-harbor wire --print        # preview the values without writing
+harbor wire <name>                 # inject DB/Redis/mail into the app config, surgically
+harbor wire <name> --print         # preview the values (just cats connection.txt)
 ```
 - **Laravel / Symfony / CI4** → `wire` edits `.env` / `.env.local` key-by-key
   (keeps a `.bak`; Symfony only touches `.env.local`).
@@ -185,7 +197,7 @@ manifest and Harbor runs each in a throwaway container behind a shim:
 tools: [wkhtmltopdf, ghostscript]
 ```
 ```bash
-harbor tools sync           # (re)generate shims at .harbor/bin/<tool>
+harbor tools sync <name>    # (re)generate shims at .harbor/bin/<tool>  (name required)
 ```
 The shims are on PATH for `harbor run`/`harbor shell`. For web requests, point the
 library's binary path at the shim, e.g. Laravel Snappy:
@@ -212,7 +224,7 @@ project-specific commands instead of ad-hoc shell snippets.
 - **Queues/workers aren't supervised** — run them yourself:
   `harbor run php artisan queue:work` (or a `.harbor/scripts/` wrapper).
 - **A page 500s?** `harbor logs php` + the app log. Wrong PHP version symptom?
-  `harbor run php -v`. Extension missing? `harbor doctor`.
+  `harbor run php -v`. Extension missing? `harbor doctor <name>`.
 - **Don't commit** generated/runtime files — `.harbor/connection.env`,
   `compose.env`, `docker-compose.yml`, `.harbor/bin/` are gitignored. The manifest,
   `import-rules`, `hooks/`, and `scripts/` are committable.

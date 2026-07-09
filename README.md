@@ -1,6 +1,15 @@
 # Harbor
 
-**A hybrid local development platform for PHP.**
+**A hybrid local development platform for PHP — macOS only.**
+
+> [!IMPORTANT]
+> - **Platform:** **macOS** (Apple Silicon + Homebrew) only. There is no Linux or
+>   Windows support, and none is planned.
+> - **Status:** **unstable and under active development.** Expect breaking changes
+>   between commits; pin to a commit you trust rather than tracking `main` blindly.
+> - **Contributions:** **not accepting code contributions / pull requests.** Bug
+>   reports and feature ideas are welcome though — please
+>   [open an issue](../../issues).
 
 Harbor runs the latency-sensitive, always-on pieces of your stack **natively on
 macOS** (PHP-FPM, nginx, Xdebug, dnsmasq, TLS) and pushes the heavy, disposable
@@ -28,6 +37,11 @@ Works with **plain PHP, Magento, Laravel, Symfony, and CodeIgniter** side by sid
 - **Real-world workflows.** First-class `setup:install` wiring for Magento,
   prod-dump imports with find/replace + credential scrubbing hooks, multi-store
   routing, and trusted local HTTPS for every site.
+- **Built for AI coding agents.** Every project is seeded with a **Claude Code
+  skill** (`.claude/skills/harbor/`) that teaches an agent how to drive Harbor for
+  your app — run commands under the pinned PHP, manage the database, tail logs,
+  debug with Xdebug, edit the manifest — so it gets things right without
+  re-reading the docs each task. See [For AI coding agents](#for-ai-coding-agents).
 
 ---
 
@@ -528,6 +542,32 @@ when your client/IDE sends the trigger.
 
 ---
 
+## For AI coding agents
+
+Harbor is designed to be driven by AI coding agents, not just humans. Every
+project Harbor creates (`harbor new`/`harbor init`) is seeded with a **Claude Code
+skill** at `projects/<name>/.claude/skills/harbor/`:
+
+- **`SKILL.md`** — the daily driver: the one rule (*go through `harbor …`, never
+  bare `php`/`composer`/`npm`*), running code/tests/REPL, database + sandbox, stack
+  lifecycle, Xdebug from the CLI, logs, editing the manifest, containerized tools,
+  and the gotchas that bite (`127.0.0.1` not `localhost`, non-default ports).
+- **`reference.md`** — the full command table, manifest schema, and import pipeline.
+
+So an agent working in your app knows how to use Harbor correctly the first time,
+without re-reading this README each task. The canonical source lives in
+`ai/skills/harbor/`.
+
+- **Existing projects** pick it up on the next `harbor render <name>` (safe — it
+  never touches your manifest), or you can copy `ai/skills/harbor/` into the
+  project's `.claude/skills/` by hand.
+- The copy is **committable** (it travels with the app) and **non-clobbering**, so
+  your edits survive a re-`render`/`init`. Delete the dir to pull a fresh copy.
+
+Harbor itself also ships repo-level skills (`.claude/skills/harbor-*`) for agents
+**building or adopting** Harbor — a different audience from the per-project skill
+above.
+
 ## Command reference
 
 ### Host & lifecycle
@@ -669,3 +709,10 @@ launchd units. Nothing is written into Homebrew's config trees. The only files
 Harbor places outside its own directory are the nginx LaunchDaemon, the per-pool
 and dnsmasq LaunchAgents, and `/etc/resolver/test` — all removed by
 `harbor teardown`.
+
+---
+
+## License
+
+[MIT](LICENSE) © Alaa Al-Maliki. Provided "as is", without warranty of any kind
+(see [LICENSE](LICENSE)).

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MIT license** (`LICENSE`) and a License section in the README.
 - **Projects are seeded with an agent skill.** `harbor init` (and therefore
   `harbor new`), plus `harbor render` for already-existing projects, copies
   `ai/skills/harbor/` into the project at
@@ -84,6 +85,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shellcheck-clean.
 
 ### Changed
+- **README** now states up front that Harbor is **macOS-only** and **unstable /
+  under active development**, that **code contributions are not accepted** (issues
+  welcome), and documents the per-project **Claude Code agent skill** (new "For AI
+  coding agents" section).
 - **Optional `<name>` for the in-project commands.** `run`, `composer`, `artisan`,
   `console`, `spark`, `magento`, `node`, `npm`, `shell`, `mysql`, and `redis` now
   infer the project when you omit the name — from `$HARBOR_PROJECT` (set by
