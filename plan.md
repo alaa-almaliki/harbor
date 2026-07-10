@@ -251,6 +251,7 @@ harbor mail up|down                   # shared stack (mailpit + redis)
 harbor secure [host...]               # (re)issue wildcard cert / add SANs
 harbor status                         # pools, sites, running stacks, ports
 harbor completion bash|zsh            # print shell completion script
+harbor test [filter]                  # run Harbor's own unit suite (test/), optional name filter
 harbor teardown [--purge]             # remove all Harbor launchd units, resolver, config
 ```
 

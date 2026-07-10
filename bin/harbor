@@ -77,6 +77,8 @@ fi
 . "$HARBOR_ROOT/lib/ergo.sh"
 # shellcheck source=lib/new.sh
 . "$HARBOR_ROOT/lib/new.sh"
+# shellcheck source=lib/test.sh
+. "$HARBOR_ROOT/lib/test.sh"
 # shellcheck source=lib/completion.sh
 . "$HARBOR_ROOT/lib/completion.sh"
 
@@ -116,6 +118,7 @@ Consoles & data:
 
 Shared & misc:
   secure [host...] | mail [up|down] | completion bash|zsh | version | help
+  test [filter]             Run Harbor's own unit suite (test/); optional name filter
 
 Docs: README.md (usage) · plan.md (design) · CLAUDE.md (contributing)
 EOF
@@ -168,6 +171,7 @@ main() {
     secure) cmd_secure "$@" ;;
     mail) cmd_mail "$@" ;;
     completion) cmd_completion "$@" ;;
+    test) cmd_test "$@" ;;
     *) err "unknown command: $cmd"; echo; usage; exit 1 ;;
   esac
 }

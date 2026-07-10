@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Unit test suite** (`test/`): a zero-dependency, pure-bash harness
+  (`test/run.sh` + `test/lib.sh`) that runs on macOS system bash 3.2 like Harbor
+  itself — no `bats`, no installs. Covers the pure-logic units:
+  `manifest.sh` (the constrained-YAML parser — flow maps/lists, nesting, quoted
+  commas, comments), `ports.sh` (index → port/Redis-index math, allocation,
+  idempotency, backfill), `common.sh` (`valid_name`, `db_ident`, `render_str`
+  templating, `config_get`, `resolve_project`), and `search-replace.php`'s
+  serialized-length recompute. Run with `harbor test` (or `./test/run.sh`);
+  pass a name filter to scope it: `harbor test manifest`. No host mutation —
+  tests use throwaway temp dirs and never touch Docker, launchd, or the sandbox.
+- **`harbor test [filter]`**: run Harbor's own unit suite from the CLI (thin
+  wrapper over `test/run.sh`; exits nonzero on any failure).
 - **MIT license** (`LICENSE`) and a License section in the README.
 - **Projects are seeded with an agent skill.** `harbor init` (and therefore
   `harbor new`), plus `harbor render` for already-existing projects, copies

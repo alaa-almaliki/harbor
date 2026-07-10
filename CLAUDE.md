@@ -197,6 +197,28 @@ and **[SemVer](https://semver.org)**.
   obvious "just give me one" server — make the port config-overridable and fail
   fast with a fix hint when it's already in use.
 
+## 6.5 Tests
+
+Harbor has a **zero-dependency, pure-bash** unit suite in `test/` — no `bats`, no
+installs; it runs on macOS system bash 3.2 like Harbor itself. Layout: `run.sh`
+(discovers `test_*.sh`, runs each in its own process, sums the `__TALLY__` line,
+exits nonzero on any failure) + `lib.sh` (assert helpers: `assert_eq`,
+`assert_ok`/`assert_fail` — which subshell the command so a `die`/`exit` can't
+kill the run — `assert_contains`, and `harbor_load` to source the units under
+test). Run it with `harbor test` or `./test/run.sh` (filter: `harbor test manifest`).
+
+- **Scope is pure logic only** — parsing, allocation, validation, templating,
+  serialized-replace. Tests **never touch the host**: no Docker, launchd, nginx,
+  certs, or the sandbox. Use throwaway `mktemp -d` dirs and override globals
+  (`HARBOR_PORTS_DIR`, `HARBOR_CONFIG`, …) inside a subshell; clean up on `EXIT`.
+- **When you add or change a pure-logic function** (`lib/manifest.sh`,
+  `lib/ports.sh`, `lib/common.sh` helpers, `lib/search-replace.php`'s `rr()`), add
+  or adjust its test in the same commit. Keep `test/` shellcheck-clean.
+- **Testability seams stay behavior-neutral.** `search-replace.php` returns early
+  when `HARBOR_SR_LIB_ONLY=1` so `rr()` can be included and tested without a DB;
+  real CLI runs leave it unset and behave identically. Prefer this pattern over
+  refactoring production logic for tests.
+
 ## 7. After every change — required checklist
 
 Run this **every time you finish a unit of work**, in order. Do not claim done
@@ -206,7 +228,8 @@ until all five pass.
    checks green, every `com.harbor.*` unit loaded, nothing broken. For a touched
    command, do a real run (see `plan.md` → Verification), not just dry logic.
    `shellcheck` passes on touched scripts; the command is **idempotent** and has a
-   working **undo** (teardown still fully cleans the host).
+   working **undo** (teardown still fully cleans the host). If you touched a
+   pure-logic function, run `./test/run.sh` and keep it green (see §6.5).
 2. **Check `.gitignore`.** Any new generated/runtime/secret output (`etc/`, `var/`,
    `certs/`, `backups/`, project `.harbor/` runtime, tool shims) must be ignored;
    confirm nothing sensitive is staged and any newly-tracked file is intended

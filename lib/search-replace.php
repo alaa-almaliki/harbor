@@ -2,22 +2,10 @@
 // Harbor serialized-safe search/replace across a MySQL database.
 // usage: php search-replace.php --host H --port P --user U --pass PW --db DB --rules FILE
 // rules file: one rule per line, "FROM<TAB>TO"; FROM may start with "re:" for regex.
-$o = getopt('', ['host:', 'port:', 'user:', 'pass:', 'db:', 'rules:']);
-foreach (['host','port','user','pass','db','rules'] as $k) {
-    if (!isset($o[$k])) { fwrite(STDERR, "missing --$k\n"); exit(2); }
-}
 
-$rules = [];
-foreach (file($o['rules'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-    $p = explode("\t", $line, 2);
-    if (count($p) < 2) continue;
-    [$from, $to] = $p;
-    $regex = false;
-    if (strncmp($from, 're:', 3) === 0) { $regex = true; $from = substr($from, 3); }
-    $rules[] = [$from, $to, $regex];
-}
-if (!$rules) { fwrite(STDERR, "no rules\n"); exit(0); }
-
+// rr() recurses into (nested) arrays and PHP-serialized strings, applying each
+// rule; serialized values are unserialized -> replaced -> reserialized so string
+// lengths are recomputed and stay valid. Rules are [from, to, isRegex].
 function rr($data, $rules) {
     if (is_array($data)) {
         $out = [];
@@ -38,6 +26,27 @@ function rr($data, $rules) {
     }
     return $data;
 }
+
+// Testability seam: when included as a library (HARBOR_SR_LIB_ONLY=1) stop here
+// so rr() can be unit-tested without a DB. Real invocations leave it unset and
+// run the full CLI below — behavior is unchanged.
+if (getenv('HARBOR_SR_LIB_ONLY') === '1') { return; }
+
+$o = getopt('', ['host:', 'port:', 'user:', 'pass:', 'db:', 'rules:']);
+foreach (['host','port','user','pass','db','rules'] as $k) {
+    if (!isset($o[$k])) { fwrite(STDERR, "missing --$k\n"); exit(2); }
+}
+
+$rules = [];
+foreach (file($o['rules'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+    $p = explode("\t", $line, 2);
+    if (count($p) < 2) continue;
+    [$from, $to] = $p;
+    $regex = false;
+    if (strncmp($from, 're:', 3) === 0) { $regex = true; $from = substr($from, 3); }
+    $rules[] = [$from, $to, $regex];
+}
+if (!$rules) { fwrite(STDERR, "no rules\n"); exit(0); }
 
 $pdo = new PDO(
     "mysql:host={$o['host']};port={$o['port']};dbname={$o['db']}",

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # completion.sh — emit bash/zsh completion (commands + project names).
 
-_HARBOR_CMDS="doctor setup stop start teardown php xdebug init render link unlink wire up down restart destroy logs run composer artisan console spark magento node npm tool tools db install seed store media new open status ps list mysql redis shell secure mail completion version help"
+_HARBOR_CMDS="doctor setup stop start teardown php xdebug init render link unlink wire up down restart destroy logs run composer artisan console spark magento node npm tool tools db install seed store media new open status ps list mysql redis shell secure mail completion test version help"
 
 cmd_completion() {
   case "${1-}" in

@@ -660,6 +660,7 @@ A project uses **one** multi-store mode (domain *or* path), set in the manifest.
 | `harbor mail up\|down` | Control the shared Mailpit + Redis stack. |
 | `harbor secure [host…]` | (Re)issue the wildcard cert / add extra SAN hosts. |
 | `harbor completion bash\|zsh` | Print the shell-completion script. |
+| `harbor test [filter]` | Run Harbor's own pure-bash unit suite (`test/`); optional name filter. |
 
 ---
 
