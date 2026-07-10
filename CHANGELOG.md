@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`harbor update [--check] [--stash] [--yes]`: self-update.** Fetches `origin`
+  and **fast-forwards** the checkout to `origin/main` (ff-only — never a merge
+  commit or history rewrite), then **force-reseeds** the agent skill into every
+  project so improvements propagate (overwrites the managed skill files in place,
+  preserving any extra files you added). `--check` reports pending commits without
+  applying (read-only); `--stash` auto-stashes/restores a dirty tree (otherwise a
+  dirty tree aborts with a hint). After updating it prints the version/commit
+  delta and the changelog range, then gives **targeted next steps** based on what
+  changed — platform templates → `harbor setup`; compose templates →
+  `harbor render/up`; libs → effective next command — and runs `doctor`. *Host
+  footprint:* none of its own — it updates the git checkout and writes each app's
+  `.claude/skills/harbor/` (already committable, in the app's repo, git-ignored by
+  Harbor); it may *recommend* `harbor setup`, but never runs sudo itself.
 - **Unit test suite** (`test/`): a zero-dependency, pure-bash harness
   (`test/run.sh` + `test/lib.sh`) that runs on macOS system bash 3.2 like Harbor
   itself — no `bats`, no installs. Covers the pure-logic units:

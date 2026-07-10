@@ -160,11 +160,19 @@ and **[SemVer](https://semver.org)**.
 - **Agent skill for projects** → the canonical guidance a coding agent needs to
   *use* Harbor on an app lives in `ai/skills/harbor/` (`SKILL.md` + `reference.md`).
   `cmd_init` (`init_write_agent_skills`) copies it into every project at
-  `projects/<name>/.claude/skills/harbor/`, non-clobbering. When you add/change a
+  `projects/<name>/.claude/skills/harbor/`, non-clobbering. `harbor update`
+  (`init_write_agent_skills … 1`) **force-reseeds** it — overwriting the managed
+  files in place so skill improvements reach every project — so improvements you
+  make here ship to users on their next `harbor update`. When you add/change a
   **project-facing** command, flag, or workflow, update `ai/skills/harbor/` too (it's
   the source of truth for that copy) alongside `README.md`/`plan.md`/`CHANGELOG.md`.
   (The repo-level `.claude/skills/harbor-*` skills are for building/adopting Harbor
   — a different audience; keep the two in sync but don't conflate them.)
+- **Self-update** → `harbor update` (`lib/update.sh`) fast-forwards the checkout
+  to `origin/main` (ff-only) and force-reseeds skills. If a change needs a
+  post-update host action, wire the hint into `cmd_update`'s `changed`-path
+  `case` (platform templates → `harbor setup`; compose → `harbor render/up`) —
+  don't make `update` mutate host state itself (no sudo, no launchd reload).
 - **New command** → add a dispatch case in `bin/harbor`, implement in the relevant
   `lib/*.sh`, add completion, update the command tables in `README.md` + `plan.md`
   + `CHANGELOG.md`.

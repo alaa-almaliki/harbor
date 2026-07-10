@@ -77,6 +77,8 @@ fi
 . "$HARBOR_ROOT/lib/ergo.sh"
 # shellcheck source=lib/new.sh
 . "$HARBOR_ROOT/lib/new.sh"
+# shellcheck source=lib/update.sh
+. "$HARBOR_ROOT/lib/update.sh"
 # shellcheck source=lib/test.sh
 . "$HARBOR_ROOT/lib/test.sh"
 # shellcheck source=lib/completion.sh
@@ -91,6 +93,7 @@ Usage: harbor <command> [args]
 Host & lifecycle:
   doctor [<project>]        Host requirements report (+ project PHP extensions)
   setup | teardown [--purge]  One-time host prep / removal
+  update [--check|--stash]  Self-update: fast-forward the repo + reseed skills
   stop | start              Pause/resume Harbor (free its ports for another stack)
   status | ps | list        Overall status (self-heals) / project table
   php [<ver>|sync] | php use <ver> (switch the brew-linked CLI php) | xdebug on|off|status
@@ -171,6 +174,7 @@ main() {
     secure) cmd_secure "$@" ;;
     mail) cmd_mail "$@" ;;
     completion) cmd_completion "$@" ;;
+    update) cmd_update "$@" ;;
     test) cmd_test "$@" ;;
     *) err "unknown command: $cmd"; echo; usage; exit 1 ;;
   esac

@@ -234,16 +234,18 @@ EOF
 # Seed the project with Harbor's agent skill so any coding agent working in
 # projects/<name>/ knows how to drive Harbor for this app without re-reading the
 # whole tool. Copied from ai/skills/harbor -> <project>/.claude/skills/harbor.
-# Committable (travels with the app); non-clobbering, so a re-init never
-# overwrites project-side edits — delete the dir to pull a fresh copy.
+# Committable (travels with the app). Default is non-clobbering, so a re-init
+# never overwrites project-side edits — delete the dir to pull a fresh copy.
+# With force=1 (used by `harbor update`) it overwrites the managed skill files
+# in place, propagating skill improvements while preserving any extra files.
 init_write_agent_skills() {
-  local name="$1" src dest
+  local name="$1" force="${2:-0}" src dest
   src="$HARBOR_ROOT/ai/skills/harbor"
   [ -d "$src" ] || return 0
   dest="$(project_dir "$name")/.claude/skills/harbor"
-  [ -e "$dest" ] && return 0
-  mkdir -p "$(dirname "$dest")"
-  cp -R "$src" "$dest"
+  [ "$force" != 1 ] && [ -e "$dest" ] && return 0
+  mkdir -p "$dest"
+  cp -R "$src/." "$dest/"
 }
 
 cmd_init() {

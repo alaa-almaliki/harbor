@@ -577,6 +577,7 @@ above.
 | `harbor doctor [<name>]` | Report host requirements (and a project's PHP extensions). Report-only. |
 | `harbor setup` | One-time host preparation (DNS, TLS, FPM pools, shared stack). |
 | `harbor teardown [--purge]` | Remove all Harbor launchd units, resolver entry, and config. |
+| `harbor update [--check\|--stash]` | Self-update: fast-forward the checkout to `origin/main` and reseed the agent skill into every project. `--check` reports pending commits (read-only); `--stash` auto-stashes a dirty tree. |
 | `harbor status` | Active pools, linked sites, running stacks, allocated ports. |
 | `harbor ps` / `harbor list` | Status of all projects. |
 
