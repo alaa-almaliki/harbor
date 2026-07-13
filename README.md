@@ -1,5 +1,7 @@
 # Harbor
 
+[![Clones (all-time)](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/alaa-almaliki/harbor/main/.github/traffic/clones-badge.json)](../../actions/workflows/traffic-clones.yml)
+
 **A hybrid local development platform for PHP — macOS only.**
 
 > [!IMPORTANT]

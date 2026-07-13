@@ -1,0 +1,48 @@
+name: Traffic — record clones
+
+# Snapshots GitHub's 14-day clone traffic daily and accumulates an all-time tally
+# in .github/traffic/clones.json, plus a Shields badge the README embeds.
+# GitHub discards traffic older than 14 days, so the all-time count starts from
+# the first successful run — earlier clones are unrecoverable.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # daily at 03:17 UTC
+  workflow_dispatch:        # allow manual runs (first run / backfill a gap)
+
+# Only the built-in token access we need: write to push the updated tally, and
+# administration:read because the clone-traffic API requires repo admin/push.
+permissions:
+  contents: write
+  administration: read
+
+concurrency:
+  group: traffic-clones
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch and merge clone stats
+        env:
+          # Prefer a user-provided PAT (classic: 'repo' scope, or fine-grained:
+          # Administration=read + Contents=write) if the built-in GITHUB_TOKEN
+          # ever 403s on the traffic API. Add it as an Actions secret named
+          # TRAFFIC_TOKEN; otherwise the built-in token is used.
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN || secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/record-clones.sh
+
+      - name: Commit updated tally
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/traffic/clones.json .github/traffic/clones-badge.json
+          if git diff --cached --quiet; then
+            echo "no change"
+          else
+            git commit -m "chore(traffic): update all-time clone stats [skip ci]"
+            git push
+          fi
