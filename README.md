@@ -1,5 +1,9 @@
 # Harbor
 
+<p align="center">
+  <img src="assets/harbor-banner.svg" alt="Harbor — a hybrid local PHP dev platform for macOS: native PHP, nginx, Xdebug, dnsmasq and TLS run on the host, while MySQL, OpenSearch, Redis, RabbitMQ and Mailpit run in Docker containers docked in the harbor" width="820">
+</p>
+
 [![Number of downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/alaa-almaliki/harbor/main/.github/traffic/clones-badge.json&v=2)](../../actions/workflows/traffic-clones.yml)
 
 **A hybrid local development platform for PHP — macOS only.**

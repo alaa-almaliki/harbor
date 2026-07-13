@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" font-family="Helvetica, Arial, sans-serif" role="img" aria-label="Harbor — a hybrid local PHP dev platform for macOS: native PHP, nginx, Xdebug, dnsmasq and TLS run on the host, while MySQL, OpenSearch, Redis, RabbitMQ and Mailpit run in Docker containers docked in the harbor.">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e3346"/>
+      <stop offset="0.55" stop-color="#164b62"/>
+      <stop offset="1" stop-color="#1a5c74"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0a2c3c"/>
+      <stop offset="1" stop-color="#061c28"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffdca6" stop-opacity="0.95"/>
+      <stop offset="0.6" stop-color="#f6b26b" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#f6b26b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- backdrop -->
+  <rect x="0" y="0" width="1200" height="400" rx="24" ry="24" fill="url(#sky)"/>
+
+  <!-- sun / focal glow -->
+  <circle cx="1058" cy="96" r="52" fill="url(#sun)"/>
+
+  <!-- gantry crane (behind the stack) -->
+  <g stroke-linecap="round" fill="none">
+    <line x1="678" y1="162" x2="678" y2="300" stroke="#2c576c" stroke-width="9"/>
+    <line x1="1132" y1="162" x2="1132" y2="300" stroke="#2c576c" stroke-width="9"/>
+    <line x1="668" y1="156" x2="1142" y2="156" stroke="#34627a" stroke-width="12"/>
+    <line x1="905" y1="162" x2="905" y2="178" stroke="#4f8299" stroke-width="3"/>
+  </g>
+  <rect x="884" y="149" width="42" height="15" rx="3" fill="#4f8299"/>
+  <rect x="895" y="176" width="20" height="5" rx="2" fill="#4f8299"/>
+
+  <!-- water -->
+  <path d="M0,300 H1200 V376 A24,24 0 0 1 1176,400 H24 A24,24 0 0 1 0,376 Z" fill="url(#water)"/>
+  <line x1="24" y1="300" x2="1176" y2="300" stroke="#3f7488" stroke-width="1.5" opacity="0.6"/>
+  <g stroke="#7fb3c6" fill="none" stroke-linecap="round">
+    <path d="M70,338 q34,-9 68,0 t68,0 t68,0 t68,0 t68,0" stroke-width="2.5" opacity="0.16"/>
+    <path d="M700,352 q34,9 68,0 t68,0 t68,0 t68,0 t68,0" stroke-width="2.5" opacity="0.14"/>
+    <path d="M120,372 q34,-8 68,0 t68,0 t68,0" stroke-width="2.5" opacity="0.12"/>
+  </g>
+
+  <!-- dock deck the containers rest on -->
+  <rect x="664" y="300" width="484" height="10" fill="#123647"/>
+  <rect x="664" y="300" width="484" height="2.5" fill="#2b586c"/>
+
+  <!-- ===== Dockerized backing services = shipping containers ===== -->
+  <!-- bottom row -->
+  <g>
+    <rect x="690" y="238" width="138" height="62" rx="6" fill="#2a9d8f"/>
+    <rect x="690" y="238" width="138" height="11" rx="6" fill="#000000" opacity="0.16"/>
+    <rect x="690" y="291" width="138" height="9" rx="4" fill="#000000" opacity="0.16"/>
+    <line x1="736" y1="252" x2="736" y2="288" stroke="#000000" stroke-width="2" opacity="0.12"/>
+    <line x1="782" y1="252" x2="782" y2="288" stroke="#000000" stroke-width="2" opacity="0.12"/>
+    <text x="759" y="278" text-anchor="middle" fill="#ffffff" font-size="16" font-weight="700">mysql</text>
+  </g>
+  <g>
+    <rect x="836" y="238" width="138" height="62" rx="6" fill="#4d96c9"/>
+    <rect x="836" y="238" width="138" height="11" rx="6" fill="#000000" opacity="0.16"/>
+    <rect x="836" y="291" width="138" height="9" rx="4" fill="#000000" opacity="0.16"/>
+    <line x1="882" y1="252" x2="882" y2="288" stroke="#000000" stroke-width="2" opacity="0.12"/>
+    <line x1="928" y1="252" x2="928" y2="288" stroke="#000000" stroke-width="2" opacity="0.12"/>
+    <text x="905" y="278" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="700">opensearch</text>
+  </g>
+  <g>
+    <rect x="982" y="238" width="138" height="62" rx="6" fill="#e05d44"/>
+    <rect x="982" y="238" width="138" height="11" rx="6" fill="#000000" opacity="0.16"/>
+    <rect x="982" y="291" width="138" height="9" rx="4" fill="#000000" opacity="0.16"/>
+    <line x1="1028" y1="252" x2="1028" y2="288" stroke="#000000" stroke-width="2" opacity="0.12"/>
+    <line x1="1074" y1="252" x2="1074" y2="288" stroke="#000000" stroke-width="2" opacity="0.12"/>
+    <text x="1051" y="278" text-anchor="middle" fill="#ffffff" font-size="16" font-weight="700">redis</text>
+  </g>
+  <!-- top row -->
+  <g>
+    <rect x="763" y="176" width="138" height="62" rx="6" fill="#e9a23b"/>
+    <rect x="763" y="176" width="138" height="11" rx="6" fill="#000000" opacity="0.16"/>
+    <rect x="763" y="229" width="138" height="9" rx="4" fill="#000000" opacity="0.16"/>
+    <line x1="809" y1="190" x2="809" y2="226" stroke="#000000" stroke-width="2" opacity="0.12"/>
+    <line x1="855" y1="190" x2="855" y2="226" stroke="#000000" stroke-width="2" opacity="0.12"/>
+    <text x="832" y="216" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">rabbitmq</text>
+  </g>
+  <g>
+    <rect x="909" y="176" width="138" height="62" rx="6" fill="#9b7cc4"/>
+    <rect x="909" y="176" width="138" height="11" rx="6" fill="#000000" opacity="0.16"/>
+    <rect x="909" y="229" width="138" height="9" rx="4" fill="#000000" opacity="0.16"/>
+    <line x1="955" y1="190" x2="955" y2="226" stroke="#000000" stroke-width="2" opacity="0.12"/>
+    <line x1="1001" y1="190" x2="1001" y2="226" stroke="#000000" stroke-width="2" opacity="0.12"/>
+    <text x="978" y="216" text-anchor="middle" fill="#ffffff" font-size="15" font-weight="700">mailpit</text>
+  </g>
+
+  <text x="905" y="332" text-anchor="middle" fill="#a7c4d2" font-size="14" letter-spacing="0.5">Dockerized backing services</text>
+
+  <!-- ===== left: brand + native side ===== -->
+  <!-- anchor mark -->
+  <g stroke="#ffffff" stroke-width="6" stroke-linecap="round" fill="none" opacity="0.96">
+    <circle cx="92" cy="58" r="7" stroke-width="5"/>
+    <line x1="92" y1="66" x2="92" y2="120"/>
+    <line x1="74" y1="79" x2="110" y2="79" stroke-width="5"/>
+    <path d="M66,110 C72,132 112,132 118,110"/>
+    <line x1="66" y1="110" x2="59" y2="101"/>
+    <line x1="118" y1="110" x2="125" y2="101"/>
+  </g>
+
+  <text x="140" y="106" fill="#ffffff" font-size="78" font-weight="800" letter-spacing="-1">Harbor</text>
+  <text x="142" y="150" fill="#d3e7f1" font-size="23">A hybrid local PHP dev platform for macOS</text>
+
+  <text x="142" y="192" fill="#8fb4c4" font-size="12" font-weight="700" letter-spacing="3">NATIVE ON THE HOST</text>
+  <g font-size="14" fill="#eaf5fa">
+    <rect x="142" y="204" width="54" height="30" rx="15" fill="#ffffff" fill-opacity="0.10" stroke="#ffffff" stroke-opacity="0.22"/>
+    <text x="169" y="224" text-anchor="middle">PHP</text>
+    <rect x="206" y="204" width="66" height="30" rx="15" fill="#ffffff" fill-opacity="0.10" stroke="#ffffff" stroke-opacity="0.22"/>
+    <text x="239" y="224" text-anchor="middle">nginx</text>
+    <rect x="282" y="204" width="78" height="30" rx="15" fill="#ffffff" fill-opacity="0.10" stroke="#ffffff" stroke-opacity="0.22"/>
+    <text x="321" y="224" text-anchor="middle">Xdebug</text>
+    <rect x="370" y="204" width="88" height="30" rx="15" fill="#ffffff" fill-opacity="0.10" stroke="#ffffff" stroke-opacity="0.22"/>
+    <text x="414" y="224" text-anchor="middle">dnsmasq</text>
+    <rect x="468" y="204" width="52" height="30" rx="15" fill="#ffffff" fill-opacity="0.10" stroke="#ffffff" stroke-opacity="0.22"/>
+    <text x="494" y="224" text-anchor="middle">TLS</text>
+  </g>
+
+  <!-- domain hint -->
+  <text x="142" y="270" fill="#7fa6b6" font-size="15">every project served at <tspan fill="#cfe6f0" font-weight="700">https://&lt;name&gt;.test</tspan></text>
+</svg>
