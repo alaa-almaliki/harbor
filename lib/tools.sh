@@ -1,10 +1,30 @@
 #!/usr/bin/env bash
 # tools.sh — run code under a project's pinned PHP (+ nvm), with Xdebug on demand.
 
-# a dir containing a `php` that is the project's version (+xdebug when 'on')
+# `-d key=value` CLI flags from a manifest's php_ini flow map (empty if none).
+# Mirrors link_php_value_block (FPM's fastcgi_param PHP_VALUE) so the manifest is
+# the single source of truth for both web and CLI php ini — e.g. a Magento project
+# with `php_ini: { memory_limit: 2G }` gets it on `harbor magento`/`run`/`composer`
+# too, not just web requests. (Values with spaces aren't supported here, same as
+# the ini keys Harbor projects actually set: memory_limit, max_execution_time, …)
+_cli_php_ini_flags() {
+  local mf="$1" pair out=""
+  [ -f "$mf" ] || return 0
+  while IFS= read -r pair; do
+    [ -n "$pair" ] || continue
+    out="$out -d $pair"
+  done <<EOF
+$(manifest_pairs "$mf" php_ini)
+EOF
+  printf '%s' "$out"
+}
+
+# a dir containing a `php` that is the project's version (+xdebug when 'on', +the
+# project's manifest php_ini). Keyed by project so two projects sharing a PHP
+# version but pinning different ini don't clobber each other's shim.
 cli_php_pathdir() {
-  local v="$1" real d so dflags="" default_loaded=0
-  d="$HARBOR_RUN/cli/$v"
+  local v="$1" name="${2:-}" real d so dflags="" default_loaded=0 ini=""
+  d="$HARBOR_RUN/cli/${name:-_}/$v"
   real="$(php_cli_bin "$v")"
   mkdir -p "$d"
   # mirror fpm-exec: only load xdebug if the version's own config doesn't already,
@@ -18,9 +38,11 @@ cli_php_pathdir() {
   elif [ "$default_loaded" -eq 1 ]; then
     dflags="-d xdebug.mode=off"
   fi
+  # manifest php_ini last so it wins over Harbor's own defaults if a project pins one.
+  [ -n "$name" ] && ini="$(_cli_php_ini_flags "$(manifest_path "$name")")"
   cat > "$d/php" <<EOF
 #!/usr/bin/env bash
-exec "$real" $dflags "\$@"
+exec "$real" $dflags $ini "\$@"
 EOF
   chmod +x "$d/php"
   printf '%s' "$d"
@@ -40,7 +62,7 @@ _project_run_env() {
   _PR_DIR="$(project_dir "$name")"; [ -d "$_PR_DIR" ] || die "no project dir: $_PR_DIR"
   _PR_VER="$(_project_php_ver "$name")"
   [ -x "$(php_cli_bin "$_PR_VER")" ] || die "php@$_PR_VER not installed → brew install php@$_PR_VER"
-  _PR_PHPDIR="$(cli_php_pathdir "$_PR_VER")"
+  _PR_PHPDIR="$(cli_php_pathdir "$_PR_VER" "$name")"
 }
 
 cmd_run() {

@@ -295,8 +295,13 @@ rendered into Harbor's `etc/`; nothing is written into brew dirs):
 - **Per-project php.ini overrides:** since one pool serves all sites of a version,
   per-project settings (manifest `php_ini:`) are applied **per-site** by rendering
   `fastcgi_param PHP_VALUE "memory_limit=2G\nopcache.validate_timestamps=1\n…";`
-  into that site's vhost — not at the pool. Dev-friendly opcache
-  (`validate_timestamps=1`) is the default so code edits show immediately.
+  into that site's vhost — not at the pool. The **same `php_ini:` is also applied
+  to the project's CLI** — `cli_php_pathdir` emits it as `-d key=value` flags in
+  the per-project php shim — so `harbor magento`/`run`/`composer` honor
+  `memory_limit` etc. (the manifest is the single source of truth for web and CLI
+  ini alike; a Magento `di:compile` no longer OOMs at the host's 128M default).
+  Dev-friendly opcache (`validate_timestamps=1`) is the default so code edits show
+  immediately.
   (Extensions can't be loaded per-site, so manifest `extensions:` is a
   *must-be-installed-for-this-version* requirement that `doctor` checks, not a
   per-site load.)

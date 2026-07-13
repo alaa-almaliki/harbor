@@ -110,6 +110,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shellcheck-clean.
 
 ### Changed
+- **`harbor status`/`ps` color running projects green.** A project whose stack is
+  `up` is printed as a green row so the running projects stand out at a glance;
+  down projects stay uncolored. Color is TTY-gated (no escape codes when the output
+  is piped or redirected).
 - **README** now states up front that Harbor is **macOS-only** and **unstable /
   under active development**, that **code contributions are not accepted** (issues
   welcome), and documents the per-project **Claude Code agent skill** (new "For AI
@@ -126,6 +130,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unchanged.
 
 ### Fixed
+- **Manifest `php_ini:` now applies to the project CLI, not just web.** The
+  per-project php shim (`cli_php_pathdir`) previously injected only Xdebug flags,
+  so `harbor magento`/`run`/`composer`/`artisan` ran at the host brew CLI's default
+  `memory_limit` (typically 128M) — a Magento `setup:di:compile`/`indexer:reindex`
+  would OOM despite `php_ini: { memory_limit: 2G }` in the manifest (that only
+  reached web requests via FPM's `PHP_VALUE`). Harbor now emits the manifest
+  `php_ini` block as `-d key=value` flags into the CLI shim too, mirroring the FPM
+  path, so the manifest is the single source of truth for web **and** CLI ini. The
+  shim is now keyed per project so two projects sharing a PHP version but pinning
+  different ini don't clobber each other. (No manifest change needed; regenerated
+  on the next `harbor run`/`magento`/etc.)
 - **Containerized tool shims now work with entrypoint-based images.** The generated
   `.harbor/bin/<bin>` shim appended the binary name as a command argument, which
   double-invoked images that set the binary as their `ENTRYPOINT` (wkhtmltopdf,

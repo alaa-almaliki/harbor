@@ -51,7 +51,7 @@ cmd_mail() {
 cmd_ps() {
   ensure_dirs
   printf '%-16s %-11s %-5s %-6s %-6s %s\n' PROJECT FRAMEWORK PHP STACK LINKED PORTS
-  local d name mf fw php stack linked dbp
+  local d name mf fw php stack linked dbp color reset
   for d in "$HARBOR_PROJECTS"/*/; do
     [ -d "$d" ] || continue
     name="$(basename "$d")"; [ "$name" = "*" ] && continue
@@ -61,7 +61,10 @@ cmd_ps() {
     if [ -f "$(project_compose_file "$name")" ] && project_compose "$name" ps -q 2>/dev/null | grep -q .; then stack=up; else stack=down; fi
     [ -f "$HARBOR_NGINX_SITES/$name.$HARBOR_TLD.conf" ] && linked=yes || linked=no
     dbp=""; ports_load "$name" 2>/dev/null && dbp="db:$DB_PORT"
-    printf '%-16s %-11s %-5s %-6s %-6s %s\n' "$name" "$fw" "$php" "$stack" "$linked" "$dbp"
+    # green the whole row for a project whose stack is up and running
+    color=""; reset=""
+    [ "$stack" = up ] && { color="$_c_grn"; reset="$_c_reset"; }
+    printf '%s%-16s %-11s %-5s %-6s %-6s %s%s\n' "$color" "$name" "$fw" "$php" "$stack" "$linked" "$dbp" "$reset"
   done
 }
 

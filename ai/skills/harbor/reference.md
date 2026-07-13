@@ -112,7 +112,7 @@ node: "20"                  # optional -> .nvmrc
 docroot: pub                # web root override (Laravel/Symfony: public, Magento: pub)
 domains: [shop.test]        # extra hostnames beyond <name>.test
 extensions: [imagick, redis]    # required PHP ext (doctor validates)
-php_ini: { memory_limit: 2G, "opcache.validate_timestamps": 1 }   # applied per-site
+php_ini: { memory_limit: 2G, "opcache.validate_timestamps": 1 }   # applied to web + CLI
 services: { mysql: "mysql:8.0", opensearch: "opensearchproject/opensearch:2.19.0", rabbitmq: "rabbitmq:3.13-management-alpine" }
 db:        { name: shop, user: shop, password: shop }   # image lives in services.mysql
 tools:     [wkhtmltopdf, ghostscript]                   # or { wkhtmltopdf: { image: …, bin: …, mode: entrypoint } }

@@ -439,8 +439,10 @@ Customizations supported per project:
 - **Docroot** — `docroot:` for apps with non-standard web roots.
 - **nginx rules** — drop a `.harbor/nginx.conf` snippet; it's included in the
   site's `server {}` block (the escape hatch for legacy `.htaccess`-style apps).
-- **php.ini** — `php_ini:` is applied per-site (via `PHP_VALUE`), so projects on
-  the same PHP version can differ.
+- **php.ini** — `php_ini:` is applied per-site for web (via `PHP_VALUE`) **and to
+  the project's CLI** (`run`/`composer`/`magento`/`artisan`/…, via `-d` flags), so
+  e.g. `memory_limit: 2G` applies to `harbor magento setup:di:compile` too, not
+  just web requests. Projects on the same PHP version can differ.
 - **Extensions** — `extensions:` is validated by `harbor doctor <name>`.
 
 ### Optional backing services

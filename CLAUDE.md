@@ -57,7 +57,12 @@ This is the project's defining constraint. Concretely:
 - **php-fpm** — render `etc/php/<ver>/fpm.conf`; launch with `--fpm-config`. Do
   **not** edit brew's `php-fpm.d/` or pool defaults.
 - **php / xdebug** — configure via `-d` flags at launch (and per-site
-  `fastcgi_param PHP_VALUE`). Do **not** write into `…/etc/php/*/conf.d/`. Xdebug
+  `fastcgi_param PHP_VALUE`). Do **not** write into `…/etc/php/*/conf.d/`. Manifest
+  `php_ini:` is applied to **both** surfaces from the same source: FPM via
+  `link_php_value_block` (`PHP_VALUE`) and the project CLI via `cli_php_pathdir`
+  (`-d` flags in the per-project php shim). Keep the two in sync — a php_ini change
+  that only reaches one surface (e.g. `memory_limit` on web but not
+  `harbor magento`) is a bug. Xdebug
   is toggled via **`xdebug.mode`** (`off` vs `debug,develop`), NOT by loading the
   extension — the host's brew PHP may already load Xdebug (and default
   `xdebug.mode=develop`). Only add `-d zend_extension=…` when the version doesn't
