@@ -49,7 +49,7 @@ days="$(printf '%s' "$merged" | jq 'length')"
 # Shields.io endpoint badge the README embeds.
 jq -n --arg msg "$total" '{
   schemaVersion: 1,
-  label: "clones (all-time)",
+  label: "Number of downloads",
   message: $msg,
   color: "blue"
 }' > "$badge"
