@@ -10,11 +10,13 @@ on:
     - cron: '17 3 * * *'   # daily at 03:17 UTC
   workflow_dispatch:        # allow manual runs (first run / backfill a gap)
 
-# Only the built-in token access we need: write to push the updated tally, and
-# administration:read because the clone-traffic API requires repo admin/push.
+# Write access to push the updated tally back to the repo. The clone-traffic API
+# additionally requires push/admin access on the token itself — the built-in
+# GITHUB_TOKEN has that for its own repo; if it ever 403s, supply a TRAFFIC_TOKEN
+# secret (see the step env below). ('administration' is NOT a grantable workflow
+# permission, so it can't be listed here.)
 permissions:
   contents: write
-  administration: read
 
 concurrency:
   group: traffic-clones
