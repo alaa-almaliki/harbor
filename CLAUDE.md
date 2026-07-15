@@ -62,11 +62,17 @@ This is the project's defining constraint. Concretely:
   `link_php_value_block` (`PHP_VALUE`) and the project CLI via `cli_php_pathdir`
   (`-d` flags in the per-project php shim). Keep the two in sync — a php_ini change
   that only reaches one surface (e.g. `memory_limit` on web but not
-  `harbor magento`) is a bug. Xdebug
+  `harbor magento`) is a bug. **Xdebug obeys the same both-surfaces rule, via one
+  helper:** `xdebug_dflags <ver>` (`lib/common.sh`) is the *only* place the flags
+  are built, and both `lib/fpm-exec.sh` and `cli_php_pathdir` call it — never
+  hand-roll the flag string in either (that's exactly how the CLI silently lost
+  `client_host` and CLI debugging broke while web worked). Xdebug
   is toggled via **`xdebug.mode`** (`off` vs `debug,develop`), NOT by loading the
   extension — the host's brew PHP may already load Xdebug (and default
   `xdebug.mode=develop`). Only add `-d zend_extension=…` when the version doesn't
-  already load it. Never edit brew ini files.
+  already load it. Pin `xdebug.client_host=127.0.0.1` — the `localhost` default
+  resolves to `::1` first on macOS, so an IDE on IPv4 never sees the session.
+  Never edit brew ini files.
 - **dnsmasq** — run Harbor's own instance (`dnsmasq -C etc/dnsmasq/harbor.conf`,
   port 5354) via `com.harbor.dnsmasq`. Do **not** edit brew's `dnsmasq.conf` or
   drop files in `dnsmasq.d/`.

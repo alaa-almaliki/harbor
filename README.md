@@ -4,7 +4,7 @@
   <img src="assets/harbor-banner.svg" alt="Harbor — a hybrid local PHP dev platform for macOS: native PHP, nginx, Xdebug, dnsmasq and TLS run on the host, while MySQL, OpenSearch, Redis, RabbitMQ and Mailpit run in Docker containers docked in the harbor" width="820">
 </p>
 
-[![Number of downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/alaa-almaliki/harbor/main/.github/traffic/clones-badge.json&v=2)](../../actions/workflows/traffic-clones.yml)
+[![Downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/alaa-almaliki/harbor/main/.github/traffic/clones-badge.json&v=3)](../../actions/workflows/traffic-clones.yml)
 
 **A hybrid local development platform for PHP — macOS only.**
 
@@ -55,7 +55,7 @@ Works with **plain PHP, Magento, Laravel, Symfony, and CodeIgniter** side by sid
 
 | Layer | Runs as | Components |
 |-------|---------|-----------|
-| **Native (host)** | Harbor-owned launchd units | PHP-FPM (all versions), nginx (`:80/:443`), dnsmasq (`:5354`), Xdebug, mkcert TLS |
+| **Native (host)** | Harbor-owned launchd units | PHP-FPM (all versions), nginx (one instance, `:80/:443`), dnsmasq (`:5354`), Xdebug, mkcert TLS |
 | **Docker — shared** | one always-on stack | Mailpit (`:1025` SMTP / `:8025` UI), Redis (`:6379`) |
 | **Docker — per project** | `harbor up`/`down` on demand | MySQL 8, OpenSearch + RabbitMQ (Magento) |
 
@@ -79,6 +79,18 @@ You also need:
 
 - **Docker** (Desktop or compatible) with Compose v2
 - **mkcert** with its local CA installed: `mkcert -install`
+- **Xdebug** (optional, for step debugging) — Homebrew's PHP doesn't bundle it, so
+  install it per PHP version with `pecl`:
+  ```bash
+  pecl install xdebug            # for the PHP currently first on your PATH
+  # for another version, use that version's pecl:
+  $(brew --prefix php@8.3)/bin/pecl install xdebug
+  ```
+  Harbor only needs the built `xdebug.so` to exist — it loads and configures
+  Xdebug itself via `-d` flags, so you never edit brew's `php.ini`. If `pecl`
+  already enabled it there, Harbor detects that and just toggles `xdebug.mode`.
+  Toggle with `harbor xdebug on|off`; `harbor doctor` reports which versions have
+  it. On EOL PHP, use a prebuilt binary instead of `pecl` (see [Recipes → D](#d-xdebug-on-an-eol-php)).
 - **nvm** (optional, for per-project Node versions)
 - **Composer** (optional, global)
 
@@ -286,6 +298,13 @@ Magento site on 8.3 and a Laravel site on 8.4 can run at the same time. A site
 picks its version with a `.php-version` file (or `harbor link --php 8.3`); nginx
 routes the site to the matching pool. `harbor php` shows pool status and sets the
 default version for new sites.
+
+> **PHP is the only multi-version layer.** nginx is not: Harbor runs exactly one
+> nginx (the brew-installed one, on `:80/:443`) that serves every site, and there
+> is no way to pin a project to a different nginx version. Per-site differences
+> are expressed in that shared nginx's config — the vhost Harbor renders at
+> `link`, plus an optional `.harbor/nginx.conf` snippet — not by running a second
+> nginx.
 
 ### The project manifest
 
@@ -544,9 +563,21 @@ harbor xdebug off
 harbor xdebug status
 ```
 
-Xdebug is layered onto the running pools at launch (no edits to your Homebrew PHP
-config). It uses `start_with_request=trigger` on port `9003`, so it only engages
-when your client/IDE sends the trigger.
+Xdebug is layered on at launch (no edits to your Homebrew PHP config). It uses
+`start_with_request=trigger` on port `9003`, so it only engages when your
+client/IDE sends the trigger — that's why leaving it on is cheap.
+
+The toggle covers **both surfaces from the same settings**: web requests (the FPM
+pools) *and* the project CLI (`harbor run`/`composer`/`magento`/`artisan`/…). To
+debug a CLI command, send the trigger with an env var:
+
+```bash
+XDEBUG_TRIGGER=1 harbor magento setup:upgrade    # breakpoints hit in your IDE
+harbor magento setup:upgrade                     # no trigger, no debug session
+```
+
+For the browser, use a trigger extension (Xdebug helper) or append
+`?XDEBUG_TRIGGER=1`. Both surfaces connect to `127.0.0.1:9003`.
 
 ---
 

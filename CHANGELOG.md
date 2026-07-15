@@ -130,6 +130,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unchanged.
 
 ### Fixed
+- **Xdebug on the project CLI now connects like it does on the web.** With
+  `harbor xdebug on`, the CLI shim set `xdebug.mode`/`start_with_request` but not
+  the connection settings FPM gets, so it fell back to xdebug's `localhost`
+  default — which resolves to `::1` first on macOS. An IDE listening on IPv4
+  `127.0.0.1:9003` therefore never saw a session: breakpoints hit on a web request
+  but silently did nothing on `XDEBUG_TRIGGER=1 harbor magento …`/`artisan`/
+  `composer`. Both surfaces now build their flags from one `xdebug_dflags` helper
+  (`client_host=127.0.0.1`, `client_port=9003`, `discover_client_host=false`), so
+  web and CLI debugging can't drift apart again. Still trigger-based, so leaving
+  Xdebug on stays cheap and unrelated CLI commands don't pay for it. (No action
+  needed; the shim is regenerated on the next `harbor run`/`magento`/etc.)
 - **Manifest `php_ini:` now applies to the project CLI, not just web.** The
   per-project php shim (`cli_php_pathdir`) previously injected only Xdebug flags,
   so `harbor magento`/`run`/`composer`/`artisan` ran at the host brew CLI's default

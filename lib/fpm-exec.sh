@@ -19,25 +19,12 @@ export HARBOR_ROOT
 
 ver="${1:?usage: fpm-exec.sh <php-version>}"
 bin="$(php_fpm_bin "$ver")"
-cli="$(php_cli_bin "$ver")"
 conf="$(php_fpm_conf "$ver")"
 [ -x "$bin" ] || { echo "php-fpm $ver not found at $bin" >&2; exit 1; }
 [ -f "$conf" ] || { echo "pool config missing: $conf" >&2; exit 1; }
 
-# Is xdebug already loaded by this version's default (brew) config?
-default_loaded=0
-"$cli" -m 2>/dev/null | grep -qi '^xdebug$' && default_loaded=1
-
-dflags=""
-if [ "$(xdebug_state)" = "on" ]; then
-  if [ "$default_loaded" -eq 0 ]; then
-    if so="$(xdebug_so_for "$ver")"; then dflags="-d zend_extension=$so"; fi
-  fi
-  dflags="$dflags -d xdebug.mode=debug,develop -d xdebug.start_with_request=trigger -d xdebug.client_host=127.0.0.1 -d xdebug.client_port=9003 -d xdebug.discover_client_host=false"
-else
-  # off: if the extension is loaded by default config, neutralize it
-  [ "$default_loaded" -eq 1 ] && dflags="-d xdebug.mode=off"
-fi
+# Same flags the project CLI shim gets (see xdebug_dflags) — one source of truth.
+dflags="$(xdebug_dflags "$ver")"
 
 # shellcheck disable=SC2086
 exec "$bin" -F --fpm-config "$conf" $dflags

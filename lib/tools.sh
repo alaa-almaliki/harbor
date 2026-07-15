@@ -23,21 +23,14 @@ EOF
 # project's manifest php_ini). Keyed by project so two projects sharing a PHP
 # version but pinning different ini don't clobber each other's shim.
 cli_php_pathdir() {
-  local v="$1" name="${2:-}" real d so dflags="" default_loaded=0 ini=""
+  local v="$1" name="${2:-}" real d dflags="" ini=""
   d="$HARBOR_RUN/cli/${name:-_}/$v"
   real="$(php_cli_bin "$v")"
   mkdir -p "$d"
-  # mirror fpm-exec: only load xdebug if the version's own config doesn't already,
-  # so this works whether or not brew's php.ini enables it (no double-load).
-  "$real" -m 2>/dev/null | grep -qi '^xdebug$' && default_loaded=1
-  if [ "$(xdebug_state)" = "on" ]; then
-    if [ "$default_loaded" -eq 0 ] && so="$(xdebug_so_for "$v")"; then
-      dflags="-d zend_extension=$so"
-    fi
-    dflags="$dflags -d xdebug.mode=debug,develop -d xdebug.start_with_request=trigger"
-  elif [ "$default_loaded" -eq 1 ]; then
-    dflags="-d xdebug.mode=off"
-  fi
+  # exactly the flags php-fpm gets, from the same helper — `harbor xdebug on` must
+  # mean the same thing for `harbor run`/`magento` as for a web request. The shim is
+  # rewritten on every run, so it always reflects the current toggle.
+  dflags="$(xdebug_dflags "$v")"
   # manifest php_ini last so it wins over Harbor's own defaults if a project pins one.
   [ -n "$name" ] && ini="$(_cli_php_ini_flags "$(manifest_path "$name")")"
   cat > "$d/php" <<EOF

@@ -224,6 +224,36 @@ xdebug_so_for() {
   return 1
 }
 
+# xdebug_dflags <ver> — the `-d` flags implementing the global xdebug toggle for
+# <ver>. The single source of truth for BOTH surfaces — php-fpm (lib/fpm-exec.sh)
+# and the per-project CLI shim (cli_php_pathdir) — so `harbor xdebug on` means the
+# same thing for a web request and for `harbor run`/`magento`/`composer`. Keep it
+# that way: flags that reach only one surface are a bug (same rule as php_ini).
+#
+# Xdebug is controlled via xdebug.mode, NOT by loading the extension, so this works
+# whether or not the host's brew php.ini already loads xdebug — and never edits it.
+xdebug_dflags() {
+  local ver="$1" bin so default_loaded=0 dflags=""
+  bin="$(php_cli_bin "$ver")"
+  if [ -x "$bin" ] && "$bin" -m 2>/dev/null | grep -qi '^xdebug$'; then default_loaded=1; fi
+  if [ "$(xdebug_state)" = "on" ]; then
+    # only add zend_extension when the version's own config doesn't already load
+    # xdebug, so it's never double-loaded
+    if [ "$default_loaded" -eq 0 ] && so="$(xdebug_so_for "$ver")"; then
+      dflags="-d zend_extension=$so"
+    fi
+    # client_host is pinned to 127.0.0.1 rather than left at xdebug's `localhost`
+    # default: on macOS `localhost` resolves to ::1 first, so an IDE listening on
+    # IPv4 never sees the connection.
+    dflags="$dflags -d xdebug.mode=debug,develop -d xdebug.start_with_request=trigger"
+    dflags="$dflags -d xdebug.client_host=127.0.0.1 -d xdebug.client_port=9003 -d xdebug.discover_client_host=false"
+  elif [ "$default_loaded" -eq 1 ]; then
+    # off: neutralize an xdebug loaded by the version's default config
+    dflags="-d xdebug.mode=off"
+  fi
+  printf '%s' "$dflags"
+}
+
 # --- Global config (KEY=VALUE) ----------------------------------------------
 # config_get <KEY> [default]
 config_get() {

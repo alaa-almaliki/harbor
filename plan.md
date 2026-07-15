@@ -23,7 +23,7 @@ dnsmasq; mkcert (CA installed); Docker 29.4 + compose v2; Composer 2.9; node via
 |------|----------|
 | **PHP execution** | **Concurrent `ondemand` FPM pools** — every installed version runs its own pool on its own socket (`var/php-<ver>.sock`). Idle cost is just the master (~5–15 MB each). No switching. |
 | **PHP per site** | Each site pins its version via a `.php-version` file (or `harbor link --php`); nginx routes that site to the matching socket. |
-| **Xdebug** | `harbor xdebug on\|off\|status`; layered at FPM launch via `-d zend_extension=…` flags (no edits to Homebrew php.ini), **trigger-based**, applies to all pools. |
+| **Xdebug** | `harbor xdebug on\|off\|status`; layered via `-d zend_extension=…` flags (no edits to Homebrew php.ini), **trigger-based**, client `127.0.0.1:9003`. One toggle, both surfaces: all FPM pools **and** the project CLI (`run`/`composer`/`magento`/…), from the same `xdebug_dflags` helper. |
 | **Service topology** | **Per-project compose stacks**; **manual `harbor up`/`down` only** (no auto-stop). |
 | **Shared services** | **Mailpit** (SMTP `127.0.0.1:1025`, UI `:8025`) and **Redis** (`127.0.0.1:6379`), one shared stack, always on. |
 | **Redis hygiene** | `databases 256`, **persistence off** (`--save "" --appendonly no`). Per-project DB-index block + key prefix. **Flush-on-down**: `harbor down <name>` runs `FLUSHDB` on that project's indices only. |
@@ -60,11 +60,20 @@ the configuration and runs its own instances.
 | **dnsmasq** | `etc/dnsmasq/harbor.conf` | Harbor runs its **own** dnsmasq via `com.harbor.dnsmasq` LaunchAgent (`dnsmasq -C … `, `port=5354`, `address=/test/127.0.0.1`). Brew's `dnsmasq.conf` untouched. | **none** |
 | **TLS** | `certs/_wildcard.test.pem` (+ key) | referenced by absolute path in vhosts. mkcert CA already in the system trust store (mkcert's domain, not ours). | **none** |
 
-**Xdebug toggle without plist churn:** the FPM LaunchAgent invokes
-`lib/fpm-exec.sh <ver>`, which reads `var/xdebug` at start and appends the
-`-d zend_extension=… -d xdebug.mode=… -d xdebug.start_with_request=trigger`
-flags when on. `harbor xdebug on|off` just rewrites `var/xdebug` and
+**Xdebug toggle without plist churn:** `xdebug_dflags <ver>` (`lib/common.sh`)
+reads `var/xdebug` and returns the `-d zend_extension=… -d xdebug.mode=…
+-d xdebug.start_with_request=trigger -d xdebug.client_host=127.0.0.1 …` flags when
+on (and `-d xdebug.mode=off` when off, to neutralize an xdebug brew's php.ini
+already loads). `harbor xdebug on|off` just rewrites `var/xdebug` and
 `launchctl kickstart -k`s the pools — no plist regeneration, no brew php edits.
+
+It is the **single source of truth for both surfaces**: the FPM LaunchAgent's
+`lib/fpm-exec.sh <ver>` and the per-project CLI shim (`cli_php_pathdir`, rewritten
+on every `harbor run`) call the same helper, so `harbor xdebug on` means the same
+thing for a web request and for `harbor magento`/`composer`/`artisan`. Both dial
+`127.0.0.1:9003` — pinned rather than xdebug's `localhost` default, which on macOS
+resolves to `::1` first and would silently miss an IDE listening on IPv4. Flags
+that reach only one surface are a bug (same rule as `php_ini:`).
 
 **Sudo touchpoints (one-time, both reversible):** installing
 `/Library/LaunchDaemons/com.harbor.nginx.plist` (needs root for `:443`) and
