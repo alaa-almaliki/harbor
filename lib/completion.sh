@@ -7,7 +7,7 @@ cmd_completion() {
   case "${1-}" in
     bash) _completion_bash ;;
     zsh)  _completion_zsh ;;
-    *) die "usage: harbor completion bash|zsh" ;;
+    *) usage_die completion "harbor completion bash|zsh" ;;
   esac
 }
 
@@ -30,6 +30,7 @@ _harbor() {
     db) COMPREPLY=(\$(compgen -W "create drop backup import pull sandbox" -- "\$cur")); return ;;
     sandbox) COMPREPLY=(\$(compgen -W "create drop list backup restore console up down destroy status" -- "\$cur")); return ;;
     store) COMPREPLY=(\$(compgen -W "add list rm" -- "\$cur")); return ;;
+    help) COMPREPLY=(\$(compgen -W "$(help_topics | tr '\n' ' ')" -- "\$cur")); return ;;
   esac
   projects=\$(ls "$HARBOR_PROJECTS" 2>/dev/null)
   COMPREPLY=(\$(compgen -W "\$projects" -- "\$cur"))
@@ -54,6 +55,7 @@ _harbor() {
     db) compadd create drop backup import pull sandbox; return ;;
     sandbox) compadd create drop list backup restore console up down destroy status; return ;;
     store) compadd add list rm; return ;;
+    help) compadd $(help_topics | tr '\n' ' '); return ;;
   esac
   projects=(\$(ls "$HARBOR_PROJECTS" 2>/dev/null))
   compadd \$projects

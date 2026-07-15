@@ -609,6 +609,34 @@ above.
 
 ## Command reference
 
+> **Every command documents itself**, and the topic is more complete than the
+> tables below — those are a summary, the topic is the contract for a command's
+> flags (every flag it parses is listed there).
+>
+> ```bash
+> harbor help                 # every command, one line each
+> harbor help db              # one command: flags, examples, gotchas
+> harbor db --help            # the same topic, shorter to type
+> harbor db sandbox --help    # subcommands have topics too
+> harbor help db sandbox      # same
+> ```
+>
+> A topic gives you the purpose, the exact usage, **every flag**, a couple of real
+> examples, and the gotchas — `harbor down` also flushes the project's Redis;
+> `harbor media pull` is `rsync --delete` and won't ask first. Help prints to
+> stdout and exits `0`, so `harbor db --help | less` works.
+>
+> Ask however you like — `harbor php --help`, `harbor php use --help` and
+> `harbor help php` all reach the same place.
+>
+> Commands that wrap another tool (`run`, `composer`, `artisan`, `console`,
+> `spark`, `magento`, `node`, `npm`) pass `--help` **through** to that tool, so
+> `harbor composer --help` reaches Composer — from inside a project, or with a
+> project name (`harbor composer shop --help`), since the tool still has to run
+> somewhere. Harbor's own docs for those are at `harbor help composer`. Same for a
+> containerized tool's own flags: `harbor tool shop wkhtmltopdf --help` is
+> wkhtmltopdf's help, while `harbor tool --help` is Harbor's.
+
 ### Host & lifecycle
 
 | Command | Description |
@@ -636,7 +664,7 @@ above.
 | `harbor new <name> <framework>` | Scaffold + init + up + wire + install + link + open. |
 | `harbor init <name> [framework]` | Allocate ports, write manifest (`--existing` for adopted code). |
 | `harbor render <name>` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:` versions); materializes a legacy list-format `services:` into the explicit map. |
-| `harbor link <name> [--wildcard]` | Create the `https://<name>.test` vhost. |
+| `harbor link <name>` | Create the `https://<name>.test` vhost (adds the cert SAN, reloads nginx). A Magento project with `multistore.mode: domain` also gets `*.<name>.test` automatically. |
 | `harbor unlink <name>` | Remove the vhost. |
 | `harbor wire <name> [--print]` | Inject DB/Redis/mail config into the app (surgical, never clobbers). |
 | `harbor up\|down\|restart <name>` | Start/stop the project's Docker stack (`down` flushes its Redis). |
@@ -681,7 +709,7 @@ above.
 | `harbor db import <name> <file> [db]` | Hookable import pipeline (see above). `--force` skips server-rejected statements (e.g. generated-column inserts) instead of aborting. |
 | `harbor db pull <name>` | Pull a remote dump straight into the import pipeline. |
 | `harbor media pull <name>` | rsync remote media/storage. |
-| `harbor redis flush [<name>]` | Flush a project's Redis indices (or the whole instance). |
+| `harbor redis [<name>] [args…]` | `redis-cli` on the project's **cache** index; args pass through (e.g. `harbor redis shop FLUSHDB`). `harbor down <name>` flushes all four of its indices. |
 
 ### Multi-store (Magento)
 

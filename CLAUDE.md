@@ -110,8 +110,11 @@ This is the project's defining constraint. Concretely:
   (mkdir-based; macOS has no `flock`).
 
 **Design**
-- **Templates, not heredocs in logic.** All emitted config comes from `templates/`
-  via `render`. Adding output means adding/editing a template.
+- **Templates, not heredocs in logic.** All emitted **config files** come from `templates/`
+  via `render`. Adding output means adding/editing a template. This is about
+  artifacts written to disk — human-facing terminal text (`usage()`, `lib/help.sh`
+  topics, emitted completion scripts) stays a heredoc where it's readable in
+  source.
 - **Read the manifest, generate the rest.** New per-project behavior = a manifest
   key + generation logic, not a side file.
 - **Doctor before mutate.** `setup` gates on required checks; `init/up/link` run a
@@ -122,10 +125,13 @@ This is the project's defining constraint. Concretely:
   raised `RLIMIT_NOFILE`/`worker_rlimit_nofile`.
 
 **Safety**
-- Destructive ops (`drop`, `destroy`, `down -v`, `teardown`, `redis flush`)
-  **confirm interactively**; honor `--yes` for scripting.
+- Destructive ops (`drop`, `destroy`, `down -v`, `teardown`) **confirm
+  interactively** via `confirm()`, which is bypassed by **`HARBOR_YES=1` only**.
+  There is **no `--yes` flag** except on `harbor update` — don't document one, and
+  if you add a flag, add it to the command's help topic in the same commit.
 - `db import`/`db pull` take an **auto-backup first** (`--no-backup` to skip).
-- Config injection (`wire`) is **allowlist-only, idempotent, with a `.bak`** —
+- Config injection (`wire`) is **allowlist-only, idempotent, with a
+  `.harbor-bak`** (written once, not refreshed on re-wire) —
   never blanket-rewrite an app's `.env`. Symfony → `.env.local` only; Magento →
   its own CLI, never hand-edit `env.php`.
 
@@ -185,8 +191,26 @@ and **[SemVer](https://semver.org)**.
   `case` (platform templates → `harbor setup`; compose → `harbor render/up`) —
   don't make `update` mutate host state itself (no sudo, no launchd reload).
 - **New command** → add a dispatch case in `bin/harbor`, implement in the relevant
-  `lib/*.sh`, add completion, update the command tables in `README.md` + `plan.md`
-  + `CHANGELOG.md`.
+  `lib/*.sh`, **add a help topic in `lib/help.sh`**, add it to `_HARBOR_CMDS`
+  (`lib/completion.sh` — the single list of what commands exist; `help_topics`
+  derives from it), update the command tables in `README.md` + `plan.md` +
+  `CHANGELOG.md`. The help topic is **not optional** — `test/test_help.sh` fails
+  the build if a dispatched command has no topic. A topic is the *contract* for
+  the command's flags (the README tables are only a summary), so **every flag the
+  command parses must appear there**; a flag that reaches the parser but not the
+  help is a bug. Report usage errors with **`usage_die <topic> "<text>"`**, never a
+  bare `die "usage: …"` — it renders the `→ harbor <cmd> --help` pointer and picks
+  `--help` vs `harbor help <cmd>` for you. Subcommand help is generic: a topic
+  keyed `<cmd>-<sub>` is reached by `harbor <cmd> <sub> --help` with no wiring. If
+  the command execs another tool and forwards argv, add it to `help_passthrough`
+  so its `--help` reaches that tool.
+- **Never let `-h`/`--help` reach a command as data.** `help_intercept` answers it
+  wherever Harbor is still parsing; a command must never treat it as a value. This
+  isn't cosmetic — it once made `harbor logs nginx --help` hang on `tail -F` and
+  `harbor xdebug on --help` enable Xdebug and restart every pool. If a new command
+  parses positional args, give it a topic and let the interceptor do its job;
+  don't hand-roll an `-h)` arm (that's how `harbor update`'s help drifted from its
+  own topic).
 - **New framework** → add nginx + compose + env templates, docroot detection,
   installer/seed/wire branches. Keep auto-detection but allow manifest override.
 - **New backing service** → per-project, via **compose fragment assembly**: add

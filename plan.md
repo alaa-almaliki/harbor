@@ -227,7 +227,8 @@ harbor xdebug on|off|status
 harbor new <name> <framework>         # scaffold + init + up + wire + install + link + open
 harbor init <name> [framework] [--existing] [--multistore domain|path] [--php <ver>]
 harbor render <name>                  # regenerate compose+connection from the manifest (services: versions)
-harbor link <name> [--wildcard]       # nginx vhost <name>.test
+harbor link <name>                    # nginx vhost <name>.test (+ *.<name>.test
+                                      #   automatically for domain-multistore Magento)
 harbor unlink <name>
 harbor wire <name> [--print]          # inject config into the app (surgical)
 harbor up|down|restart <name>         # per-project docker stack (down flushes redis)
@@ -255,7 +256,6 @@ harbor media pull <name>                   # rsync remote media/storage
 harbor mysql|redis|shell <name>       # open a console into the project's services
 harbor open <name>                    # open https://<name>.test in the browser
 harbor ps | list                      # status of all projects / running stacks
-harbor redis flush [<name>]
 harbor mail up|down                   # shared stack (mailpit + redis)
 harbor secure [host...]               # (re)issue wildcard cert / add SANs
 harbor status                         # pools, sites, running stacks, ports

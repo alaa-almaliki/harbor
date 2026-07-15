@@ -43,8 +43,7 @@ cmd_update() {
       --check)   check=1; shift ;;
       --stash)   stash=1; shift ;;
       --yes|-y)  HARBOR_YES=1; shift ;;
-      -h|--help) echo "usage: harbor update [--check] [--stash] [--yes]"; return 0 ;;
-      *) die "unknown option: $1 (usage: harbor update [--check] [--stash])" ;;
+      *) usage_die update "harbor update [--check] [--stash] [--yes]  (unknown option: $1)" ;;
     esac
   done
 

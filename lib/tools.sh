@@ -63,7 +63,7 @@ cmd_run() {
   # `harbor shell`); an explicit existing-project arg still wins.
   resolve_project "${1:-}" "harbor run [<name>] <cmd...>"; local name="$_RP_NAME"
   [ "$_RP_SHIFT" = 1 ] && shift
-  [ $# -gt 0 ] || die "usage: harbor run [<name>] <cmd...>  (omit <name> inside a project)"
+  [ $# -gt 0 ] || usage_die run "harbor run [<name>] <cmd...>  (omit <name> inside a project)"
   _project_run_env "$name"; local dir="$_PR_DIR" phpdir="$_PR_PHPDIR"
   # PATH puts .harbor/scripts (committable per-project commands) ahead of tool
   # shims, so `harbor run <name> invoice` resolves a per-project script.

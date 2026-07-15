@@ -41,7 +41,7 @@ brackets); name-less it errors with `project name required`.
 | `harbor restart <name>` | Restart the stack. |
 | `harbor render <name>` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:`). |
 | `harbor destroy <name> [--files]` | Remove stack + volumes + vhost + ports (confirm-gated; `--files` also deletes the code). |
-| `harbor link <name> [--wildcard]` | Create/refresh the `https://<name>.test` vhost (adds cert SAN, reloads nginx). |
+| `harbor link <name>` | Create/refresh the `https://<name>.test` vhost (adds cert SAN, reloads nginx). |
 | `harbor unlink <name>` | Remove the vhost. |
 | `harbor open <name>` | Open the site in the browser. |
 | `harbor wire <name> [--print]` | Inject DB/Redis/mail into the app config (surgical, never clobbers). |
@@ -55,7 +55,7 @@ brackets); name-less it errors with `project name required`.
 | `harbor db import <name> <file> [db]` | Hookable import pipeline (below). `--force` skips server-rejected rows; `--replace OLD=NEW`; `--no-backup`; `--keep-definers`; Magento `--reconfigure`. |
 | `harbor db pull <name>` | Pull a remote dump straight into the import pipeline. |
 | `harbor media pull <name>` | rsync remote media/storage. |
-| `harbor redis flush [<name>]` | Flush this project's Redis indices. |
+| `harbor redis [<name>] [args…]` | `redis-cli` on this project's **cache** index (args pass through — e.g. `harbor redis FLUSHDB`). There is no `redis flush` subcommand; `harbor down <name>` flushes all four indices. |
 
 ### Sandbox — project-independent scratch MySQL (127.0.0.1:3306)
 | Command | What it does |

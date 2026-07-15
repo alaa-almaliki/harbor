@@ -83,6 +83,8 @@ fi
 . "$HARBOR_ROOT/lib/test.sh"
 # shellcheck source=lib/completion.sh
 . "$HARBOR_ROOT/lib/completion.sh"
+# shellcheck source=lib/help.sh
+. "$HARBOR_ROOT/lib/help.sh"
 
 usage() {
   cat <<EOF
@@ -129,8 +131,12 @@ EOF
 
 main() {
   local cmd="${1-}"; shift || true
+  # `harbor <cmd> … --help` -> the topic on stdout, exit 0. Falls through when the
+  # flag isn't ours to answer (see help_intercept).
+  help_intercept "$cmd" "$@" && return 0
   case "$cmd" in
-    ""|help|-h|--help) usage ;;
+    ""|-h|--help) usage ;;
+    help) cmd_help "$@" ;;
     version|-v|--version) printf 'harbor %s\n' "$HARBOR_VERSION" ;;
     doctor) cmd_doctor "${1-}" ;;
     setup) cmd_setup "$@" ;;

@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-command help: `harbor <cmd> --help` and `harbor help <cmd>`.** Every
+  command now has a topic covering its purpose, exact usage, **every flag it
+  parses**, real examples, and the gotchas that cost you an hour — `harbor down`
+  also flushes the project's Redis; `harbor composer` bypasses the PHP shim so
+  `php_ini`/Xdebug don't reach Composer itself; `harbor media pull` is
+  `rsync --delete` and isn't confirm-gated; `harbor tool` won't infer the project
+  from your cwd. Ask however you like — `harbor php --help`, `harbor php use
+  --help` and `harbor help php` all land on the same topic. Subcommands can have
+  their own topic, keyed `<cmd>-<sub>` and reached with no extra wiring — so far
+  `harbor db sandbox --help`. Help prints
+  to **stdout and exits 0** (so it pipes), unlike the terse `usage:` one-liners on
+  misuse, which stay on stderr and now point at `--help`. Commands that wrap
+  another tool (`run`, `composer`, `artisan`, `console`, `spark`, `magento`,
+  `node`, `npm`) pass `--help` **through** to that tool; their Harbor docs are at
+  `harbor help <cmd>`. `harbor help <topic>` completes in bash/zsh.
 - **`harbor update [--check] [--stash] [--yes]`: self-update.** Fetches `origin`
   and **fast-forwards** the checkout to `origin/main` (ff-only — never a merge
   commit or history rewrite), then **force-reseeds** the agent skill into every
@@ -130,6 +145,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unchanged.
 
 ### Fixed
+- **Asking for help never runs anything.** `--help`/`-h` used to be data to most
+  commands, with real consequences: `harbor logs nginx --help` **hung** (any extra
+  arg means "follow", so it started `tail -F`), `harbor xdebug on --help`
+  **enabled Xdebug and restarted every PHP-FPM pool**, `harbor secure host --help`
+  added `--help` as a certificate SAN, and `harbor php --help` reported
+  `unsupported version '--help'`. Harbor now answers the flag wherever *it* is the
+  one parsing — `harbor php use --help`, `harbor db sandbox create --help` and
+  `harbor update --check --help` all print help — while still handing it over once
+  argv belongs to a tool, so `harbor composer --help` reaches Composer and
+  `harbor tool shop wkhtmltopdf --help` reaches wkhtmltopdf.
+- **Docs: removed two flags that never existed.** `harbor link --wildcard` and
+  `harbor redis flush` were documented in `README.md`, `plan.md` and the
+  per-project **agent skill** but are absent from the code — so an agent following
+  the skill would run a command that fails. The `*.<name>.test` SAN is added
+  automatically for a Magento project with `multistore.mode: domain` (no flag);
+  to flush, use `harbor redis <name> FLUSHDB` or `harbor down <name>` (which
+  flushes all four of the project's indices).
 - **Xdebug on the project CLI now connects like it does on the web.** With
   `harbor xdebug on`, the CLI shim set `xdebug.mode`/`start_with_request` but not
   the connection settings FPM gets, so it fell back to xdebug's `localhost`

@@ -28,7 +28,7 @@ EOF
 
 store_add() {
   require_name "${1-}"; local name="$1" code="${2-}"; shift 2 2>/dev/null || true
-  [ -n "$code" ] || die "usage: harbor store add <name> <code> --domain <host> | --path <seg>"
+  [ -n "$code" ] || usage_die store "harbor store add <name> <code> --domain <host> | --path <seg>"
   _valid_store_code "$code"
   local mode="" val=""
   case "${1-}" in
@@ -55,7 +55,7 @@ store_list() {
 
 store_rm() {
   require_name "${1-}"; local name="$1" code="${2-}"
-  [ -n "$code" ] || die "usage: harbor store rm <name> <code>"
+  [ -n "$code" ] || usage_die store "harbor store rm <name> <code>"
   _valid_store_code "$code"
   local mode pairs; mode="$(manifest_get "$(manifest_path "$name")" multistore.mode none)"
   pairs="$(_store_pairs "$name" | grep -v "^$code=" || true)"
@@ -70,6 +70,6 @@ cmd_store() {
     add) store_add "$@" ;;
     list) store_list "$@" ;;
     rm) store_rm "$@" ;;
-    *) die "usage: harbor store add|list|rm <name> ..." ;;
+    *) usage_die store "harbor store add|list|rm <name> ..." ;;
   esac
 }

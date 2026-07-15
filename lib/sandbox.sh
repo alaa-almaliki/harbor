@@ -64,7 +64,7 @@ _sandbox_ensure() { _sandbox_running || sandbox_up; }
 
 # harbor db sandbox create <db> [user] [pass]
 sandbox_create() {
-  local db="${1-}"; [ -n "$db" ] || die "usage: harbor db sandbox create <db> [user] [pass]"
+  local db="${1-}"; [ -n "$db" ] || usage_die db-sandbox "harbor db sandbox create <db> [user] [pass]"
   _sandbox_ensure
   local user pass port; db="$(db_ident "$db")"
   user="$(db_ident "${2:-$db}")"; pass="${3:-$db}"; port="$(_sandbox_port)"
@@ -79,7 +79,7 @@ sandbox_create() {
 # harbor db sandbox drop <db> [user]   (drops the database and the user; user
 # defaults to the db name — pass it explicitly to clean up a custom-named user)
 sandbox_drop() {
-  local db="${1-}"; [ -n "$db" ] || die "usage: harbor db sandbox drop <db> [user]"
+  local db="${1-}"; [ -n "$db" ] || usage_die db-sandbox "harbor db sandbox drop <db> [user]"
   _sandbox_ensure; db="$(db_ident "$db")"
   local user; user="$(db_ident "${2:-$db}")"
   confirm "DROP DATABASE \`$db\` (and user '$user') on the sandbox? This is destructive." || { warn "aborted"; return 1; }
@@ -107,7 +107,7 @@ sandbox_list() {
 
 # harbor db sandbox backup <db> [file]
 sandbox_backup() {
-  local db="${1-}"; [ -n "$db" ] || die "usage: harbor db sandbox backup <db> [file]"
+  local db="${1-}"; [ -n "$db" ] || usage_die db-sandbox "harbor db sandbox backup <db> [file]"
   _sandbox_ensure; db="$(db_ident "$db")"
   local dir file ts; dir="$HARBOR_BACKUPS/sandbox"; mkdir -p "$dir"
   ts="$(date +%Y%m%d-%H%M%S)"; file="${2:-$dir/$db-$ts.sql.gz}"
@@ -119,7 +119,7 @@ sandbox_backup() {
 # harbor db sandbox restore <db> <file>   (load a dump; auto-creates the db)
 sandbox_restore() {
   local db="${1-}" file="${2-}"
-  [ -n "$db" ] && [ -n "$file" ] && [ -f "$file" ] || die "usage: harbor db sandbox restore <db> <file>"
+  [ -n "$db" ] && [ -n "$file" ] && [ -f "$file" ] || usage_die db-sandbox "harbor db sandbox restore <db> <file>"
   _sandbox_ensure; db="$(db_ident "$db")"
   local tmpd; tmpd="$(mktemp -d "${TMPDIR:-/tmp}/harbor-sandbox.XXXXXX")"
   # shellcheck disable=SC2064
@@ -182,6 +182,6 @@ cmd_db_sandbox() {
     down|stop) sandbox_down ;;
     destroy) sandbox_destroy ;;
     status|""|ps) sandbox_status ;;
-    *) die "usage: harbor db sandbox create|drop|list|backup|restore|console|up|down|destroy|status" ;;
+    *) usage_die db-sandbox "harbor db sandbox create|drop|list|backup|restore|console|up|down|destroy|status" ;;
   esac
 }

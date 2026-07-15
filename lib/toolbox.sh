@@ -85,7 +85,7 @@ EOF
 }
 
 cmd_tools() {
-  [ "${1-}" = "sync" ] || die "usage: harbor tools sync <name>"
+  [ "${1-}" = "sync" ] || usage_die tools "harbor tools sync <name>"
   shift; require_name "${1-}"; local name="$1" mf t n=0
   mf="$(manifest_path "$name")"
   for t in $(tools_declared "$mf"); do
@@ -96,7 +96,7 @@ cmd_tools() {
 
 cmd_tool() {
   require_name "${1-}"; local name="$1" tool="${2-}"
-  [ -n "$tool" ] || die "usage: harbor tool <name> <tool> [args...]"
+  [ -n "$tool" ] || usage_die tool "harbor tool <name> <tool> [args...]"
   shift 2
   docker info >/dev/null 2>&1 || die "docker daemon not running"
   local dir shim; dir="$(project_dir "$name")"

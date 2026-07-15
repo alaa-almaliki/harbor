@@ -41,6 +41,6 @@ media_pull() {
 }
 
 cmd_media() {
-  [ "${1-}" = "pull" ] || die "usage: harbor media pull <name>"
+  [ "${1-}" = "pull" ] || usage_die media "harbor media pull <name>"
   shift; media_pull "$@"
 }

@@ -111,7 +111,7 @@ _php_current_formula() {
 # always use each project's own version regardless of what's linked here.
 php_use() {
   local ver="${1-}"
-  [ -n "$ver" ] || die "usage: harbor php use <ver>"
+  [ -n "$ver" ] || usage_die php "harbor php use <ver>"
   valid_php_version "$ver" || die "unsupported version '$ver' (have: $HARBOR_PHP_VERSIONS)"
   [ -x "$(php_cli_bin "$ver")" ] || die "php@$ver not installed → brew install php@$ver"
   need_cmd brew
@@ -165,6 +165,6 @@ cmd_xdebug() {
       ok "xdebug off"
       ;;
     status) printf 'xdebug: %s\n' "$(xdebug_state)" ;;
-    *) die "usage: harbor xdebug on|off|status" ;;
+    *) usage_die xdebug "harbor xdebug on|off|status" ;;
   esac
 }

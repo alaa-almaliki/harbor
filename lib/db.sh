@@ -125,7 +125,7 @@ db_import() {
       *) if [ -z "$file" ]; then file="$1"; else db="$1"; fi; shift ;;
     esac
   done
-  [ -n "$file" ] && [ -f "$file" ] || die "usage: harbor db import <name> <file> [db]"
+  [ -n "$file" ] && [ -f "$file" ] || usage_die db "harbor db import <name> <file> [db]"
   _db_load "$name"; _db_up_check "$name"
   db="$(db_ident "${db:-$(db_ident "$name")}")"
   export HARBOR_IMPORT_DB="$db"
@@ -239,6 +239,6 @@ cmd_db() {
     backup) db_backup "$@" ;;
     import) db_import "$@" ;;
     pull)   db_pull "$@" ;;
-    *) die "usage: harbor db create|drop|backup|import|pull <name> ...  |  harbor db sandbox <sub>" ;;
+    *) usage_die db "harbor db create|drop|backup|import|pull <name> ...  |  harbor db sandbox <sub>" ;;
   esac
 }
