@@ -456,6 +456,8 @@ allocator keeps their stacks from colliding. A consumer calls a provider at
        refused with a fix hint — `--force` loads the partial dump anyway.
     2. **strip DEFINER** (automatic — removes `DEFINER=…`/`SQL SECURITY DEFINER`
        so a missing prod user can't break the import; `--keep-definers` to disable).
+       Runs as a stream filter fused with step 1 — one pass over the bytes, not
+       copy-then-rewrite-in-place.
     3. **pre-import hooks** — each executable in `.harbor/hooks/pre-import.d/*`
        (global `etc/hooks/pre-import.d/*` first) runs with `$HARBOR_DUMP` + env;
        mutates the dump in place (e.g. `sed -i "$HARBOR_DUMP" …`).

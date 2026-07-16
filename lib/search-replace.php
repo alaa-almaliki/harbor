@@ -85,6 +85,10 @@ $wr = new PDO($dsn, $o['user'], $o['pass'],
 // the dump never satisfied must not abort the replace halfway through.
 $wr->exec('SET FOREIGN_KEY_CHECKS=0');
 
+// Deliberately NO server-side LIKE pre-filter: measured on a real 670-table
+// Magento DB, `col LIKE '%needle%'` per column×rule (240 collation-aware
+// predicates/row) took 4m07s vs 1m37s for streaming every row into PHP's
+// str_replace. The full scan into PHP IS the fast path.
 $changed = 0; $skipped = 0;
 foreach ($wr->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) as $t) {
     $pk = []; $textcols = [];

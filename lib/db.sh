@@ -23,15 +23,18 @@ _db_up_check() {
 # Escape a password for a single-quoted SQL literal (\ then '), MySQL default mode.
 sql_quote_pass() { local p="$1"; p="${p//\\/\\\\}"; printf '%s' "${p//\'/\'\'}"; }
 
-# Decompress a dump ($1) to a working file ($2), by extension: .sql.gz/.gz, .zip,
-# or plain copy.
-_db_decompress() {
+# Emit a dump ($1) decompressed to stdout, by extension: .sql.gz/.gz, .zip, or
+# plain cat — so callers can chain transforms in ONE pass over the bytes.
+_db_stream() {
   case "$1" in
-    *.sql.gz|*.gz) gunzip -c "$1" > "$2" ;;
-    *.zip)         unzip -p "$1" > "$2" ;;
-    *)             cp "$1" "$2" ;;
+    *.sql.gz|*.gz) gunzip -c "$1" ;;
+    *.zip)         unzip -p "$1" ;;
+    *)             cat "$1" ;;
   esac
 }
+
+# Decompress a dump ($1) to a working file ($2).
+_db_decompress() { _db_stream "$1" > "$2"; }
 
 # A truncated dump (interrupted download/export) ends mid-statement and loads
 # only the tables before the cut — silently, with --force. A complete dump's
@@ -47,9 +50,14 @@ _dump_looks_complete() {
   esac
 }
 
-# Emit a dump file ($1) wrapped so foreign-key checks are off during load (lets
-# out-of-order rows/constraints load cleanly). Pipe into a mysql runner.
-_fk_wrapped() { echo "SET FOREIGN_KEY_CHECKS=0;"; cat "$1"; echo "SET FOREIGN_KEY_CHECKS=1;"; }
+# Emit a dump file ($1) wrapped so foreign-key + unique checks are off during
+# load (out-of-order rows load cleanly, secondary indexes build faster — the
+# same session flags mysqldump itself puts in its header). Pipe into a mysql runner.
+_fk_wrapped() {
+  echo "SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0;"
+  cat "$1"
+  echo "SET UNIQUE_CHECKS=1; SET FOREIGN_KEY_CHECKS=1;"
+}
 
 # Emit idempotent SQL to (re)provision a database + user with a password. The
 # ALTER USER line ensures the password matches the requested one even when the
@@ -66,11 +74,14 @@ FLUSH PRIVILEGES;
 SQL
 }
 
-# Strip DEFINER=/SQL SECURITY DEFINER from a dump file in place so a missing prod
-# user can't break the import. LC_ALL=C: process byte-wise so BSD sed doesn't
-# choke ("illegal byte sequence") on non-UTF-8 bytes in latin1/binary columns.
+# Strip DEFINER=/SQL SECURITY DEFINER from a dump so a missing prod user can't
+# break the import. LC_ALL=C: process byte-wise so BSD sed doesn't choke
+# ("illegal byte sequence") on non-UTF-8 bytes in latin1/binary columns.
+# _DEFINER_SED is the single source for the expressions: strip_definers rewrites
+# a file in place; db_import applies the same sed as a stream filter instead.
+_DEFINER_SED='s/DEFINER=`[^`]*`@`[^`]*`//g; s/DEFINER=[^ ]*@[^ ]* //g; s/SQL SECURITY DEFINER//g'
 strip_definers() {
-  LC_ALL=C sed -i '' -E 's/DEFINER=`[^`]*`@`[^`]*`//g; s/DEFINER=[^ ]*@[^ ]* //g; s/SQL SECURITY DEFINER//g' "$1"
+  LC_ALL=C sed -i '' -E "$_DEFINER_SED" "$1"
 }
 
 # harbor db create <name> [db] [user] [pass]
@@ -226,15 +237,23 @@ db_import() {
   # 0. auto-backup
   if [ "$nobackup" = 0 ]; then
     local bdir="$HARBOR_BACKUPS/$name"; mkdir -p "$bdir"
-    local pre; pre="$bdir/pre-import-$(date +%Y%m%d-%H%M%S).sql.gz"
+    local pre tb=$SECONDS; pre="$bdir/pre-import-$(date +%Y%m%d-%H%M%S).sql.gz"
     log "auto-backup before import -> $pre"
     _db_mysqldump "$name" --single-transaction --no-tablespaces "$db" 2>/dev/null | gzip > "$pre" || warn "pre-backup skipped (empty db?)"
+    step "backed up in $(human_duration $((SECONDS - tb)))  (--no-backup to skip on re-imports)"
   fi
 
-  # 1. decompress to a working file
-  local work="$tmpd/dump.sql"
-  log "decompressing $file"
-  _db_decompress "$file" "$work"
+  # 1+2. decompress AND strip DEFINER in one streaming pass — the old
+  # copy-then-sed-in-place rewrote the whole (multi-GB) file twice.
+  local work="$tmpd/dump.sql" t1=$SECONDS
+  if [ "$keepdef" = 0 ]; then
+    log "decompressing $file (stripping DEFINER clauses)"
+    _db_stream "$file" | LC_ALL=C sed -E "$_DEFINER_SED" > "$work"
+  else
+    log "decompressing $file"
+    _db_decompress "$file" "$work"
+  fi
+  step "prepared in $(human_duration $((SECONDS - t1)))"
 
   # refuse a truncated dump up front — loading one "succeeds" per-statement but
   # silently drops every table after the cut (a Magento dump cut in the s's has
@@ -246,12 +265,6 @@ db_import() {
     else
       die "dump looks truncated — it ends mid-statement, so every table after the cut is missing (interrupted download/export?) → re-export or re-download it; --force loads the partial dump anyway"
     fi
-  fi
-
-  # 2. strip DEFINER
-  if [ "$keepdef" = 0 ]; then
-    step "stripping DEFINER clauses"
-    strip_definers "$work"
   fi
 
   # optional in-stream literal replace (fast; not serialized-safe).
@@ -282,17 +295,36 @@ db_import() {
   # generated column, like Laravel Pulse's key_hash) instead of aborting.
   local forceflag=""
   [ "$force" = 1 ] && { forceflag="--force"; step "loading with --force (rejected statements skipped, not aborted)"; }
-  log "loading into '$db' (FK checks off)"
+  # Relax durability for the bulk load: with the default
+  # innodb_flush_log_at_trx_commit=1 the server fsyncs on EVERY commit — the
+  # classic dump-replay killer (a 4.5G Magento dump: ~40min -> ~10min). =2
+  # flushes once a second instead; worst case on a crash is losing <1s of a
+  # load we'd redo anyway. GLOBAL-only knob, so restore the old value after.
+  # (If the load dies mid-way the value stays at 2 until the next import or a
+  # container restart — a durability/perf knob on a local dev server, harmless.)
+  local flush_prev; flush_prev="$(_db_mysql "$name" -N -e 'SELECT @@innodb_flush_log_at_trx_commit;' 2>/dev/null | tr -d '[:space:]')"
+  case "$flush_prev" in 0|1|2|3) ;; *) flush_prev="" ;; esac
+  if [ -n "$flush_prev" ]; then
+    _db_mysql "$name" -e 'SET GLOBAL innodb_flush_log_at_trx_commit=2;' 2>/dev/null || flush_prev=""
+  fi
+  log "loading into '$db' (FK + unique checks off)"
+  local t2=$SECONDS
   # shellcheck disable=SC2086
   _fk_wrapped "$work" | _db_mysql "$name" $forceflag "$db"
+  step "loaded in $(human_duration $((SECONDS - t2)))"
+  if [ -n "$flush_prev" ]; then
+    _db_mysql "$name" -e "SET GLOBAL innodb_flush_log_at_trx_commit=$flush_prev;" 2>/dev/null || true
+  fi
 
   # 5. serialized-safe search/replace (post-load), unless stream-replace already did it
   if [ "$streamrep" = 0 ] && [ -s "$rulesf" ]; then
     step "serialized-safe search/replace"
     # 512M: reads stream row-by-row (unbuffered), but one row can hold a large
     # serialized blob and rr() recursion tops the 128M CLI default.
+    local t3=$SECONDS
     "$phpcli" -d memory_limit=512M "$HARBOR_LIB/search-replace.php" \
       --host 127.0.0.1 --port "$DB_PORT" --user root --pass "$DB_ROOT_PASSWORD" --db "$db" --rules "$rulesf"
+    step "replaced in $(human_duration $((SECONDS - t3)))"
   fi
 
   # 6. post-import hooks (operate on the live DB via $HARBOR_MYSQL)

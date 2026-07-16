@@ -71,6 +71,25 @@ assert_contains "validate: pre-import *.sql warns it never runs" \
   "only runs post-import" "$out"
 rm "$hooks/pre-import.d/60-misplaced.sql"
 
+# --- streamed DEFINER strip == in-place strip_definers ------------------------
+printf 'CREATE DEFINER=`prod`@`%%` PROCEDURE p() SQL SECURITY DEFINER BEGIN END;\nINSERT INTO `t` VALUES ("keep DEFINER-free data");\n' > "$tmp/def.sql"
+cp "$tmp/def.sql" "$tmp/def-inplace.sql"
+strip_definers "$tmp/def-inplace.sql"
+_db_stream "$tmp/def.sql" | LC_ALL=C sed -E "$_DEFINER_SED" > "$tmp/def-stream.sql"
+assert_eq "definer strip: stream output matches in-place" \
+  "$(cat "$tmp/def-inplace.sql")" "$(cat "$tmp/def-stream.sql")"
+
+gzip -c "$tmp/def.sql" > "$tmp/def.sql.gz"
+assert_eq "definer strip: gz stream matches too" \
+  "$(cat "$tmp/def-inplace.sql")" "$(_db_stream "$tmp/def.sql.gz" | LC_ALL=C sed -E "$_DEFINER_SED")"
+
+# --- _fk_wrapped: FK + unique checks off around the dump ----------------------
+printf 'INSERT INTO `t` VALUES (1);\n' > "$tmp/fk.sql"
+fkout="$(_fk_wrapped "$tmp/fk.sql")"
+assert_contains "fk_wrapped: FK checks off"      "SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0;" "$fkout"
+assert_contains "fk_wrapped: checks restored"    "SET UNIQUE_CHECKS=1; SET FOREIGN_KEY_CHECKS=1;" "$fkout"
+assert_contains "fk_wrapped: dump body included" "INSERT INTO \`t\` VALUES (1);" "$fkout"
+
 # --- _dump_looks_complete: truncated-dump detection --------------------------
 printf 'INSERT INTO `t` VALUES (1);\n-- Dump completed on 2026-07-16\n' > "$tmp/complete.sql"
 assert_ok "complete: ends with mysqldump marker" _dump_looks_complete "$tmp/complete.sql"

@@ -135,6 +135,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shellcheck-clean.
 
 ### Changed
+- **`db import` is much faster on real-world dumps.** Two fixes to where the
+  time actually went: (1) the load runs with `innodb_flush_log_at_trx_commit=2`
+  (fsync per second instead of per commit — the classic dump-replay killer;
+  restored to its previous value after) and `UNIQUE_CHECKS=0`, the same flag
+  mysqldump puts in its own headers; (2) decompress + DEFINER-strip run as one
+  streaming pass instead of copy-then-rewrite-in-place — half the disk IO.
+  Each heavy phase now prints its own duration (`prepared in 2m 1s`,
+  `loaded in 9m 40s`, …) so a slow import says where the time went. (A
+  server-side `LIKE` pre-filter for the search/replace pass was prototyped and
+  measured 2.5× *slower* than streaming rows into PHP — not shipped.)
 - **`db import` ends with a summary: dump size, elapsed time, status.**
   `ok import complete -> shop (4.5G dump in 12m 4s)` — and a load that came
   from a truncated dump repeats its loud warning right above the summary, so
