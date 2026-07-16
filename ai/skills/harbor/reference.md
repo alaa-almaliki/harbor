@@ -52,7 +52,7 @@ brackets); name-less it errors with `project name required`.
 | `harbor db create <name> [db] [user] [pass]` | Create DB + user (defaults: db=project, user=db, pass=db). |
 | `harbor db drop <name> [db]` | Drop a database (confirm-gated). |
 | `harbor db backup <name> [db] [file]` | Dump → `backups/db/<name>/<timestamp>.sql.gz`. |
-| `harbor db import <name> <file> [db]` | Hookable import pipeline (below). `--force` skips server-rejected rows; `--replace OLD=NEW`; `--no-backup`; `--keep-definers`; Magento `--reconfigure`. |
+| `harbor db import <name> <file> [db]` | Hookable import pipeline (below). `--force` = best-effort (skip rejected statements, load truncated dumps); `--replace OLD=NEW`; `--no-backup`; `--keep-definers`; Magento `--reconfigure`. |
 | `harbor db pull <name>` | Pull a remote dump straight into the import pipeline. |
 | `harbor media pull <name>` | rsync remote media/storage. |
 | `harbor redis [<name>] [args…]` | `redis-cli` on this project's **cache** index (args pass through — e.g. `harbor redis FLUSHDB`). There is no `redis flush` subcommand; `harbor down <name>` flushes all four indices. |
@@ -143,7 +143,13 @@ through the image's own entrypoint (needed for s6-overlay/init images like
 
 ## Database import pipeline (`harbor db import`)
 
-1. **Decompress** `.sql` / `.sql.gz` / `.zip`.
+0. **Validate rules + hooks up front** — malformed rules (missing `=>`, invalid
+   `re:` regex) abort before any work; hooks that would be silently skipped
+   (not executable, `*.sql` in `pre-import.d/`) warn; a shell hook with a
+   syntax error aborts.
+1. **Decompress** `.sql` / `.sql.gz` / `.zip`, then **refuse a truncated dump**
+   (one that ends mid-statement — every table after the cut would be silently
+   missing). `--force` loads the partial dump anyway.
 2. **Strip DEFINER** clauses (so a missing prod user can't break the import;
    `--keep-definers` to disable).
 3. **Pre-import hooks** — every executable in `.harbor/hooks/pre-import.d/` runs
@@ -164,6 +170,12 @@ live.com             => local.test
 https://cdn.live.com => https://shop.test
 re:UA-\d+-\d+        =>
 ```
+
+Harbor seeds commented-out samples for all of this (`import-rules`, one
+`.sample` hook per phase under `.harbor/hooks/`) — start by uncommenting those
+rather than writing from scratch. `# lines` and `.sample` files are inert.
+`hooks/post-import.d/*.sql` is the right place to pin table records to local
+values on every import (base URLs, dev passwords, clearing live API keys).
 
 ---
 

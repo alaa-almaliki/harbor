@@ -167,8 +167,9 @@ harbor/
   docker/docker-compose.yml      # SHARED stack: mailpit + redis (generated)
   projects/<name>/
     .harbor/harbor.yml           # COMMITTABLE manifest (single source of truth)
-    .harbor/import-rules         # committable replace rules
-    .harbor/hooks/{pre-import.d,post-import.d}/   # committable per-project hooks
+    .harbor/import-rules         # committable replace rules (init seeds a commented sample)
+    .harbor/hooks/{pre-import.d,post-import.d}/   # committable per-project hooks (init seeds
+                                 #   inert *.sample hooks + a README with each phase's contract)
     .harbor/scripts/<script>     # COMMITTABLE per-project scripts (on PATH for run/shell)
     .harbor/{connection.env,connection.txt,compose.env,   # GITIGNORED runtime
              docker-compose.yml,install.sh}
@@ -450,7 +451,9 @@ allocator keeps their stacks from colliding. A consumer calls a provider at
     (idempotent). `drop` = `DROP DATABASE` (+ optional user), confirm-gated.
   - `backup` = `mysqldump` → `backups/db/<name>/<timestamp>.sql.gz`.
   - `import` runs a **hookable pipeline**:
-    1. **decompress** (`.sql`/`.sql.gz`/`.zip`) to a temp working file `$HARBOR_DUMP`.
+    1. **decompress** (`.sql`/`.sql.gz`/`.zip`) to a temp working file `$HARBOR_DUMP`;
+       a dump whose last line ends mid-statement (truncated download/export) is
+       refused with a fix hint — `--force` loads the partial dump anyway.
     2. **strip DEFINER** (automatic — removes `DEFINER=…`/`SQL SECURITY DEFINER`
        so a missing prod user can't break the import; `--keep-definers` to disable).
     3. **pre-import hooks** — each executable in `.harbor/hooks/pre-import.d/*`

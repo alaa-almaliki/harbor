@@ -87,6 +87,25 @@ confirm() {
   case "$reply" in [Yy]*) return 0 ;; *) return 1 ;; esac
 }
 
+# human_size <bytes> — "731B" / "4.2M" / "4.5G". awk for the one decimal
+# (bash 3.2 has no float math); trims a trailing ".0".
+human_size() {
+  awk -v b="$1" 'BEGIN {
+    split("B K M G T", u, " "); i = 1
+    while (b >= 1024 && i < 5) { b /= 1024; i++ }
+    s = sprintf((i == 1) ? "%d" : "%.1f", b); sub(/\.0$/, "", s); print s u[i]
+  }'
+}
+
+# human_duration <seconds> — "42s" / "5m 12s" / "1h 2m 3s"
+human_duration() {
+  local t="$1" h m s
+  h=$((t / 3600)); m=$(((t % 3600) / 60)); s=$((t % 60))
+  if   [ "$h" -gt 0 ]; then printf '%dh %dm %ds' "$h" "$m" "$s"
+  elif [ "$m" -gt 0 ]; then printf '%dm %ds' "$m" "$s"
+  else printf '%ds' "$s"; fi
+}
+
 # --- Validation --------------------------------------------------------------
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"; }
 

@@ -144,7 +144,8 @@ cmd_render() {
   local framework; framework="$(manifest_get "$mf" framework "")"
   init_render_compose "$name" "$framework"
   init_write_connection "$name"
-  init_write_agent_skills "$name"   # seed existing projects too (non-clobbering)
+  init_write_agent_skills "$name"    # seed existing projects too (non-clobbering)
+  init_write_import_samples "$name"  # ditto: import-rules + hook samples
   ok "rendered $name stack: $(_project_services "$name" "$framework") — harbor up $name to apply"
 }
 
@@ -231,6 +232,97 @@ Then: `harbor run <name> invoice`. This dir is committable (unlike the generated
 EOF
 }
 
+# Seed committable, self-documenting samples for the import pipeline: a
+# commented-out import-rules and one sample hook per phase. Everything is INERT
+# until the user edits it — comments are stripped from import-rules, and the
+# hook samples carry a .sample suffix (not *.sql, not executable), which the
+# runner ignores. Non-clobbering, so project-side edits survive re-init/render.
+# The project's real domain is baked into the examples so they're one
+# uncomment-and-edit away from working.
+init_write_import_samples() {
+  local name="$1" hd; hd="$(project_harbor_dir "$name")"
+  if [ ! -f "$hd/import-rules" ]; then
+    cat > "$hd/import-rules" <<EOF
+# import-rules — search/replace applied on every \`harbor db import\` / \`db pull\`.
+# One rule per line:   old => new     (# lines are ignored — this file is inert
+# until you uncomment/edit). \`--replace OLD=NEW\` on the command line adds to it.
+#
+# Replacements run AFTER load as a serialized-safe pass: lengths inside PHP
+# serialized/JSON values are fixed up, so they're safe for Magento
+# core_config_data, CMS content, WordPress options, … Prefix the left side with
+# \`re:\` for a regex.
+#
+# Rules rewrite DATA, not SQL — dump-text tricks like
+# \`INSERT INTO => INSERT IGNORE INTO\` don't belong here (they'd corrupt any
+# stored content containing those words). Also beware bare-domain rules that
+# map several source domains onto one target: values under a unique key (e.g.
+# customer emails) can collide — colliding rows are skipped with a warning.
+#
+# https://staging.example.com => https://$name.test
+# re:https?://cdn[0-9]*\\.example\\.com => https://$name.test
+EOF
+  fi
+  mkdir -p "$hd/hooks/pre-import.d" "$hd/hooks/post-import.d"
+  if [ ! -f "$hd/hooks/README.md" ]; then
+    cat > "$hd/hooks/README.md" <<'EOF'
+# Import hooks
+
+Run on every `harbor db import` / `harbor db pull` (skip once with `--no-hooks`).
+Global hooks in Harbor's `etc/hooks/<phase>.d/` run first, then these. Files run
+in name order — prefix with a number. The `.sample` files are ignored until you
+rename the suffix away.
+
+## pre-import.d/ — before the dump loads
+
+Executables only (`chmod +x`). `$HARBOR_DUMP` is the decompressed .sql — edit it
+in place to trim what shouldn't load locally. Env: `HARBOR_DUMP`,
+`HARBOR_PROJECT`, `HARBOR_PROJECT_DIR`, `HARBOR_FRAMEWORK`, `HARBOR_DB`,
+`HARBOR_PHP`.
+
+## post-import.d/ — after load + search/replace
+
+The place to force table records to local values on every import.
+
+- `*.sql` files are piped straight into the imported DB (as root).
+- Executables run with `$HARBOR_MYSQL` (a ready-to-use mysql wrapper into the
+  DB) plus `HARBOR_DB_HOST/PORT/USER/PASS`, `HARBOR_DB`, `HARBOR_PROJECT`.
+EOF
+  fi
+  if [ ! -f "$hd/hooks/post-import.d/10-local-overrides.sql.sample" ]; then
+    cat > "$hd/hooks/post-import.d/10-local-overrides.sql.sample" <<EOF
+-- 10-local-overrides.sql.sample — rename away the .sample suffix to activate.
+-- Runs against the freshly imported DB on every \`harbor db import\`/\`db pull\`,
+-- AFTER the serialized-safe search/replace. Use it to pin records to local
+-- values so a fresh import never points at production services.
+
+-- Magento: base URLs -> the local site (harbor db import --reconfigure also
+-- does this, plus the search engine; keep it here if you want it unconditional)
+-- UPDATE core_config_data SET value = 'https://$name.test/'
+--   WHERE path IN ('web/unsecure/base_url', 'web/secure/base_url');
+
+-- Magento: never let an imported config email real customers / hit real APIs
+-- UPDATE core_config_data SET value = '0' WHERE path = 'system/smtp/disable';
+-- DELETE FROM core_config_data WHERE path LIKE 'payment/%/api_key';
+
+-- Laravel/generic: point every user at a known dev password ("password")
+-- UPDATE users SET password = '\$2y\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi';
+EOF
+  fi
+  if [ ! -f "$hd/hooks/pre-import.d/10-trim-dump.sh.sample" ]; then
+    cat > "$hd/hooks/pre-import.d/10-trim-dump.sh.sample" <<'EOF'
+#!/usr/bin/env bash
+# 10-trim-dump.sh.sample — rename away the .sample suffix AND `chmod +x` to
+# activate. Runs before the dump loads; edit $HARBOR_DUMP in place.
+set -euo pipefail
+
+# Example: drop bulky log/report rows so local imports stay fast (Magento names)
+# LC_ALL=C sed -i '' '/^INSERT INTO `report_event`/d;/^INSERT INTO `customer_log`/d' "$HARBOR_DUMP"
+
+echo "pre-import hook: $HARBOR_PROJECT ($HARBOR_FRAMEWORK) -> $HARBOR_DB"
+EOF
+  fi
+}
+
 # Seed the project with Harbor's agent skill so any coding agent working in
 # projects/<name>/ knows how to drive Harbor for this app without re-reading the
 # whole tool. Copied from ai/skills/harbor -> <project>/.claude/skills/harbor.
@@ -295,6 +387,7 @@ cmd_init() {
   init_write_connection "$name"
   init_write_gitignore "$name"
   init_write_scripts "$name"
+  init_write_import_samples "$name"
   init_write_agent_skills "$name"
 
   ok "init $name ($framework, php $phpver) — db port $(ports_load "$name"; echo "$DB_PORT")"

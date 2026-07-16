@@ -47,4 +47,41 @@ ngot="$(HARBOR_SR_LIB_ONLY=1 php -r '
 ' "$SR" "$nout")"
 assert_eq "rr: recurses into nested serialized" "see local.test here" "$ngot"
 
+# --- regex rules -------------------------------------------------------------
+# CLI wraps bare `re:` patterns in ~ delimiters; rr() receives them wrapped.
+rrx() {
+  HARBOR_SR_LIB_ONLY=1 php -r '
+    require $argv[1];
+    echo rr($argv[2], [["~UA-\\d+-\\d+~", "", true]]);
+  ' "$SR" "$1"
+}
+assert_eq "rr: regex rule strips tracking id" "ga('create','','auto')" \
+  "$(rrx "ga('create','UA-1234567-1','auto')")"
+
+# a failing regex must never null the value — original survives
+rbad="$(HARBOR_SR_LIB_ONLY=1 php -d display_errors=0 -r '
+  require $argv[1];
+  echo rr("keep me", [["~(*FAIL_BOGUS_VERB)~", "x", true]]);
+' "$SR" 2>/dev/null)"
+assert_eq "rr: failing regex keeps original value" "keep me" "$rbad"
+
+# --- CLI --check: validate rules with no DB ----------------------------------
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+printf 'live.com\tlocal.test\nre:UA-\\d+-\\d+\t\n' > "$tmp/good.tsv"
+assert_ok "check: literal + bare regex rules pass" php "$SR" --rules "$tmp/good.tsv" --check
+
+printf 'no-separator-here\n' > "$tmp/nosep.tsv"
+assert_fail "check: line without FROM/TO separator fails" php "$SR" --rules "$tmp/nosep.tsv" --check
+
+printf 're:foo(\tx\n' > "$tmp/badre.tsv"
+assert_fail "check: invalid regex fails" php "$SR" --rules "$tmp/badre.tsv" --check
+assert_contains "check: invalid regex names the rule" "invalid regex 'foo('" \
+  "$(php "$SR" --rules "$tmp/badre.tsv" --check 2>&1 || true)"
+
+printf '\tonly-to\n' > "$tmp/emptyfrom.tsv"
+assert_fail "check: empty FROM fails" php "$SR" --rules "$tmp/emptyfrom.tsv" --check
+
+: > "$tmp/none.tsv"
+assert_ok "check: empty rules file is fine" php "$SR" --rules "$tmp/none.tsv" --check
+
 report

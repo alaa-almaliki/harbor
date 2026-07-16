@@ -33,6 +33,20 @@ _db_decompress() {
   esac
 }
 
+# A truncated dump (interrupted download/export) ends mid-statement and loads
+# only the tables before the cut — silently, with --force. A complete dump's
+# last non-empty line ends a statement (';') or is a comment (mysqldump ends
+# with '-- Dump completed on …'). Only the tail is read; cheap on any size.
+_dump_looks_complete() {
+  local last
+  last="$(tail -c 4096 "$1" | awk 'NF { last = $0 } END { print last }')"
+  last="${last%"${last##*[![:space:]]}"}"   # trim trailing whitespace/CR
+  case "$last" in
+    *\;|--*) return 0 ;;
+    *)       return 1 ;;
+  esac
+}
+
 # Emit a dump file ($1) wrapped so foreign-key checks are off during load (lets
 # out-of-order rows/constraints load cleanly). Pipe into a mysql runner.
 _fk_wrapped() { echo "SET FOREIGN_KEY_CHECKS=0;"; cat "$1"; echo "SET FOREIGN_KEY_CHECKS=1;"; }
@@ -91,6 +105,34 @@ db_backup() {
   ok "backup: $file"
 }
 
+# Validate hooks before an import so problems surface up front, not after the
+# load (or never): a hook you wrote but forgot to chmod +x would be silently
+# skipped; a shell hook with a syntax error would die mid-pipeline. `.sample`
+# files and post-import *.sql are exempt (inert / piped, not executed).
+_validate_hooks() {
+  local name="$1" phase d f
+  for phase in pre-import post-import; do
+    for d in "$HARBOR_ETC/hooks/$phase.d" "$(project_harbor_dir "$name")/hooks/$phase.d"; do
+      [ -d "$d" ] || continue
+      for f in "$d"/*; do
+        [ -e "$f" ] || continue
+        case "$phase:$f" in
+          *:*.sample) continue ;;
+          post-import:*.sql) continue ;;
+          pre-import:*.sql)
+            warn "hook $(basename "$f"): *.sql only runs post-import — this file will be SKIPPED (make it a script, or move it to post-import.d/)" ;;
+          *)
+            if [ ! -x "$f" ]; then
+              warn "hook $(basename "$f") is not executable — it will be SKIPPED (chmod +x '$f' to enable)"
+            elif [ "${f##*.}" = "sh" ] && ! bash -n "$f" 2>/dev/null; then
+              die "hook $(basename "$f") has a shell syntax error → bash -n '$f'"
+            fi ;;
+        esac
+      done
+    done
+  done
+}
+
 # run hook scripts in a dir (global first, then project). $@ after dir = env exports handled by caller.
 _run_hooks() {
   local phase="$1" name="$2" dir d f
@@ -99,8 +141,17 @@ _run_hooks() {
     for f in "$d"/*; do
       [ -e "$f" ] || continue
       case "$phase:$f" in
-        post-import:*.sql) step "hook (sql): $(basename "$f")"; _db_mysql "$name" "$HARBOR_IMPORT_DB" < "$f" ;;
-        *) [ -x "$f" ] && { step "hook: $(basename "$f")"; "$f"; } ;;
+        post-import:*.sql)
+          step "hook (sql): $(basename "$f")"
+          _db_mysql "$name" "$HARBOR_IMPORT_DB" < "$f" || die "hook failed: $(basename "$f") ($phase)" ;;
+        *)
+          # if/fi, NOT `[ -x ] && {…}`: a non-executable file (e.g. a seeded
+          # *.sample) as the last entry would make the function return 1 and
+          # set -e would kill the import silently.
+          if [ -x "$f" ]; then
+            step "hook: $(basename "$f")"
+            "$f" || die "hook failed: $(basename "$f") ($phase)"
+          fi ;;
       esac
     done
   done
@@ -109,6 +160,7 @@ _run_hooks() {
 # harbor db import <name> <file> [db] [--no-backup --keep-definers --no-hooks --no-rules --stream-replace --reconfigure --force --replace OLD=NEW]
 db_import() {
   require_name "${1-}"; local name="$1"; shift
+  local t0=$SECONDS truncated=0
   local file="" db="" nobackup=0 keepdef=0 nohooks=0 norules=0 streamrep=0 reconf=0 force=0
   local -a replaces=()
   while [ $# -gt 0 ]; do
@@ -120,7 +172,12 @@ db_import() {
       --stream-replace) streamrep=1; shift ;;
       --reconfigure) reconf=1; shift ;;
       --force) force=1; shift ;;
-      --replace) replaces+=("${2-}"); shift 2 ;;
+      --replace)
+        case "${2-}" in
+          *?=*) ;;
+          *) usage_die db "harbor db import: --replace needs OLD=NEW (got '${2-}')" ;;
+        esac
+        replaces+=("$2"); shift 2 ;;
       --*) die "unknown option: $1" ;;
       *) if [ -z "$file" ]; then file="$1"; else db="$1"; fi; shift ;;
     esac
@@ -131,6 +188,37 @@ db_import() {
   export HARBOR_IMPORT_DB="$db"
 
   local phpcli; phpcli="$(php_cli_bin "$(_project_php_ver "$name")")"
+
+  # temp workspace up front (all temps under one dir, cleaned on any exit) —
+  # rules are assembled and validated here, BEFORE the backup/decompress/load
+  # work, so a typo'd rule or broken hook can't waste an import.
+  local tmpd; tmpd="$(mktemp -d "${TMPDIR:-/tmp}/harbor-import.XXXXXX")"
+  # bake $tmpd into the trap NOW: it's a function-local, gone by the time EXIT fires.
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmpd'" EXIT
+
+  # build rules file (import-rules + --replace)
+  local rulesf="$tmpd/rules"; : > "$rulesf"
+  if [ "$norules" = 0 ] && [ -f "$(project_harbor_dir "$name")/import-rules" ]; then
+    # convert "old => new" / "re:pat => new" to FROM<TAB>TO. Drop comments AND
+    # blank lines — a rules file that strips to nothing must leave $rulesf empty,
+    # or the [ -s ] gate below would run a full serialized-replace table scan
+    # with zero rules on every import (init seeds a fully-commented sample).
+    sed -E 's/[[:space:]]*=>[[:space:]]*/\t/' "$(project_harbor_dir "$name")/import-rules" \
+      | grep -vE '^[[:space:]]*(#|$)' >> "$rulesf" || true
+  fi
+  local rp
+  for rp in "${replaces[@]:-}"; do
+    [ -n "$rp" ] || continue
+    printf '%s\t%s\n' "${rp%%=*}" "${rp#*=}" >> "$rulesf"
+  done
+
+  # validate rules + hooks before any heavy lifting
+  if [ -s "$rulesf" ]; then
+    "$phpcli" "$HARBOR_LIB/search-replace.php" --rules "$rulesf" --check >/dev/null \
+      || die "invalid import rules (see above) → fix $(project_harbor_dir "$name")/import-rules"
+  fi
+  if [ "$nohooks" = 0 ]; then _validate_hooks "$name"; fi
 
   # ensure target db exists
   _db_mysql "$name" -e "CREATE DATABASE IF NOT EXISTS \`$db\` CHARACTER SET utf8mb4;"
@@ -143,32 +231,28 @@ db_import() {
     _db_mysqldump "$name" --single-transaction --no-tablespaces "$db" 2>/dev/null | gzip > "$pre" || warn "pre-backup skipped (empty db?)"
   fi
 
-  # 1. decompress to a working file (all temps under one dir, cleaned on any exit)
-  local tmpd; tmpd="$(mktemp -d "${TMPDIR:-/tmp}/harbor-import.XXXXXX")"
-  # bake $tmpd into the trap NOW: it's a function-local, gone by the time EXIT fires.
-  # shellcheck disable=SC2064
-  trap "rm -rf '$tmpd'" EXIT
+  # 1. decompress to a working file
   local work="$tmpd/dump.sql"
   log "decompressing $file"
   _db_decompress "$file" "$work"
+
+  # refuse a truncated dump up front — loading one "succeeds" per-statement but
+  # silently drops every table after the cut (a Magento dump cut in the s's has
+  # no store/url_rewrite). --force keeps its best-effort meaning and loads anyway.
+  if ! _dump_looks_complete "$work"; then
+    if [ "$force" = 1 ]; then
+      truncated=1
+      warn "dump looks TRUNCATED (ends mid-statement) — loading what's there (--force)"
+    else
+      die "dump looks truncated — it ends mid-statement, so every table after the cut is missing (interrupted download/export?) → re-export or re-download it; --force loads the partial dump anyway"
+    fi
+  fi
 
   # 2. strip DEFINER
   if [ "$keepdef" = 0 ]; then
     step "stripping DEFINER clauses"
     strip_definers "$work"
   fi
-
-  # build rules file (import-rules + --replace)
-  local rulesf="$tmpd/rules"; : > "$rulesf"
-  if [ "$norules" = 0 ] && [ -f "$(project_harbor_dir "$name")/import-rules" ]; then
-    # convert "old => new" / "re:pat => new" to FROM<TAB>TO
-    sed -E 's/[[:space:]]*=>[[:space:]]*/\t/' "$(project_harbor_dir "$name")/import-rules" | grep -v '^[[:space:]]*#' >> "$rulesf" || true
-  fi
-  local rp
-  for rp in "${replaces[@]:-}"; do
-    [ -n "$rp" ] || continue
-    printf '%s\t%s\n' "${rp%%=*}" "${rp#*=}" >> "$rulesf"
-  done
 
   # optional in-stream literal replace (fast; not serialized-safe).
   # Uses a SOH (\001) sed delimiter so rule text containing | / & etc. is safe;
@@ -205,7 +289,9 @@ db_import() {
   # 5. serialized-safe search/replace (post-load), unless stream-replace already did it
   if [ "$streamrep" = 0 ] && [ -s "$rulesf" ]; then
     step "serialized-safe search/replace"
-    "$phpcli" "$HARBOR_LIB/search-replace.php" \
+    # 512M: reads stream row-by-row (unbuffered), but one row can hold a large
+    # serialized blob and rr() recursion tops the 128M CLI default.
+    "$phpcli" -d memory_limit=512M "$HARBOR_LIB/search-replace.php" \
       --host 127.0.0.1 --port "$DB_PORT" --user root --pass "$DB_ROOT_PASSWORD" --db "$db" --rules "$rulesf"
   fi
 
@@ -227,7 +313,11 @@ EOF
   if [ "$reconf" = 1 ]; then magento_reconfigure "$name" || warn "magento reconfigure skipped"; fi
 
   rm -rf "$tmpd"; trap - EXIT
-  ok "import complete -> $db"
+  local bytes; bytes="$(stat -f%z "$file" 2>/dev/null || echo 0)"
+  if [ "$truncated" = 1 ]; then
+    warn "loaded from a TRUNCATED dump — every table after the cut is missing"
+  fi
+  ok "import complete -> $db ($(human_size "$bytes") dump in $(human_duration $((SECONDS - t0))))"
 }
 
 cmd_db() {

@@ -89,4 +89,16 @@ else
 fi
 rm -rf "$proj"
 
+# --- human_size / human_duration ---------------------------------------------
+assert_eq "human_size: bytes"         "731B"  "$(human_size 731)"
+assert_eq "human_size: exact K"       "1K"    "$(human_size 1024)"
+assert_eq "human_size: megabytes"     "4.2M"  "$(human_size 4404019)"
+assert_eq "human_size: gigabytes"     "4.5G"  "$(human_size 4840094635)"
+assert_eq "human_size: zero"          "0B"    "$(human_size 0)"
+
+assert_eq "human_duration: seconds"   "42s"       "$(human_duration 42)"
+assert_eq "human_duration: minutes"   "5m 12s"    "$(human_duration 312)"
+assert_eq "human_duration: hours"     "1h 2m 3s"  "$(human_duration 3723)"
+assert_eq "human_duration: zero"      "0s"        "$(human_duration 0)"
+
 report

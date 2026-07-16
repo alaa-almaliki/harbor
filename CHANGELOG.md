@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`harbor init`/`new`/`render` seed self-documenting import-pipeline samples**
+  into `.harbor/`: a commented-out `import-rules` (with the project's real
+  domain baked into the examples) and one sample hook per phase —
+  `hooks/post-import.d/10-local-overrides.sql.sample` for pinning table records
+  to local values on every import (base URLs, dev passwords, clearing live API
+  keys) and `hooks/pre-import.d/10-trim-dump.sh.sample` for trimming the dump
+  before load — plus a `hooks/README.md` documenting each phase's contract and
+  env vars. Everything is inert until edited (`#` rules are ignored, `.sample`
+  hooks are skipped), non-clobbering, and existing projects pick it up on their
+  next `harbor render <name>`.
 - **Per-command help: `harbor <cmd> --help` and `harbor help <cmd>`.** Every
   command now has a topic covering its purpose, exact usage, **every flag it
   parses**, real examples, and the gotchas that cost you an hour — `harbor down`
@@ -125,6 +135,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shellcheck-clean.
 
 ### Changed
+- **`db import` ends with a summary: dump size, elapsed time, status.**
+  `ok import complete -> shop (4.5G dump in 12m 4s)` — and a load that came
+  from a truncated dump repeats its loud warning right above the summary, so
+  the partial status can't scroll out of sight.
 - **`harbor status`/`ps` color running projects green.** A project whose stack is
   `up` is printed as a green row so the running projects stand out at a glance;
   down projects stay uncolored. Color is TTY-gated (no escape codes when the output
@@ -144,7 +158,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fragments can be concatenated; `render` now wraps it. Existing `render` calls
   are unchanged.
 
+### Added
+- **`db import` validates rules and hooks before doing any work.** A malformed
+  rule (missing `=>`, empty FROM, invalid `re:` regex — each named with its
+  line number) or a shell hook with a syntax error aborts in milliseconds
+  instead of after the backup/load; a hook that would be silently skipped (not
+  executable, or a `*.sql` misplaced in `pre-import.d/`) warns with the fix.
+  `--replace` args are checked for `OLD=NEW` shape at parse time.
+- **`db import` refuses a truncated dump up front.** A dump whose last line ends
+  mid-statement (interrupted download/export) used to "succeed" partially:
+  every table after the cut was silently missing — a Magento dump cut in the
+  s's loads with no `store` or `url_rewrite` and nothing tells you. The import
+  now dies before load with a re-download hint; `--force` keeps its best-effort
+  meaning and loads the partial dump anyway (with a warning).
+
 ### Fixed
+- **`re:` regex rules actually work now — and can no longer blank data.** The
+  documented bare-pattern form (`re:UA-\d+-\d+ =>`) was passed to
+  `preg_replace()` without delimiters, which always fails — and the failure
+  returned `null`, so a doc-following regex rule could overwrite matched
+  columns with empty values. Bare patterns are now wrapped in delimiters
+  automatically, compile-checked up front, and a regex that fails at runtime
+  leaves the original value untouched.
+- **The serialized-safe search/replace survives unique-key collisions and
+  vanishing tables.** A rewrite that collapses two values onto one (staging +
+  prod emails both mapped to `.test` colliding on `customer_entity`'s unique
+  email index) used to abort the whole pass with a raw stack trace, as did a
+  table dropped mid-scan (e.g. a concurrent import reloading the DB). Colliding
+  rows and vanished tables are now skipped with a warning and a summary count;
+  everything else still gets rewritten.
+- **The serialized-safe search/replace no longer OOMs on large databases.** It
+  read each table with a *buffered* `SELECT *` — the whole table in PHP memory —
+  and died at the 128M CLI default on any real Magento DB. Reads now stream
+  row-by-row (unbuffered, with a second connection for the UPDATEs), and the
+  pass runs with `memory_limit=512M` headroom for large serialized blobs.
+- **A non-executable file in a hooks dir no longer kills `db import` silently.**
+  The hook runner's `[ -x "$f" ] && {…}` made the function return nonzero when
+  the last entry wasn't executable, and `set -e` aborted the whole import with
+  **no error output** — right after "stripping DEFINER clauses". The seeded
+  `.sample` hooks triggered this on every project. Non-executable files are now
+  skipped cleanly, and a hook that genuinely fails now aborts loudly with
+  `hook failed: <file> (<phase>)` instead of a silent exit.
+- **An import-rules file that strips to nothing no longer triggers the
+  search/replace pass.** Blank lines survived the comment filter, so a
+  fully-commented rules file (exactly what init now seeds) would have run the
+  full serialized-replace table scan with zero rules on every import.
 - **Asking for help never runs anything.** `--help`/`-h` used to be data to most
   commands, with real consequences: `harbor logs nginx --help` **hung** (any extra
   arg means "follow", so it started `tail -F`), `harbor xdebug on --help`

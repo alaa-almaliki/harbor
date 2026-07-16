@@ -92,6 +92,12 @@ This is the project's defining constraint. Concretely:
 **Bash**
 - Start every script with `set -euo pipefail`. Source `lib/common.sh` for paths,
   logging, templating, and helpers — don't reinvent them.
+- **Never end a function or loop body with `[ cond ] && {…}`** — when the guard
+  is false it becomes the return value, and under `set -e` a *plain caller dies
+  silently with no error output*. Use `if [ cond ]; then …; fi` for optional
+  work. This exact shape made `db import` abort with zero output the moment a
+  non-executable `.sample` landed in a hooks dir (see `_run_hooks`, and
+  `test/test_db.sh` which pins the fix).
 - `shellcheck`-clean. Quote **all** expansions (`"$var"`, `"${arr[@]}"`).
 - **Target macOS system bash 3.2.** No associative arrays (`declare -A`), no
   `flock`, no `mapfile`/`readarray`, no `${var^^}`. Use indexed arrays +

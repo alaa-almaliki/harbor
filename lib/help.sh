@@ -897,7 +897,8 @@ Usage: harbor db <sub> <name> [args]        (<name> is required for every sub)
 
 import flags (also accepted by `pull`):
   --no-backup        Skip the automatic pre-import backup
-  --force            Skip statements the server rejects instead of aborting
+  --force            Best-effort load: skip statements the server rejects, and
+                     load a dump that looks truncated (refused by default)
   --keep-definers    Keep DEFINER= clauses (stripped by default)
   --replace OLD=NEW  Serialized-safe search/replace after load (repeatable)
   --stream-replace   Do --replace with sed before load (faster, NOT serialize-safe)
@@ -906,9 +907,20 @@ import flags (also accepted by `pull`):
   --reconfigure      Magento: fix base URLs + search engine after import
 
 Notes: `import` overwrites the target DB with no prompt — the auto-backup
-(backups/db/<name>/pre-import-<ts>.sql.gz) is the safety net. `drop` removes the
+(backups/db/<name>/pre-import-<ts>.sql.gz) is the safety net. A dump that ends
+mid-statement (truncated download/export) is refused with a hint — every table
+after the cut would be silently missing. Rules and hooks are validated up
+front, before the backup/load: a malformed rule (missing `=>`, invalid `re:`
+regex) aborts, a hook that would be skipped (not executable, misplaced *.sql)
+warns, and a shell hook with a syntax error aborts. `drop` removes the
 database but keeps the MySQL user. `pull` needs manifest `remote: { host, db }`.
 Skip a confirm with HARBOR_YES=1 (there is no --yes flag). Stack must be up.
+
+Recurring rules/fixups live in the project, seeded as inert samples by init:
+  .harbor/import-rules                 old => new, applied on every import
+  .harbor/hooks/post-import.d/*.sql    SQL run after every import — pin records
+                                       to local values (base URLs, dev passwords)
+  .harbor/hooks/pre-import.d/          executables that edit the dump pre-load
 
 Examples:
   harbor db backup shop

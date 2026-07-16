@@ -424,9 +424,14 @@ a **different** PHP version so it gets its own pool.
 
 ## Database & import workflow
 
-`harbor db import` is a pipeline you can hook at both ends:
+`harbor db import` is a pipeline you can hook at both ends. Rules and hooks are
+validated **before any work starts** — a malformed rule (missing `=>`, invalid
+`re:` regex) or a broken shell hook aborts immediately, and a hook that would be
+silently skipped (forgotten `chmod +x`, a `*.sql` in `pre-import.d/`) warns:
 
-1. **Decompress** (`.sql`, `.sql.gz`, `.zip`).
+1. **Decompress** (`.sql`, `.sql.gz`, `.zip`), then **refuse a truncated dump** —
+   one that ends mid-statement loads only the tables before the cut, silently.
+   `--force` loads the partial dump anyway.
 2. **Strip DEFINER** clauses automatically (so a missing prod user can't break the
    import). Disable with `--keep-definers`.
 3. **Pre-import hooks** — every executable in `.harbor/hooks/pre-import.d/` runs
@@ -441,6 +446,14 @@ a **different** PHP version so it gets its own pool.
 
 A backup is taken before every import (`--no-backup` to skip). Global hooks in
 `etc/hooks/` apply to every project (e.g. an org-wide credential scrub).
+
+**You don't have to start from scratch** — `harbor init`/`new` (and
+`harbor render` for existing projects) seed a commented-out
+`.harbor/import-rules` plus one sample hook per phase
+(`hooks/pre-import.d/10-trim-dump.sh.sample`,
+`hooks/post-import.d/10-local-overrides.sql.sample` — the place to force table
+records to local values, e.g. base URLs or a dev password, on every import).
+Everything is inert until you uncomment a rule or rename a `.sample` away.
 
 **Example** — `projects/shop/.harbor/import-rules`:
 
@@ -706,7 +719,7 @@ above.
 | `harbor db create <name> [db] [user] [pass]` | Create DB + user (defaults: db=project, user=db, pass=db). |
 | `harbor db drop <name> [db]` | Drop a database (confirm-gated). |
 | `harbor db backup <name> [db] [file]` | Dump to `backups/db/<name>/<timestamp>.sql.gz`. |
-| `harbor db import <name> <file> [db]` | Hookable import pipeline (see above). `--force` skips server-rejected statements (e.g. generated-column inserts) instead of aborting. |
+| `harbor db import <name> <file> [db]` | Hookable import pipeline (see above). `--force` = best-effort: skip server-rejected statements, load truncated dumps. |
 | `harbor db pull <name>` | Pull a remote dump straight into the import pipeline. |
 | `harbor media pull <name>` | rsync remote media/storage. |
 | `harbor redis [<name>] [args…]` | `redis-cli` on the project's **cache** index; args pass through (e.g. `harbor redis shop FLUSHDB`). `harbor down <name>` flushes all four of its indices. |
