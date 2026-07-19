@@ -233,6 +233,7 @@ harbor link <name>                    # nginx vhost <name>.test (+ *.<name>.test
 harbor unlink <name>
 harbor wire <name> [--print]          # inject config into the app (surgical)
 harbor up|down|restart <name>         # per-project docker stack (down flushes redis)
+harbor restart                        # no name: restart Harbor itself (stop + start)
 harbor destroy <name> [--files]       # remove stack+volumes, vhost, ports, redis (confirm)
 harbor logs <name> [service] [-f]
 harbor logs nginx|php|dnsmasq [-f]    # platform service logs (var/log)

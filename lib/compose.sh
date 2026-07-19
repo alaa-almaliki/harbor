@@ -120,8 +120,11 @@ cmd_down() {
   ok "down: $name (MySQL data kept; use 'harbor destroy' to drop volumes)"
 }
 
+# No name -> restart Harbor itself (nginx/php/dnsmasq/shared stack). With a name
+# -> restart that project's containers.
 cmd_restart() {
-  require_name "${1-}"; local name="$1"
+  if [ -z "${1-}" ]; then platform_restart; return; fi
+  local name="$1"
   project_compose "$name" restart
   _wait_ready "$name" || true
   ok "restarted: $name"

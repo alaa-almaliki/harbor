@@ -69,12 +69,26 @@ printf '%s\n' "$merged" > "$data"
 total="$(printf '%s' "$merged" | jq '[.[].count] | add // 0')"
 days="$(printf '%s' "$merged" | jq 'length')"
 
-# Shields.io endpoint badge the README embeds.
+# Shields.io endpoint badge, kept for anyone consuming the JSON directly.
 jq -n --arg msg "$total" '{
   schemaVersion: 1,
   label: "Downloads",
   message: $msg,
   color: "blue"
 }' > "$badge"
+
+# The README embeds a *static* shields badge with the count baked into the URL,
+# not an ?endpoint= badge. An endpoint badge makes shields fetch this repo's JSON
+# on every render, and that hop is the flaky part — it returns HTTP 524
+# (Cloudflare: origin timed out) and the badge renders broken. A static badge is
+# served straight from shields' cache with no outbound request, so it can't 524.
+# Cost of that: the number only moves when this script rewrites the URL below.
+# (sed -i is not portable between GNU and BSD — write via a temp file instead.)
+if [ -f README.md ]; then
+  tmp="$(mktemp)"
+  sed -E "s#(img\.shields\.io/badge/Downloads-)[^-]*(-blue)#\1${total}\2#" \
+    README.md > "$tmp"
+  mv "$tmp" README.md
+fi
 
 printf 'recorded: total_clones=%s across %s day(s)\n' "$total" "$days"

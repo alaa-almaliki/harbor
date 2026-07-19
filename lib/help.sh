@@ -548,14 +548,22 @@ EOF
   ;;
 
   restart) cat <<'EOF'
-harbor restart — restart the project's containers
+harbor restart — restart Harbor itself, or one project's containers
 
-Usage: harbor restart <name>        (no flags)
+Usage: harbor restart               restart Harbor (stop + start)   [sudo]
+       harbor restart <name>        restart that project's containers
+                                    (no flags)
 
-Unlike `down`, it does NOT flush Redis. It does not re-render compose either —
-after editing the manifest run `harbor render <name> && harbor up <name>`.
+With no name it is exactly `harbor stop && harbor start`: shared stack, php
+pools, dnsmasq and nginx go down and come back up. nginx is a LaunchDaemon, so
+that path asks for sudo. Running project stacks are left alone — they sit on
+20000+ ports.
 
-See also: harbor up · harbor down · harbor render
+With a name it restarts only that project's containers. Unlike `down`, it does
+NOT flush Redis. It does not re-render compose either — after editing the
+manifest run `harbor render <name> && harbor up <name>`.
+
+See also: harbor stop · harbor start · harbor up · harbor down · harbor render
 EOF
   ;;
 

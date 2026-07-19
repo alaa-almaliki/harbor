@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`harbor restart` with no project name restarts Harbor itself** — equivalent
+  to `harbor stop && harbor start` (shared stack, php pools, dnsmasq, nginx).
+  Running project stacks are left alone; `harbor restart <name>` still restarts
+  just that project's containers. nginx is a LaunchDaemon, so the bare form asks
+  for sudo (the same touchpoint `stop`/`start` already use — no new one).
 - **`harbor init`/`new`/`render` seed self-documenting import-pipeline samples**
   into `.harbor/`: a commented-out `import-rules` (with the project's real
   domain baked into the examples) and one sample hook per phase —
@@ -183,6 +188,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   meaning and loads the partial dump anyway (with a warning).
 
 ### Fixed
+- **The README's Downloads badge no longer renders broken.** It used a shields.io
+  `?endpoint=` badge, which makes shields fetch
+  `.github/traffic/clones-badge.json` from raw.githubusercontent on every render
+  — that hop returns HTTP 524 (Cloudflare: origin timed out) and the badge dies,
+  even though the JSON itself is valid and served fine. The README now embeds a
+  *static* shields badge with the count baked into the URL (no outbound fetch, so
+  it can't 524), and the daily traffic workflow rewrites that URL in place.
+  `clones-badge.json` is still written for anyone consuming it directly.
 - **Four more silent-death guards squashed** — the `[ cond ] && …`-as-last-statement
   bug that once killed `db import` (CLAUDE.md §3). In each case a false guard
   became the function's return value, so a plain caller under `set -e` died with

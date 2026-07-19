@@ -4,7 +4,7 @@
   <img src="assets/harbor-banner.svg" alt="Harbor — a hybrid local PHP dev platform for macOS: native PHP, nginx, Xdebug, dnsmasq and TLS run on the host, while MySQL, OpenSearch, Redis, RabbitMQ and Mailpit run in Docker containers docked in the harbor" width="820">
 </p>
 
-[![Downloads](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/alaa-almaliki/harbor/main/.github/traffic/clones-badge.json&v=3)](../../actions/workflows/traffic-clones.yml)
+[![Downloads](https://img.shields.io/badge/Downloads-77-blue)](../../actions/workflows/traffic-clones.yml)
 
 **A hybrid local development platform for PHP — macOS only.**
 
@@ -656,6 +656,8 @@ above.
 |---------|-------------|
 | `harbor doctor [<name>]` | Report host requirements (and a project's PHP extensions). Report-only. |
 | `harbor setup` | One-time host preparation (DNS, TLS, FPM pools, shared stack). |
+| `harbor stop` / `harbor start` | Pause/resume Harbor's own services (frees `:80/:443/:6379/:1025/:8025` for another stack). |
+| `harbor restart` | Restart Harbor's own services — `stop` then `start`. Project stacks are left alone. |
 | `harbor teardown [--purge]` | Remove all Harbor launchd units, resolver entry, and config. |
 | `harbor update [--check\|--stash]` | Self-update: fast-forward the checkout to `origin/main` and reseed the agent skill into every project. `--check` reports pending commits (read-only); `--stash` auto-stashes a dirty tree. |
 | `harbor status` | Active pools, linked sites, running stacks, allocated ports. |
@@ -680,7 +682,7 @@ above.
 | `harbor link <name>` | Create the `https://<name>.test` vhost (adds the cert SAN, reloads nginx). A Magento project with `multistore.mode: domain` also gets `*.<name>.test` automatically. |
 | `harbor unlink <name>` | Remove the vhost. |
 | `harbor wire <name> [--print]` | Inject DB/Redis/mail config into the app (surgical, never clobbers). |
-| `harbor up\|down\|restart <name>` | Start/stop the project's Docker stack (`down` flushes its Redis). |
+| `harbor up\|down\|restart <name>` | Start/stop/restart the project's Docker stack (`down` flushes its Redis). Bare `harbor restart` restarts Harbor itself. |
 | `harbor destroy <name> [--files]` | Remove stack + volumes, vhost, ports, Redis (confirm-gated). |
 | `harbor open <name>` | Open the site in your browser. |
 | `harbor logs <name> [service] [-f]` | Tail project/service logs. |

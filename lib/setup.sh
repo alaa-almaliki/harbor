@@ -72,6 +72,15 @@ cmd_start() {
   ok "Harbor started — https://<name>.test back online"
 }
 
+# restart Harbor's own services (nginx + php pools + dnsmasq + shared stack).
+# Called by `harbor restart` with no project name; project stacks are untouched
+# (they live on 20000+ ports) — `harbor restart <name>` handles those.
+platform_restart() {
+  [ -f "$(daemon_plist "$HARBOR_LD_PREFIX.nginx")" ] || die "Harbor not set up yet — run: harbor setup"
+  cmd_stop
+  cmd_start
+}
+
 cmd_teardown() {
   local purge=0
   [ "${1-}" = "--purge" ] && purge=1

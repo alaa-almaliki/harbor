@@ -96,7 +96,7 @@ Host & lifecycle:
   doctor [<project>]        Host requirements report (+ project PHP extensions)
   setup | teardown [--purge]  One-time host prep / removal
   update [--check|--stash]  Self-update: fast-forward the repo + reseed skills
-  stop | start              Pause/resume Harbor (free its ports for another stack)
+  stop | start | restart    Pause/resume/restart Harbor (free its ports for another stack)
   status | ps | list        Overall status (self-heals) / project table
   php [<ver>|sync] | php use <ver> (switch the brew-linked CLI php) | xdebug on|off|status
 
