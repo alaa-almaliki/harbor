@@ -23,6 +23,14 @@ This spec covers **optional services in general** (mysql becomes one optional
 service among several), of which "no database" is the motivating case. SQLite
 support is explicitly **out of scope** and depends on this landing first.
 
+## Phases
+
+- **Phase 1** — optional services: selection at `init`, absent-vs-empty manifest
+  semantics, conditional derived artifacts, DB-less behavior rules. Sections A–F.
+- **Phase 2** — `harbor services list|add|rm` for changing a project's stack after
+  init. Section E. Rides on phase 1's manifest write helper; phase 1 ships
+  standalone if phase 2 is deferred.
+
 ## Goals
 
 - A project can declare any subset of the service catalog, including none.
@@ -90,6 +98,18 @@ depending on the entry point.
 `harbor render` materializes the resolved list back into the manifest, so an
 absent key stops being load-bearing after the first re-render.
 
+**This requires the manifest to become writable, which it is not today** — it is
+rendered once from a template (`lib/init.sh:383`) and only ever read thereafter;
+no `manifest_set` exists. Phase 1 adds `_manifest_set_line <file> <key> <value>`:
+replace the one line whose top-level key matches, append the key if absent, leave
+every other byte of the file untouched.
+
+A single-line replace is sufficient **because CLAUDE.md requires manifest nesting
+to use flow style** — `services: { mysql: "mysql:8.0", … }` is always exactly one
+line. No YAML round-trip, so user comments and formatting survive. The helper is
+pure logic and unit-tests without a project (CLAUDE.md §6.5 names serialized
+replace as exactly this kind of seam).
+
 ### C. Compose assembly
 
 When the resolved list is empty, **no `docker-compose.yml` is written**, and an
@@ -153,7 +173,42 @@ running" (`lib/db.sh:16-18`); the new predicate runs before it.
 project, because `harbor install` cannot run `setup:install` without a database
 (`lib/magento.sh:20`).
 
-### E. Tests
+### E. `harbor services` (phase 2)
+
+Changing a project's stack after init. A thin command over phase 1 — the catalog,
+the picker, the render path, the orphaned-volume warning and the DB-less refusal
+rules are all already built by then.
+
+```
+harbor services <name>                 # picker, preselected = current selection
+harbor services list <name>            # catalog with the project's picks marked
+harbor services add <name> <svc>...    # add, then re-render
+harbor services rm  <name> <svc>...    # remove, then re-render
+```
+
+`add`/`rm` resolve the new list, write it with `_manifest_set_line`, re-render
+compose + `connection.env`, and hint at the next step rather than acting:
+
+```
+$ harbor services rm api mysql
+warn dropping mysql leaves its dbdata volume orphaned (harbor destroy api drops it)
+  -  rendered: projects/api/.harbor/docker-compose.yml
+  -  next: harbor up api
+```
+
+It does **not** run `up` itself — re-rendering is safe and idempotent, restarting
+containers is not, and the user may be making several changes in a row.
+
+`rm` of a service the project does not have is a no-op with a `warn`, not an
+error (idempotence, CLAUDE.md §1.7). `add` of an unknown service dies listing the
+catalog, same validation as `--services`.
+
+Per CLAUDE.md §6, a new command also needs: a dispatch case in `bin/harbor`, a
+`services` entry in `_HARBOR_CMDS` (`lib/completion.sh`), a help topic
+(`test/test_help.sh` fails the build without one), and rows in the README and
+`plan.md` command tables.
+
+### F. Tests
 
 Pure-logic only, per CLAUDE.md §6.5 — no Docker, no host state:
 
@@ -165,8 +220,14 @@ Pure-logic only, per CLAUDE.md §6.5 — no Docker, no host state:
   garbage.
 - `_compose_assemble` with a one-service and multi-service list still matches
   today's output (regression guard, since its call sites move).
+- `_manifest_set_line`: replaces an existing key, appends an absent one, leaves
+  comments and unrelated lines byte-identical, and does not match a key appearing
+  mid-line or inside a nested flow map.
 
-### F. Docs
+Phase 2 adds: `services add`/`rm` list resolution (add existing → no change, rm
+absent → no change), and unknown-service validation.
+
+### G. Docs
 
 - `lib/help.sh` — `init` topic must document `--services` (CLAUDE.md §6 makes
   this non-optional; `test/test_help.sh` enforces topic existence but not flag
@@ -177,7 +238,8 @@ Pure-logic only, per CLAUDE.md §6.5 — no Docker, no host state:
 - `CHANGELOG.md` — under `## [Unreleased]` → Added and Fixed (the unconditional
   `connection.env` vars are a fix).
 - `ai/skills/harbor/` — this is project-facing, so the skill copy seeded into
-  every project must cover `--services` and what a DB-less project can't do.
+  every project must cover `--services`, `harbor services`, and what a DB-less
+  project can't do.
 
 ## Risks
 
@@ -189,3 +251,9 @@ Pure-logic only, per CLAUDE.md §6.5 — no Docker, no host state:
 - **Combinatorial surface** — every service subset is now reachable. The tests
   cover resolution rather than every combination; the compose fragments are
   already independent of one another.
+- **Manifest corruption** (phase 1's write helper, inherited by phase 2) — a bad
+  single-line replace damages a user-authored, hand-editable file. Mitigated by
+  keeping the helper pure and testing the byte-identical-elsewhere property
+  directly, and by flow style guaranteeing the target is one line. If a manifest
+  ever needs block-style nesting, this helper's assumption breaks — that would be
+  a CLAUDE.md-level change, not a local one.
