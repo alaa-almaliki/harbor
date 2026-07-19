@@ -70,4 +70,35 @@ assert_ok   "manifest_has: present map"   manifest_has "$fx" services
 assert_fail "manifest_has: absent key"    manifest_has "$fx" nope
 assert_fail "manifest_has: empty value"   manifest_has "$fx" empty
 
+# --- manifest_set_line: in-place single-line rewrite ---------------------------
+sfx="$(mktemp)"
+cat > "$sfx" <<'YAML'
+# a comment that must survive
+framework: laravel
+services: { mysql: "mysql:8.0" }
+php: "8.3"   # trailing comment
+YAML
+
+manifest_set_line "$sfx" services '{ opensearch: "os:1" }'
+assert_eq "set_line: replaces the key" \
+  'services: { opensearch: "os:1" }' "$(grep '^services:' "$sfx")"
+assert_eq "set_line: leading comment survives" \
+  '# a comment that must survive' "$(sed -n 1p "$sfx")"
+assert_eq "set_line: unrelated trailing comment survives" \
+  'php: "8.3"   # trailing comment' "$(grep '^php:' "$sfx")"
+assert_eq "set_line: line count unchanged" 4 "$(wc -l < "$sfx" | tr -d ' ')"
+
+manifest_set_line "$sfx" node 20
+assert_eq "set_line: appends an absent key" 'node: 20' "$(grep '^node:' "$sfx")"
+
+# a key that appears only as a nested map key must NOT be treated as top-level
+cat > "$sfx" <<'YAML'
+multistore: { mode: domain, stores: { de: de.shop.test } }
+YAML
+manifest_set_line "$sfx" mode block
+assert_eq "set_line: does not match a key inside a flow map" \
+  'multistore: { mode: domain, stores: { de: de.shop.test } }' "$(sed -n 1p "$sfx")"
+assert_eq "set_line: appends instead" 'mode: block' "$(grep '^mode:' "$sfx")"
+rm -f "$sfx"
+
 report

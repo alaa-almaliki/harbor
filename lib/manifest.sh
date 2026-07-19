@@ -164,6 +164,25 @@ EOF
 
 manifest_has() { [ -n "$(manifest_get "$1" "$2" "")" ]; }
 
+# manifest_set_line <file> <key> <value> — set a TOP-LEVEL key's line to
+# "<key>: <value>", replacing it in place or appending if absent. Every other
+# byte of the file is preserved, including comments — the manifest is
+# hand-editable and must survive a machine write.
+#
+# One line is enough because CLAUDE.md requires flow style for nesting, so a
+# value like `services: { … }` never spans lines. `^key:` anchors to column 0,
+# so a key nested inside a flow map is never matched.
+manifest_set_line() {
+  local file="$1" key="$2" value="$3" tmp
+  tmp="$file.tmp.$$"
+  if grep -q "^$key:" "$file"; then
+    awk -v k="^$key:" -v line="$key: $value" \
+      '$0 ~ k { print line; next } { print }' "$file" > "$tmp" && mv "$tmp" "$file"
+  else
+    printf '%s: %s\n' "$key" "$value" >> "$file"
+  fi
+}
+
 manifest_path() { printf '%s' "$(project_harbor_dir "$1")/harbor.yml"; }
 
 # setting_get <project> <manifest.path> <CONFIG_KEY> <builtin-default>

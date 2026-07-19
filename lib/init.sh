@@ -83,13 +83,11 @@ _materialize_services() {
   # shellcheck disable=SC2086  # word-split the service names
   body="$(_services_map_body "$name" $names)"
   [ -n "$body" ] || return 0
+  manifest_set_line "$mf" services "{ $body }"
+  # drop the now-redundant db.image field left by the legacy format
   tmp="$mf.tmp.$$"
-  # rewrite the services: line as a map; drop the now-redundant db.image field
-  awk -v svc="services: { $body }" '
-    /^services:/ { print svc; next }
-    /^db:/       { sub(/,[[:space:]]*image:[[:space:]]*[^},[:space:]]*/, ""); print; next }
-    { print }
-  ' "$mf" > "$tmp" && mv "$tmp" "$mf"
+  awk '/^db:/ { sub(/,[[:space:]]*image:[[:space:]]*[^},[:space:]]*/, ""); print; next } { print }' \
+    "$mf" > "$tmp" && mv "$tmp" "$mf"
   step "materialized explicit service versions in $mf"
 }
 
