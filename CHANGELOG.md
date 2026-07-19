@@ -188,6 +188,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   meaning and loads the partial dump anyway (with a warning).
 
 ### Fixed
+- **`manifest_set_line` no longer treats a key as a regex, and no longer
+  corrupts a file with no trailing newline.** Its `grep`/`awk` match patterns
+  were built straight from `$key`, so a key containing `.`, `*`, `[`, `^`, or
+  `$` could match (and silently overwrite) an unrelated top-level line instead
+  of the intended one — e.g. setting `php.version` could clobber a line like
+  `phpZversion:` since `.` matches any char. Regex metacharacters in the key
+  are now escaped before building either pattern (the printed line still uses
+  the real key). Appending to a manifest that doesn't end in a newline used to
+  glue the new key onto the end of the last existing line; a trailing newline
+  is now written first when missing. Pinned by new cases in `test/test_manifest.sh`.
 - **The README's Downloads badge no longer renders broken.** It used a shields.io
   `?endpoint=` badge, which makes shields fetch
   `.github/traffic/clones-badge.json` from raw.githubusercontent on every render

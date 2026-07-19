@@ -173,12 +173,14 @@ manifest_has() { [ -n "$(manifest_get "$1" "$2" "")" ]; }
 # value like `services: { … }` never spans lines. `^key:` anchors to column 0,
 # so a key nested inside a flow map is never matched.
 manifest_set_line() {
-  local file="$1" key="$2" value="$3" tmp
+  local file="$1" key="$2" value="$3" tmp kesc
   tmp="$file.tmp.$$"
-  if grep -q "^$key:" "$file"; then
-    awk -v k="^$key:" -v line="$key: $value" \
+  kesc="$(printf '%s' "$key" | sed 's/[.[\*^$]/\\&/g')"
+  if grep -q "^$kesc:" "$file"; then
+    awk -v k="^$kesc:" -v line="$key: $value" \
       '$0 ~ k { print line; next } { print }' "$file" > "$tmp" && mv "$tmp" "$file"
   else
+    if [ -s "$file" ] && [ -n "$(tail -c1 "$file")" ]; then printf '\n' >> "$file"; fi
     printf '%s: %s\n' "$key" "$value" >> "$file"
   fi
 }

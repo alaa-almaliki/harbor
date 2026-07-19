@@ -99,6 +99,30 @@ manifest_set_line "$sfx" mode block
 assert_eq "set_line: does not match a key inside a flow map" \
   'multistore: { mode: domain, stores: { de: de.shop.test } }' "$(sed -n 1p "$sfx")"
 assert_eq "set_line: appends instead" 'mode: block' "$(grep '^mode:' "$sfx")"
+
+# a key containing a regex metacharacter must be matched literally — a "."
+# must not act as "any char" and accidentally match an unrelated top-level key
+cat > "$sfx" <<'YAML'
+phpZversion: keep-me
+YAML
+manifest_set_line "$sfx" "php.version" "8.4"
+assert_eq "set_line: dot in key does not match an unrelated key" \
+  'phpZversion: keep-me' "$(sed -n 1p "$sfx")"
+assert_eq "set_line: literal-dot key is appended, not merged" \
+  'php.version: 8.4' "$(grep -F 'php.version:' "$sfx")"
+assert_eq "set_line: unrelated key line count still 2" 2 "$(wc -l < "$sfx" | tr -d ' ')"
+
+# appending to a file with no trailing newline must not glue onto the last line
+sfx2="$(mktemp)"
+printf 'foo: bar' > "$sfx2"
+manifest_set_line "$sfx2" baz qux
+assert_eq "set_line: no-trailing-newline — previous last line intact" \
+  'foo: bar' "$(sed -n 1p "$sfx2")"
+assert_eq "set_line: no-trailing-newline — new key on its own line" \
+  'baz: qux' "$(sed -n 2p "$sfx2")"
+assert_eq "set_line: no-trailing-newline — exactly two lines" 2 "$(wc -l < "$sfx2" | tr -d ' ')"
+rm -f "$sfx2"
+
 rm -f "$sfx"
 
 report
