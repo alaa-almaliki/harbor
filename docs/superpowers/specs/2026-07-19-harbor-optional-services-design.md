@@ -135,9 +135,39 @@ missing thing refuse with a fix hint.* `harbor up` in a loop must not exit
 nonzero because one project is service-less; `harbor mysql api` must not exit 0
 pretending it worked.
 
-Dropping mysql from a project that already has data leaves its `dbdata` volume
-orphaned until `harbor destroy`. `render` must `warn` about this rather than
-delete data silently.
+#### Confirming a shrinking selection
+
+Removing a service whose named volume still exists **must confirm before
+proceeding**, not warn afterwards. Per CLAUDE.md §3 this uses `confirm()`, which
+is bypassed by `HARBOR_YES=1` only — there is no `--yes` flag.
+
+The volumes are **named and scoped to the `harbor-<name>` compose project**
+(`templates/compose/volumes/mysql.yml.tmpl`, `header.yml.tmpl:3`), so removing a
+service does **not** destroy its data: the volume is left in place and re-adding
+the service reattaches it intact. Only `harbor destroy` drops volumes. The prompt
+must say this plainly — an alarmist prompt for a reversible action trains people
+to hit `y` without reading, which is exactly what makes the genuinely destructive
+prompts dangerous.
+
+```
+$ harbor services rm api mysql
+warn removing mysql from 'api' stops its container and unmounts its data
+     the volume harbor-api_dbdata is KEPT — re-adding mysql reattaches it intact
+     only 'harbor destroy api' drops it
+Remove mysql from 'api'? [y/N]
+```
+
+The confirm is triggered by the **volume existing**, not by the service being
+mysql — the same applies to opensearch, meilisearch and elasticsearch data. If
+the volume was never created (service declared but never brought up), there is
+nothing at risk and no prompt.
+
+**One gate, one place.** The check lives in a single helper called wherever a
+resolved list shrinks — `render` (including after a hand-edited manifest),
+`services rm`, and the `init`/`services` picker when it deselects a service that
+already has a volume. `services rm` does not add its own prompt on top of
+`render`'s; a user must never be asked twice for one action. At `init` on a fresh
+project no volume exists, so the picker never prompts there.
 
 ### D. Derived artifacts
 
@@ -191,10 +221,16 @@ compose + `connection.env`, and hint at the next step rather than acting:
 
 ```
 $ harbor services rm api mysql
-warn dropping mysql leaves its dbdata volume orphaned (harbor destroy api drops it)
+warn removing mysql from 'api' stops its container and unmounts its data
+     the volume harbor-api_dbdata is KEPT — re-adding mysql reattaches it intact
+     only 'harbor destroy api' drops it
+Remove mysql from 'api'? [y/N] y
   -  rendered: projects/api/.harbor/docker-compose.yml
   -  next: harbor up api
 ```
+
+The confirm is the shared gate from section C, not a second prompt. Declining
+leaves the manifest untouched and exits nonzero — nothing is half-applied.
 
 It does **not** run `up` itself — re-rendering is safe and idempotent, restarting
 containers is not, and the user may be making several changes in a row.
@@ -224,6 +260,10 @@ Pure-logic only, per CLAUDE.md §6.5 — no Docker, no host state:
   comments and unrelated lines byte-identical, and does not match a key appearing
   mid-line or inside a nested flow map.
 
+- the shrink-detection predicate: which services are being dropped given an old
+  and new list. (The `confirm()` call itself and the docker volume probe are not
+  unit-tested — tests never touch the host, CLAUDE.md §6.5.)
+
 Phase 2 adds: `services add`/`rm` list resolution (add existing → no change, rm
 absent → no change), and unknown-service validation.
 
@@ -232,7 +272,10 @@ absent → no change), and unknown-service validation.
 - `lib/help.sh` — `init` topic must document `--services` (CLAUDE.md §6 makes
   this non-optional; `test/test_help.sh` enforces topic existence but not flag
   coverage, so this is on us). The `new`, `up`, `render` and `db` topics need the
-  no-op/refuse rule and the prompting behavior.
+  no-op/refuse rule and the prompting behavior. `render` and `services` are
+  confirm-gated when the selection shrinks, so their topics get the `[confirms]`
+  marker and must state that `HARBOR_YES=1` is the only bypass — CLAUDE.md is
+  explicit that no `--yes` flag may be documented for them.
 - `README.md` + `plan.md` — a services section covering the catalog, the picker,
   and the DB-less case.
 - `CHANGELOG.md` — under `## [Unreleased]` → Added and Fixed (the unconditional
@@ -243,8 +286,12 @@ absent → no change), and unknown-service validation.
 
 ## Risks
 
-- **Silent data loss** if a user deselects mysql on an existing project. Mitigated
-  by the orphaned-volume warning; the volume is never dropped by `render`.
+- **Unintended data detachment** if a user deselects mysql on an existing project.
+  Mitigated by the confirm gate in section C: the prompt fires whenever a
+  resolved list shrinks past an existing volume, and the volume itself is never
+  dropped by `render` or `services rm` — only by `harbor destroy`. The failure
+  mode is therefore "my app lost its database until I re-add the service", not
+  "my data is gone".
 - **Prompt in an unexpected place** — a TTY-attached script calling `harbor init`
   now blocks on the picker. Mitigated by the `HARBOR_YES=1` escape, which already
   means "don't ask me" everywhere else in Harbor.
