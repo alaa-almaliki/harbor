@@ -108,9 +108,34 @@ YAML
 manifest_set_line "$sfx" "php.version" "8.4"
 assert_eq "set_line: dot in key does not match an unrelated key" \
   'phpZversion: keep-me' "$(sed -n 1p "$sfx")"
+# checks line 2 specifically (not just "the file contains this substring
+# somewhere") — a grep -F presence check would pass even if the dot had acted
+# as a wildcard and merged the write into line 1, since the resulting text
+# would still contain "php.version: 8.4" (just on the wrong, and now-only, line)
 assert_eq "set_line: literal-dot key is appended, not merged" \
-  'php.version: 8.4' "$(grep -F 'php.version:' "$sfx")"
+  'php.version: 8.4' "$(sed -n 2p "$sfx")"
 assert_eq "set_line: unrelated key line count still 2" 2 "$(wc -l < "$sfx" | tr -d ' ')"
+
+# a key containing an ERE-only metachar (+ ? | ( ) { }) on the REPLACE path:
+# grep (BRE) treats these as literal and takes the replace branch, but awk's
+# `~` (ERE) treats them as metachars and never matches — so the old
+# grep-to-decide / awk-to-replace split silently dropped the write. This is
+# the reviewer's exact repro.
+cat > "$sfx" <<'YAML'
+php+version: 1.0
+YAML
+manifest_set_line "$sfx" "php+version" "2.0"
+assert_eq "set_line: ERE metachar key (+) is replaced, not silently dropped" \
+  'php+version: 2.0' "$(sed -n 1p "$sfx")"
+
+# a key with several ERE metachars at once, on the replace path — also checks
+# that the written line carries the RAW key, never a backslash-escaped form
+cat > "$sfx" <<'YAML'
+a(b|c)+d: old
+YAML
+manifest_set_line "$sfx" 'a(b|c)+d' 'new'
+assert_eq "set_line: multi-metachar key is replaced with the raw (unescaped) key" \
+  'a(b|c)+d: new' "$(sed -n 1p "$sfx")"
 
 # appending to a file with no trailing newline must not glue onto the last line
 sfx2="$(mktemp)"

@@ -170,15 +170,34 @@ manifest_has() { [ -n "$(manifest_get "$1" "$2" "")" ]; }
 # hand-editable and must survive a machine write.
 #
 # One line is enough because CLAUDE.md requires flow style for nesting, so a
-# value like `services: { … }` never spans lines. `^key:` anchors to column 0,
-# so a key nested inside a flow map is never matched.
+# value like `services: { … }` never spans lines.
+#
+# Matching is a LITERAL prefix test (awk `index($0, k) == 1`), not a regex —
+# no escaping needed, and no dialect to get wrong. This used to build a
+# regex-escaped key with sed and match it with `grep -q "^$kesc:"` (BRE) to
+# decide replace-vs-append, then `awk '$0 ~ k'` (ERE) to do the replace. Those
+# two dialects disagree on `+ ? | ( ) { }` — literal in BRE, metachars in ERE
+# — so a key like "php+version" would take the replace branch (grep matches)
+# but awk would never rewrite the line (ERE doesn't), silently dropping the
+# write. `index()` does plain substring search regardless of key content, so
+# that whole class of bug is gone rather than patched. `index($0, k) == 1`
+# anchors to column 0 (awk `index` is 1-based), which is what makes this a
+# TOP-LEVEL key match — a key nested inside a flow map never starts its line.
+#
+# Key/line are passed via ENVIRON, not `awk -v`: `-v name=value` runs `value`
+# through awk's string-literal escape processing (`\b`, `\t`, `\\`, …), so a
+# key containing a literal backslash would come out mangled. Environment
+# variables are handed to awk as raw bytes with no such processing.
 manifest_set_line() {
-  local file="$1" key="$2" value="$3" tmp kesc
+  local file="$1" key="$2" value="$3" tmp
   tmp="$file.tmp.$$"
-  kesc="$(printf '%s' "$key" | sed 's/[.[\*^$]/\\&/g')"
-  if grep -q "^$kesc:" "$file"; then
-    awk -v k="^$kesc:" -v line="$key: $value" \
-      '$0 ~ k { print line; next } { print }' "$file" > "$tmp" && mv "$tmp" "$file"
+  if MF_K="$key:" awk 'BEGIN { k = ENVIRON["MF_K"] }
+      index($0, k) == 1 { found = 1 } END { exit !found }' "$file"; then
+    MF_K="$key:" MF_LINE="$key: $value" awk '
+      BEGIN { k = ENVIRON["MF_K"]; line = ENVIRON["MF_LINE"] }
+      index($0, k) == 1 { print line; next }
+      { print }
+    ' "$file" > "$tmp" && mv "$tmp" "$file"
   else
     if [ -s "$file" ] && [ -n "$(tail -c1 "$file")" ]; then printf '\n' >> "$file"; fi
     printf '%s: %s\n' "$key" "$value" >> "$file"
