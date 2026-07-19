@@ -46,7 +46,11 @@ _compose_assemble() {
     printf 'volumes:\n'
     for svc in "$@"; do
       frag="$HARBOR_TEMPLATES/compose/volumes/$svc.yml.tmpl"
-      [ -f "$frag" ] && render_str "$frag"
+      # NOT `[ -f "$frag" ] && …` — a volume-less service as the last arg would
+      # make the loop (and the function) return nonzero, killing the plain
+      # `_compose_assemble … > docker-compose.yml` caller under set -e with no
+      # output. See CLAUDE.md §3.
+      if [ -f "$frag" ]; then render_str "$frag"; fi
     done
   fi
 }

@@ -101,4 +101,30 @@ assert_eq "human_duration: minutes"   "5m 12s"    "$(human_duration 312)"
 assert_eq "human_duration: hours"     "1h 2m 3s"  "$(human_duration 3723)"
 assert_eq "human_duration: zero"      "0s"        "$(human_duration 0)"
 
+# --- installed_php_versions --------------------------------------------------
+# Regression: the loop body used to end with `[ -x … ] && echo "$v"`, so when the
+# LAST listed version wasn't installed the loop's false guard became the
+# function's return value and plain callers (setup/start/stop all iterate this)
+# died silently under set -e. See CLAUDE.md §3.
+php_bin_dir="$(mktemp -d)"
+trap 'rm -rf "$php_bin_dir"' EXIT
+php_fpm_bin() { printf '%s' "$php_bin_dir/php-fpm-$1"; }   # stub: no brew lookup
+for _v in 8.1 8.3; do : > "$php_bin_dir/php-fpm-$_v"; chmod +x "$php_bin_dir/php-fpm-$_v"; done
+
+HARBOR_PHP_VERSIONS="8.1 8.2 8.3"   # last one IS installed
+assert_eq "installed_php_versions: filters to installed" \
+  "8.1 8.3" "$(installed_php_versions | tr '\n' ' ' | sed 's/ $//')"
+assert_ok "installed_php_versions: rc 0 when last is installed" installed_php_versions
+
+HARBOR_PHP_VERSIONS="8.1 8.3 8.5"   # last one is NOT installed — the regression
+assert_eq "installed_php_versions: still filters with last missing" \
+  "8.1 8.3" "$(installed_php_versions | tr '\n' ' ' | sed 's/ $//')"
+assert_ok "installed_php_versions: rc 0 when last is missing" installed_php_versions
+assert_contains "installed_php_versions: last-missing does not kill set -e caller" \
+  SURVIVED "$( ( set -e; installed_php_versions >/dev/null; echo SURVIVED ) 2>/dev/null )"
+
+HARBOR_PHP_VERSIONS="7.2 7.4"       # none installed at all
+assert_eq "installed_php_versions: none installed prints nothing" "" "$(installed_php_versions)"
+assert_ok "installed_php_versions: rc 0 when none installed" installed_php_versions
+
 report

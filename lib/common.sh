@@ -221,7 +221,10 @@ php_ld_label() { printf '%s' "$HARBOR_LD_PREFIX.php-$1"; }
 installed_php_versions() {
   local v
   for v in $HARBOR_PHP_VERSIONS; do
-    [ -x "$(php_fpm_bin "$v")" ] && echo "$v"
+    # NOT `[ -x … ] && echo` — if the LAST listed version isn't installed the
+    # loop returns nonzero and takes the function with it, killing plain callers
+    # (setup/start/stop iterate this) under set -e silently. See CLAUDE.md §3.
+    if [ -x "$(php_fpm_bin "$v")" ]; then echo "$v"; fi
   done
 }
 

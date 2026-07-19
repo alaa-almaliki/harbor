@@ -23,8 +23,13 @@ nginx_ensure_logs_all() {
   for c in "$HARBOR_NGINX_SITES"/*.conf; do
     [ -f "$c" ] || continue
     logs="$(awk '/(access|error)_log[[:space:]]/{print $2}' "$c" | tr -d ';')"
-    # shellcheck disable=SC2086
-    [ -n "$logs" ] && nginx_ensure_logs $logs
+    # NOT `[ -n "$logs" ] && …` — as the last statement in the loop body a false
+    # guard becomes the function's return value, and a plain caller under set -e
+    # dies silently with no output (see CLAUDE.md §3, test_db.sh).
+    if [ -n "$logs" ]; then
+      # shellcheck disable=SC2086
+      nginx_ensure_logs $logs
+    fi
   done
 }
 

@@ -183,6 +183,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   meaning and loads the partial dump anyway (with a warning).
 
 ### Fixed
+- **Four more silent-death guards squashed** — the `[ cond ] && …`-as-last-statement
+  bug that once killed `db import` (CLAUDE.md §3). In each case a false guard
+  became the function's return value, so a plain caller under `set -e` died with
+  no error output at all:
+  - **`harbor setup` on a vhost with no log directives.** `nginx_ensure_logs_all`
+    returned nonzero when a site conf's `access_log`/`error_log` lines couldn't
+    be parsed — which is exactly what a stale/hand-edited vhost looks like.
+  - **`harbor render`/`init` for a service with no volume fragment.**
+    `_compose_assemble` is called plainly as `… > docker-compose.yml`, so adding
+    a volume-less service (the documented optional case) would have silently
+    aborted stack generation.
+  - **`installed_php_versions` when the last listed version isn't installed** —
+    `setup`/`start`/`stop` all iterate it, so a missing newest PHP could have
+    taken them down.
+  - **`link_php_value_block` for a project with no `php_ini:` keys** — the
+    default for a fresh `harbor init`; harmless at today's call site, but a trap
+    for the next plain caller.
+
+  Pinned by new `test/test_nginx.sh`, `test/test_compose.sh`, `test/test_link.sh`
+  and added `installed_php_versions` coverage in `test/test_common.sh`.
 - **`re:` regex rules actually work now — and can no longer blank data.** The
   documented bare-pattern form (`re:UA-\d+-\d+ =>`) was passed to
   `preg_replace()` without delimiters, which always fails — and the failure

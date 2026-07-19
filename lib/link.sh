@@ -64,7 +64,10 @@ $pair"; fi
   done <<EOF
 $(manifest_pairs "$mf" php_ini)
 EOF
-  [ -n "$out" ] && printf '        fastcgi_param PHP_VALUE "%s";' "$out"
+  # NOT `[ -n "$out" ] && printf …` — a project with no php_ini keys would make
+  # this function return nonzero; harmless at today's call site (a prefix
+  # assignment swallows it) but a trap for the next plain caller. CLAUDE.md §3.
+  if [ -n "$out" ]; then printf '        fastcgi_param PHP_VALUE "%s";' "$out"; fi
 }
 
 # Magento domain-multistore: http-context map blocks (empty otherwise)
