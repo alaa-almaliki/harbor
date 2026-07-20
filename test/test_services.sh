@@ -199,6 +199,40 @@ assert_eq "render decline: manifest byte-identical after decline" "$before_sum" 
 assert_eq "render decline: legacy services: line still list-form" \
   "services: [mysql, rabbitmq]" "$(grep '^services:' "$mf")"
 
+# --- cmd_services: a declined change on a manifest with NO services: key -----
+# must leave it with NO services: key — not a bare "services:" line. Task 10's
+# whole restore mechanism exists to make a decline a true no-op; a manifest
+# that gains an empty "services:" line is a different (though semantically
+# equivalent, since manifest_get reads both as absent) file than before.
+mkproj nosvckey ""   # framework laravel, no services: line at all (legacy project)
+printf 'HARBOR_INDEX=2\nDB_PORT=20040\n' > "$HARBOR_PORTS_DIR/nosvckey"
+cat > "$(project_harbor_dir nosvckey)/docker-compose.yml" <<'EOF'
+services:
+  mysql:
+    image: mysql:8.0
+volumes:
+  dbdata:
+EOF
+
+mf2="$(manifest_path nosvckey)"
+before_sum2="$(shasum "$mf2")"
+
+# Force the shrink-confirm gate to trigger (compose has mysql, we're dropping
+# it) and then decline it, same stub/technique as the render-decline test above.
+_DOCKER_STUB=down
+unset HARBOR_YES
+svc_out="$tmp/services.out"
+svc_rc=0
+( printf 'n\n' | cmd_services rm nosvckey mysql ) >"$svc_out" 2>&1 || svc_rc=$?
+
+after_sum2="$(shasum "$mf2")"
+
+assert_eq "services decline: cmd_services returns nonzero" "1" "$svc_rc"
+assert_eq "services decline: manifest byte-identical (no bare services: line left behind)" \
+  "$before_sum2" "$after_sum2"
+assert_fail "services decline: services key is still absent, not present-empty" \
+  manifest_has "$mf2" services
+
 # --- _ps_db_column: `harbor ps` DB-column decision logic (pure) ---------------
 # Regression test: `harbor ps` used to render `db:-` for BOTH "no mysql
 # service" (intentional) and "has mysql but var/ports/<name> is missing" (a
@@ -218,6 +252,22 @@ assert_eq "ps db column: mysql + ports allocated -> db:<port>" \
   "db:20020" "$(_ps_db_column psdb_ok)"
 assert_eq "ps db column: mysql + NO ports file -> db:? (needs attention)" \
   "db:?" "$(_ps_db_column psdb_broken)"
+
+# --- services_select: arg-count vs emptiness (Edge 1) --------------------------
+# cmd_init calls services_select with only 2 args and wants the framework
+# default. cmd_services calls it with a 3rd arg that IS the project's current
+# list, which for a DB-less project is the empty string — that must NOT be
+# treated as "no arg given" and fall through to the framework default, or a
+# bare Enter on `harbor services` would silently add mysql to a project that
+# intentionally has none. HARBOR_YES=1 exercises the same non-interactive
+# short-circuit that returns `defaults` directly, so this pins the resolved
+# value without needing a TTY.
+export HARBOR_YES=1
+assert_eq "select: called with 2 args -> framework default" \
+  "mysql" "$(services_select noargsproj laravel)"
+assert_eq "select: called with explicit empty 3rd arg -> stays empty" \
+  "" "$(services_select emptyargproj laravel "")"
+unset HARBOR_YES
 
 # --- services add/rm list algebra (pure) ---------------------------------------
 assert_eq "apply: add new"        "mysql opensearch" "$(services_apply "mysql" add opensearch)"

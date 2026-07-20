@@ -150,4 +150,41 @@ rm -f "$sfx2"
 
 rm -f "$sfx"
 
+# --- manifest_del_line: removes a top-level key entirely ---------------------
+# Unlike manifest_set_line, there is no value to fall back to: the key's line
+# must disappear, not become "key:" with nothing after it — that's a
+# different file (present-but-empty) than the key never having existed, even
+# though manifest_get reads both the same on the way back out.
+dfx="$(mktemp)"
+cat > "$dfx" <<'YAML'
+# a comment that must survive
+framework: laravel
+services: { mysql: "mysql:8.0" }
+php: "8.3"   # trailing comment
+YAML
+
+manifest_del_line "$dfx" services
+assert_fail "del_line: key line is gone" grep -q '^services:' "$dfx"
+assert_eq "del_line: leading comment survives" \
+  '# a comment that must survive' "$(sed -n 1p "$dfx")"
+assert_eq "del_line: unrelated trailing comment survives" \
+  'php: "8.3"   # trailing comment' "$(grep '^php:' "$dfx")"
+assert_eq "del_line: line count decreases by exactly one" 3 "$(wc -l < "$dfx" | tr -d ' ')"
+
+# safe no-op when the key is absent
+manifest_del_line "$dfx" nope
+assert_eq "del_line: absent key -> no-op, line count unchanged" 3 "$(wc -l < "$dfx" | tr -d ' ')"
+
+# a key that appears only nested inside a flow map must NOT be treated as
+# top-level — same anchoring property manifest_set_line relies on
+cat > "$dfx" <<'YAML'
+multistore: { mode: domain, stores: { de: de.shop.test } }
+YAML
+manifest_del_line "$dfx" mode
+assert_eq "del_line: does not match a key nested inside a flow map" \
+  'multistore: { mode: domain, stores: { de: de.shop.test } }' "$(sed -n 1p "$dfx")"
+assert_eq "del_line: untouched file stays exactly one line" 1 "$(wc -l < "$dfx" | tr -d ' ')"
+
+rm -f "$dfx"
+
 report

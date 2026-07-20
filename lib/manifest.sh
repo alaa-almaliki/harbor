@@ -204,6 +204,29 @@ manifest_set_line() {
   fi
 }
 
+# manifest_del_line <file> <key> — remove a TOP-LEVEL key's line entirely
+# (as opposed to manifest_set_line, which would leave a bare "<key>:" behind).
+# A safe no-op when the key is absent. Every other byte is preserved.
+#
+# Needed to make a declined write a true no-op: if a key was absent before a
+# manifest_set_line, restoring with manifest_set_line would leave a bare
+# "<key>:" line — present-but-empty is a different state than absent even
+# though manifest_get reads both the same way (manifest_has is what tells
+# them apart). Same `index($0, k) == 1` top-level-anchored literal match as
+# manifest_set_line, for the same reason (see its comment) — reused here
+# rather than a regex so this can't independently regress into the BRE/ERE
+# mismatch that once silently dropped a write.
+manifest_del_line() {
+  local file="$1" key="$2" tmp
+  [ -f "$file" ] || return 0
+  tmp="$file.tmp.$$"
+  MF_K="$key:" awk '
+    BEGIN { k = ENVIRON["MF_K"] }
+    index($0, k) == 1 { next }
+    { print }
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
 manifest_path() { printf '%s' "$(project_harbor_dir "$1")/harbor.yml"; }
 
 # setting_get <project> <manifest.path> <CONFIG_KEY> <builtin-default>

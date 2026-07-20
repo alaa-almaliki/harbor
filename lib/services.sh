@@ -87,7 +87,14 @@ services_select() {
   local name="$1" framework="$2" catalog defaults reply parsed i svc mark
   catalog="$(services_catalog)"
   defaults="${3-}"
-  if [ -z "$defaults" ]; then defaults="$(_init_services "$framework" | tr -s ', ' ' ')"; fi
+  # Distinguish "no third argument" (framework default applies — cmd_init's
+  # two-arg call) from "third argument is the empty string" (a DB-less
+  # project's actual current list — cmd_services' three-arg call). Testing
+  # emptiness alone conflates the two: a project with NO services would fall
+  # through here to the framework default, preselecting a database it doesn't
+  # have and turning a bare Enter into "silently add mysql" — the inverse of
+  # what this argument exists to prevent.
+  if [ "$#" -lt 3 ]; then defaults="$(_init_services "$framework" | tr -s ', ' ' ')"; fi
   if [ ! -t 0 ] || [ "${HARBOR_YES:-0}" = "1" ]; then
     printf '%s' "$defaults"; return 0
   fi
@@ -265,11 +272,21 @@ cmd_services() {
   # rewritten while nothing else was applied: the exact "decline still mutates
   # state" defect fixed in Task 7, reintroduced one layer up. Capture the raw
   # line rather than rebuilding it, so a decline is byte-for-byte a no-op.
-  local prev; prev="$(manifest_get "$mf" services "")"
+  local prev had_prev=0; prev="$(manifest_get "$mf" services "")"
+  manifest_has "$mf" services && had_prev=1
   # shellcheck disable=SC2086  # word-split the resolved service list
   manifest_set_line "$mf" services "{ $(_services_map_body "$name" $new) }"
   if ! cmd_render "$name"; then       # carries the shrink-confirm gate from Task 7
-    manifest_set_line "$mf" services "$prev"
+    if [ "$had_prev" = 1 ]; then
+      manifest_set_line "$mf" services "$prev"
+    else
+      # The key never existed before (legacy manifest). Restoring with
+      # manifest_set_line would leave a bare "services:" line — present but
+      # empty is not the same file as the key being absent, even though
+      # manifest_get can't tell the two apart on read. Remove the line so a
+      # decline is byte-for-byte a no-op.
+      manifest_del_line "$mf" services
+    fi
     warn "reverted: $name services unchanged"
     return 1
   fi

@@ -129,6 +129,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (new `test/test_magento.sh`) covering exit status, that the message names
   *all* missing services (not just the first), and that it reaches stderr —
   both guards were previously untested pure-logic functions per CLAUDE.md §6.5.
+- **`harbor services <name>` (the bare picker) no longer preselects a database
+  for a project that has none.** `services_select` took its current-services
+  argument as `"${3-}"` and treated an *empty value* the same as *no argument
+  given*, falling back to the framework default — so a DB-less project's
+  actual empty list was indistinguishable from `cmd_init`'s two-arg call, the
+  picker marked `mysql` as `*default`, and pressing Enter silently added a
+  database (the exact inverse of what this argument exists to prevent). Now
+  distinguished by argument count (`[ "$# -lt 3" ]`), not emptiness; `cmd_init`
+  still gets the framework default with its two-arg call.
+- **A declined `harbor services` change no longer writes a bare `services:`
+  line into a manifest that had no `services:` key at all** (legacy projects
+  predating the key). The restore path rewrote the captured (empty) previous
+  value with `manifest_set_line`, which appends `services:` with nothing after
+  it when the key didn't previously exist — resolved semantics survive
+  (`manifest_has` reads it as absent either way) but the file is no longer
+  byte-identical after an operation the user cancelled. `cmd_services` now
+  captures presence via `manifest_has` *before* writing, and on a decline
+  either restores the previous line or, if the key was absent, removes it with
+  the new `manifest_del_line <file> <key>` helper (`lib/manifest.sh`) — same
+  top-level-anchored literal match (`index($0, k) == 1`) as `manifest_set_line`,
+  reused rather than reimplemented as a regex.
 
 ### Added
 - **`harbor render` now confirms before a manifest edit drops a service whose
