@@ -94,6 +94,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project has a `mysql` service before loading its ports, rendering a
   distinct `db:?` for "has `mysql` but no allocated ports," separate from
   `db:-` for "no `mysql` service."
+- **A hand-edited bare `services:` (the obvious YAML way to write "none") no
+  longer gets a project silently stuck on the framework default.** Presence
+  of the `services:` key is now tested with a real presence check
+  (`manifest_key_present`, `lib/manifest.sh`), not `manifest_has` (a VALUE
+  test that reads an empty value the same as an absent key) — before this,
+  a bare `services:` line resolved back to e.g. `mysql`, and `harbor services
+  add <name> mysql` then reported "no change" with no way to actually add it.
+  `manifest_has` itself is unchanged (still used elsewhere for its existing
+  value semantics); the new helper is additive.
+- **`harbor services rm`/`add` declining its confirm gate now restores the
+  manifest's previous `services:` line byte-for-byte, comment included** —
+  it used to rebuild the line from the resolved value (`manifest_get`, which
+  strips trailing comments) and could also mis-detect a bare `services:` as
+  "key was absent," restoring by deleting the line instead of putting the
+  bare line back. Restoration now snapshots and replays the raw line
+  (`manifest_raw_line`/`manifest_set_raw_line`).
+- **A partial `harbor services rm` (the project still has other services
+  left) now actually stops the dropped service's container**, instead of
+  only rewriting `docker-compose.yml` and leaving it running until an
+  unrelated `harbor down` — `docker compose up -d` merely warns about
+  "orphans" and Harbor never passed `--remove-orphans`. `harbor render`
+  now stops (and removes, without `-v`) just the dropped service(s) before
+  rewriting the compose file; the rest of the stack, and all volumes, are
+  left untouched.
+- **`harbor destroy` no longer reports success while leaking every volume
+  when Docker is unreachable.** Its volume sweep (`docker volume ls -q |
+  grep ... || true`) used to turn a failed listing into the same empty
+  result as "no matching volumes," so `destroy` would unlink, release ports,
+  and print "destroyed" while the project's volumes stayed on disk with no
+  Harbor command left able to reach them. `destroy` now distinguishes the
+  two, still unlinks/releases ports (those don't need Docker), and reports
+  the volume sweep as failed with a fix hint instead of claiming full
+  success.
+- **`harbor init --services none` (or any DB-less selection) no longer
+  reports a `db port` in its summary line** — the port belongs to a `mysql`
+  service that was never provisioned.
 
 ### Added
 - **`harbor restart` with no project name restarts Harbor itself** — equivalent

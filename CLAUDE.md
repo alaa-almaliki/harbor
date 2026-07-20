@@ -130,6 +130,22 @@ This is the project's defining constraint. Concretely:
   statement's `set -e` reliance is safe just because it works today; the
   function's *caller* determines that, and a caller can change. This is a
   real platform-level trap, not specific to this one bug, and will recur.
+- **An empty value is not the same as "absent," and a failed command is not
+  the same as "empty" — don't let one get read as the other.** This class of
+  bug has recurred multiple times: `manifest_has` (`[ -n "$(manifest_get …)"
+  ]`) is a VALUE test, so a hand-edited bare `services:` (present, no value —
+  the obvious way to write "none") read identically to the key being absent,
+  silently falling back to a framework default with no way to undo it
+  through the tool (fixed by adding `manifest_key_present`, a true presence
+  test, rather than changing `manifest_has`'s long-standing value semantics
+  globally). Separately, `docker volume ls -q 2>/dev/null | grep … || true`
+  turned "the daemon is unreachable" into the same empty string as
+  "genuinely no matching volumes," letting `harbor destroy` report success
+  while leaking every volume it couldn't even enumerate. When a helper
+  collapses "absent"/"empty"/"failed" into the same falsy/empty result,
+  check whether a caller needs to tell them apart — if so, give it a
+  distinct, explicitly-named test (`_key_present`, checking a command's own
+  exit status) rather than reusing a value-shaped one.
 - Functions over inline blocks; prefix internal helpers with `_`. Keep each `lib/*.sh`
   focused on one area (see `plan.md` layout).
 - **No heavy runtime deps.** No `jq`, no `yq` as hard requirements. Persist state

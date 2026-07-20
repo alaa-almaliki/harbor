@@ -284,15 +284,24 @@ cmd_services() {
   # Write, then render — and RESTORE the manifest if the render's confirm gate is
   # declined. Without the restore, answering "n" would leave the manifest already
   # rewritten while nothing else was applied: the exact "decline still mutates
-  # state" defect fixed in Task 7, reintroduced one layer up. Capture the raw
-  # line rather than rebuilding it, so a decline is byte-for-byte a no-op.
-  local prev had_prev=0; prev="$(manifest_get "$mf" services "")"
-  manifest_has "$mf" services && had_prev=1
+  # state" defect fixed in Task 7, reintroduced one layer up.
+  #
+  # `prev`/`had_prev` use manifest_raw_line / manifest_key_present (real
+  # PRESENCE + VERBATIM capture), not manifest_get / manifest_has (VALUE
+  # tests). Two reasons: (1) manifest_get runs _mf_decomment, so a manifest
+  # `services: { mysql: "mysql:8.0" }  # pinned by ops` used to restore
+  # WITHOUT the trailing comment — the comment above claiming "byte-for-byte"
+  # was not actually true. (2) manifest_has reads a bare `services:` (present,
+  # empty value — the natural hand-edit for "no services") the same as the
+  # key being absent, so had_prev would be wrong for that manifest too:
+  # restoring would DELETE the line instead of putting the bare line back.
+  local prev had_prev=0; prev="$(manifest_raw_line "$mf" services)"
+  manifest_key_present "$mf" services && had_prev=1
   # shellcheck disable=SC2086  # word-split the resolved service list
   manifest_set_line "$mf" services "{ $(_services_map_body "$name" $new) }"
   if ! cmd_render "$name"; then       # carries the shrink-confirm gate from Task 7
     if [ "$had_prev" = 1 ]; then
-      manifest_set_line "$mf" services "$prev"
+      manifest_set_raw_line "$mf" services "$prev"
     else
       # The key never existed before (legacy manifest). Restoring with
       # manifest_set_line would leave a bare "services:" line — present but

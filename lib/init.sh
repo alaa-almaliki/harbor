@@ -15,10 +15,18 @@ _init_services() {
 # `services:` key is PRESENT — including when it is empty, which means "no
 # containers". Only an ABSENT key falls back to the framework default, so
 # manifests written before `services:` existed keep working.
+#
+# Presence is tested with manifest_key_present, NOT manifest_has: manifest_has
+# tests the RESOLVED VALUE, so a hand-edited bare `services:` (the obvious
+# YAML way to write "none") reads identically to the key being absent — a
+# project meant to have no containers silently gets the framework default
+# back (e.g. mysql) and, worse, `harbor services add <name> <svc>` then
+# resolves "current" as that same wrong default, so an add that already
+# matches it reports "no change" with no way to actually add the service.
 _project_services() {
   local name="$1" framework="$2" mf
   mf="$(manifest_path "$name")"
-  if [ -f "$mf" ] && manifest_has "$mf" services; then
+  if manifest_key_present "$mf" services; then
     manifest_map_keys "$mf" services
     return 0
   fi
@@ -131,6 +139,37 @@ init_render_compose() {
     rm -f "$cf"
     return 0
   fi
+  # A partial shrink (still-non-empty new list) must not leave a DROPPED
+  # service's container running just because rewriting the compose file below
+  # doesn't touch running containers. `docker compose up -d` only WARNS about
+  # orphans and leaves them running (`project_compose` never passes
+  # `--remove-orphans`) — so without this, the container survives holding its
+  # port and its heap until an unrelated `harbor down`, directly contradicting
+  # the shrink-confirm prompt the user just agreed to (services_confirm_shrink:
+  # "stops its container and unmounts its data").
+  #
+  # Must run BEFORE the compose file is overwritten below: the OLD file (still
+  # listing the dropped service) is the only handle `docker compose` has on
+  # that container. `rm -s -f` (stop then remove, no `-v`) targets only the
+  # dropped service(s) — the rest of the stack keeps running — and leaves the
+  # volume in place: dropping data remains `harbor destroy`'s job, never
+  # render's.
+  if [ -f "$cf" ]; then
+    local dropped; dropped="$(services_dropped "$(project_compose_services "$cf")" "$*")"
+    if [ -n "$dropped" ]; then
+      log "dropping service(s) ($dropped) from '$name' — stopping their container(s)"
+      # shellcheck disable=SC2086  # word-split the dropped service list
+      if ! project_compose "$name" rm -s -f $dropped >/dev/null 2>&1; then
+        # Same reasoning as the empty-list branch above: leave the (about to
+        # be stale) compose file in place rather than overwrite it out from
+        # under a container docker still has to reach. Returning here means
+        # the new compose file is never written, so a retry sees the same
+        # dropped service and tries the stop again.
+        warn "could not stop dropped service(s) ($dropped) for '$name' cleanly — check: docker ps; then re-run 'harbor render $name' to retry"
+        return 1
+      fi
+    fi
+  fi
   # validate every service has a fragment BEFORE truncating the output file
   for svc in "$@"; do
     [ -f "$HARBOR_TEMPLATES/compose/services/$svc.yml.tmpl" ] || \
@@ -188,17 +227,7 @@ cmd_render() {
   # changes until the user has agreed to proceed.
   local newlist oldlist=""
   newlist="$(_project_services "$name" "$framework")"
-  if [ -f "$(project_compose_file "$name")" ]; then
-    # Only the keys under `services:` — a generated compose also has a top-level
-    # `volumes:` block whose entries sit at the SAME two-space indent, so a bare
-    # /^  [a-z]+:$/ picks up `dbdata` and reports it as a dropped "service".
-    # (Verified against a real generated file: it matched `mysql` AND `dbdata`.)
-    oldlist="$(awk '
-      /^services:/ { in_s = 1; next }
-      /^[a-z]/     { in_s = 0 }
-      in_s && /^  [a-z][a-z0-9_-]*:$/ { gsub(/[ :]/, ""); print }
-    ' "$(project_compose_file "$name")" | tr '\n' ' ')"
-  fi
+  oldlist="$(project_compose_services "$(project_compose_file "$name")")"
   services_confirm_shrink "$name" "$oldlist" "$newlist" || { warn "aborted — manifest unchanged"; return 1; }
 
   # Only NOW may the manifest be touched — the user has agreed to proceed.
@@ -487,6 +516,14 @@ cmd_init() {
   init_write_import_samples "$name"
   init_write_agent_skills "$name"
 
-  ok "init $name ($framework, php $phpver) — db port $(ports_load "$name"; echo "$DB_PORT")"
+  # Only mention the db port when mysql is actually part of the stack — a
+  # DB-less project (`--services none`/"") has no DB_PORT worth reporting, and
+  # printing one anyway ("— db port 20020") implies a database that was never
+  # provisioned.
+  local dbmsg=""
+  case " $svcnames " in
+    (*" mysql "*) dbmsg=" — db port $(ports_load "$name"; echo "$DB_PORT")" ;;
+  esac
+  ok "init $name ($framework, php $phpver)$dbmsg"
   step "next: harbor up $name  &&  harbor link $name"
 }

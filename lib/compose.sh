@@ -32,6 +32,26 @@ project_compose_file() { printf '%s' "$(project_harbor_dir "$1")/docker-compose.
 # has no compose file — that is a valid state, not an error.
 project_has_stack() { [ -f "$(project_compose_file "$1")" ]; }
 
+# project_compose_services <compose-file> — the service names (top-level keys
+# under `services:`) actually present in a GENERATED compose file,
+# space-separated; empty if the file doesn't exist. Only the keys under
+# `services:` — a generated compose also has a top-level `volumes:` block
+# whose entries sit at the SAME two-space indent, so a bare /^  [a-z]+:$/
+# would pick up e.g. `dbdata` too and misreport it as a service (verified
+# against a real generated file: it matched `mysql` AND `dbdata`). Shared by
+# cmd_render (to detect a shrink for the confirm gate) and
+# init_render_compose (to know which container(s) to stop on a partial
+# shrink) so the two never drift on what "the old service list" means.
+project_compose_services() {
+  local f="$1"
+  [ -f "$f" ] || { printf ''; return 0; }
+  awk '
+    /^services:/ { in_s = 1; next }
+    /^[a-z]/     { in_s = 0 }
+    in_s && /^  [a-z][a-z0-9_-]*:$/ { gsub(/[ :]/, ""); print }
+  ' "$f" | tr '\n' ' ' | sed 's/ $//'
+}
+
 # _compose_assemble <svc...> — print a docker-compose.yml on stdout by concatenating
 # per-service fragments (templates/compose/services/<svc>.yml.tmpl) under one
 # `services:` header, then their volume decls under one `volumes:` footer. Render
@@ -163,9 +183,24 @@ cmd_restart() {
 # "harbor-<name>" is always the compose-inserted separator, never part of
 # another project's name: anchoring on "^harbor-<name>_" cannot match
 # "harbor-<name>2_...". Safe to call even when nothing matches (idempotent).
+#
+# Returns 1 (WITHOUT removing anything) when `docker volume ls` itself fails,
+# rather than treating a failed listing the same as an empty one. Those are
+# not the same thing: `docker volume ls -q 2>/dev/null | grep ... || true`
+# turns "the daemon is unreachable" into the empty string, which reads
+# identically to "genuinely no matching volumes" — the caller (cmd_destroy)
+# would then confirm, skip `down -v`, find "no" volumes, unlink, release
+# ports, and report success while `harbor-<name>_dbdata` stays on disk with no
+# Harbor command left able to reach it (the compose file and manifest are
+# already gone by then). The one command whose entire job is reversibility
+# must not claim to have removed things it could not even enumerate.
 _destroy_project_volumes() {
-  local name="$1" vols v
-  vols="$(docker volume ls -q 2>/dev/null | grep -E "^harbor-${name}_" || true)"
+  local name="$1" out vols v
+  if ! out="$(docker volume ls -q 2>&1)"; then
+    warn "could not list docker volumes for '$name' ($out)"
+    return 1
+  fi
+  vols="$(printf '%s\n' "$out" | grep -E "^harbor-${name}_" || true)"
   if [ -n "$vols" ]; then
     while IFS= read -r v; do
       [ -n "$v" ] || continue
@@ -174,6 +209,7 @@ _destroy_project_volumes() {
 $vols
 EOF
   fi
+  return 0
 }
 
 cmd_destroy() {
@@ -184,10 +220,19 @@ cmd_destroy() {
   if [ -f "$(project_compose_file "$name")" ]; then
     project_compose "$name" down -v >/dev/null 2>&1 || true
   fi
-  _destroy_project_volumes "$name"
+  # Unlink/ports-release don't touch Docker, so they still run (and are
+  # reported) even when the volume sweep couldn't — a partial destroy that
+  # says so honestly beats one that silently claims full success (see
+  # _destroy_project_volumes above).
+  local vols_ok=1
+  _destroy_project_volumes "$name" || vols_ok=0
   cmd_unlink "$name" >/dev/null 2>&1 || true
   ports_release "$name"
   if [ "$files" = 1 ]; then rm -rf "$(project_dir "$name")"; warn "deleted $(project_dir "$name")"; fi
+  if [ "$vols_ok" = 0 ]; then
+    warn "destroy: $name unlinked and ports released, but its volumes could NOT be confirmed removed (docker unreachable?) — check: docker volume ls | grep harbor-$name ; re-run 'harbor destroy $name' once docker is reachable"
+    return 1
+  fi
   ok "destroyed: $name"
 }
 

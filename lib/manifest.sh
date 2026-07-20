@@ -164,13 +164,45 @@ EOF
 
 manifest_has() { [ -n "$(manifest_get "$1" "$2" "")" ]; }
 
-# manifest_set_line <file> <key> <value> — set a TOP-LEVEL key's line to
-# "<key>: <value>", replacing it in place or appending if absent. Every other
-# byte of the file is preserved, including comments — the manifest is
-# hand-editable and must survive a machine write.
+# manifest_key_present <file> <key> — is <key> present as a TOP-LEVEL line,
+# regardless of its value? A true PRESENCE test, unlike manifest_has (a VALUE
+# test: non-empty resolved value). A bare `services:` (nothing after the
+# colon) is the natural hand-edit for "no services" — manifest_has reads it
+# the same as an ABSENT key and a caller keying off it falls back to a
+# framework default instead of "none", with no way to express "none" through
+# the manifest at all. manifest_has is left alone (see manifest_set_line's
+# callers) since changing its long-standing value semantics globally is
+# riskier than adding this distinct, narrowly-scoped helper.
 #
-# One line is enough because CLAUDE.md requires flow style for nesting, so a
-# value like `services: { … }` never spans lines.
+# Same top-level literal-anchored match as manifest_set_line/manifest_del_line
+# (awk `index($0, k) == 1`), reused rather than a fresh regex for the same
+# BRE/ERE-mismatch reason documented on manifest_set_line below.
+manifest_key_present() {
+  local file="$1" key="$2"
+  [ -f "$file" ] || return 1
+  MF_K="$key:" awk 'BEGIN { k = ENVIRON["MF_K"] }
+      index($0, k) == 1 { found = 1 } END { exit !found }' "$file"
+}
+
+# manifest_raw_line <file> <key> — the exact TOP-LEVEL line for <key>,
+# including any trailing comment, or empty if absent. Companion to
+# manifest_key_present: this returns the verbatim bytes so a caller can
+# snapshot a key and restore it later without reconstructing "key: value" —
+# manifest_get can't be used for that, since it runs _mf_decomment and would
+# silently drop a trailing "# comment" on restore.
+manifest_raw_line() {
+  local file="$1" key="$2"
+  [ -f "$file" ] || return 0
+  MF_K="$key:" awk 'BEGIN { k = ENVIRON["MF_K"] }
+      index($0, k) == 1 { print; exit }' "$file"
+}
+
+# _mf_replace_or_append_line <file> <key> <line> — internal: replace a
+# TOP-LEVEL key's line with the EXACT text <line>, appending it if the key is
+# absent. Shared by manifest_set_line (which builds "<key>: <value>") and
+# manifest_set_raw_line (an arbitrary verbatim line, e.g. one captured earlier
+# by manifest_raw_line, comment and all). Every other byte of the file is
+# preserved — the manifest is hand-editable and must survive a machine write.
 #
 # Matching is a LITERAL prefix test (awk `index($0, k) == 1`), not a regex —
 # no escaping needed, and no dialect to get wrong. This used to build a
@@ -188,20 +220,40 @@ manifest_has() { [ -n "$(manifest_get "$1" "$2" "")" ]; }
 # through awk's string-literal escape processing (`\b`, `\t`, `\\`, …), so a
 # key containing a literal backslash would come out mangled. Environment
 # variables are handed to awk as raw bytes with no such processing.
-manifest_set_line() {
-  local file="$1" key="$2" value="$3" tmp
+_mf_replace_or_append_line() {
+  local file="$1" key="$2" line="$3" tmp
   tmp="$file.tmp.$$"
   if MF_K="$key:" awk 'BEGIN { k = ENVIRON["MF_K"] }
       index($0, k) == 1 { found = 1 } END { exit !found }' "$file"; then
-    MF_K="$key:" MF_LINE="$key: $value" awk '
+    MF_K="$key:" MF_LINE="$line" awk '
       BEGIN { k = ENVIRON["MF_K"]; line = ENVIRON["MF_LINE"] }
       index($0, k) == 1 { print line; next }
       { print }
     ' "$file" > "$tmp" && mv "$tmp" "$file"
   else
     if [ -s "$file" ] && [ -n "$(tail -c1 "$file")" ]; then printf '\n' >> "$file"; fi
-    printf '%s: %s\n' "$key" "$value" >> "$file"
+    printf '%s\n' "$line" >> "$file"
   fi
+}
+
+# manifest_set_line <file> <key> <value> — set a TOP-LEVEL key's line to
+# "<key>: <value>", replacing it in place or appending if absent. One line is
+# enough because CLAUDE.md requires flow style for nesting, so a value like
+# `services: { … }` never spans lines. See _mf_replace_or_append_line for the
+# matching rationale.
+manifest_set_line() {
+  local file="$1" key="$2" value="$3"
+  _mf_replace_or_append_line "$file" "$key" "$key: $value"
+}
+
+# manifest_set_raw_line <file> <key> <rawline> — like manifest_set_line, but
+# writes <rawline> VERBATIM instead of building "<key>: <value>" — pairs with
+# manifest_raw_line to restore a snapshotted line (including a trailing
+# comment) byte-for-byte, rather than losing the comment through
+# manifest_get's decommenting on the way to reconstructing the line.
+manifest_set_raw_line() {
+  local file="$1" key="$2" rawline="$3"
+  _mf_replace_or_append_line "$file" "$key" "$rawline"
 }
 
 # manifest_del_line <file> <key> — remove a TOP-LEVEL key's line entirely

@@ -70,6 +70,40 @@ assert_ok   "manifest_has: present map"   manifest_has "$fx" services
 assert_fail "manifest_has: absent key"    manifest_has "$fx" nope
 assert_fail "manifest_has: empty value"   manifest_has "$fx" empty
 
+# --- manifest_key_present: a real PRESENCE test, unlike manifest_has's VALUE
+# test — a bare "empty:" key (present, nothing after the colon) must read as
+# PRESENT here, the opposite of manifest_has above. This is the crux of
+# Finding 1: a hand-edited bare `services:` is the obvious way to write "no
+# services," and a value test can't tell that apart from the key never having
+# existed at all.
+assert_ok   "manifest_key_present: present key"      manifest_key_present "$fx" framework
+assert_ok   "manifest_key_present: present map"      manifest_key_present "$fx" services
+assert_ok   "manifest_key_present: bare/empty value STILL present" \
+  manifest_key_present "$fx" empty
+assert_fail "manifest_key_present: absent key"       manifest_key_present "$fx" nope
+assert_fail "manifest_key_present: no file -> absent" manifest_key_present /no/such/file key
+
+# --- manifest_raw_line: verbatim line capture (comment and all) --------------
+rlfx="$(mktemp)"
+cat > "$rlfx" <<'YAML'
+framework: laravel
+services: { mysql: "mysql:8.0" }  # pinned by ops
+bare:
+YAML
+assert_eq "raw_line: captures trailing comment verbatim" \
+  'services: { mysql: "mysql:8.0" }  # pinned by ops' "$(manifest_raw_line "$rlfx" services)"
+assert_eq "raw_line: bare key captured as-is" "bare:" "$(manifest_raw_line "$rlfx" bare)"
+assert_eq "raw_line: absent key -> empty" "" "$(manifest_raw_line "$rlfx" nope)"
+
+# --- manifest_set_raw_line: writes a captured line back byte-for-byte --------
+manifest_set_raw_line "$rlfx" services 'services: { mysql: "mysql:8.0" }  # pinned by ops'
+assert_eq "set_raw_line: round-trips the comment" \
+  'services: { mysql: "mysql:8.0" }  # pinned by ops' "$(grep '^services:' "$rlfx")"
+manifest_set_raw_line "$rlfx" newkey 'newkey: [a, b]   # appended verbatim'
+assert_eq "set_raw_line: appends an absent key verbatim" \
+  'newkey: [a, b]   # appended verbatim' "$(grep '^newkey:' "$rlfx")"
+rm -f "$rlfx"
+
 # --- manifest_set_line: in-place single-line rewrite ---------------------------
 sfx="$(mktemp)"
 cat > "$sfx" <<'YAML'

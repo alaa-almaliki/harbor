@@ -25,6 +25,7 @@ mkproj() {  # mkproj <name> <services-line-or-empty>
 }
 mkproj absent ""
 mkproj empty 'services: {}'
+mkproj bare 'services:'
 mkproj written 'services: { opensearch: "os:1" }'
 mkproj legacy 'services: [mysql, rabbitmq]'
 mkproj esearch 'services: { elasticsearch: "es:1" }'
@@ -34,6 +35,13 @@ mkproj esearch 'services: { elasticsearch: "es:1" }'
     "mysql" "$(_project_services absent laravel)"
   assert_eq "resolve: empty map -> no services" \
     "" "$(_project_services empty laravel)"
+  # Finding 1: a bare `services:` (present, nothing after the colon — the
+  # obvious hand-edit for "no services") must resolve the SAME as an explicit
+  # `{}`, not fall back to the framework default. Before the fix, `_project_services`
+  # tested presence via `manifest_has` (a VALUE test), so this read identically
+  # to the key being absent and silently handed back "mysql".
+  assert_eq "resolve: bare value -> no services (Finding 1)" \
+    "" "$(_project_services bare laravel)"
   assert_eq "resolve: written map -> as written" \
     "opensearch" "$(_project_services written laravel)"
   assert_eq "resolve: legacy list -> as written" \
@@ -262,11 +270,22 @@ volumes:
   dbdata:
 EOF
 
-# Stub project_compose itself (not docker) to fail — simplest, most direct way
-# to force init_render_compose's `project_compose "$name" down` to fail
-# without emulating `docker compose` argv. Nothing after this point in the
-# file needs the real project_compose.
-project_compose() { return 1; }
+# Stub project_compose itself (not docker) — simplest, most direct way to
+# control what init_render_compose's calls into it do, without emulating real
+# `docker compose` argv. Mode-selected via $_PC_FAIL (default: fail, what this
+# scenario needs) and every call is logged to $pc_log, so this ONE definition
+# is reused by every later scenario in this file that needs to fake
+# project_compose — a second `project_compose() {...}` further down would get
+# THIS one flagged as "never invoked" (SC2329) once it's shadowed, same
+# reasoning the shared `docker()` stub documents elsewhere in this suite.
+pc_log="$tmp/project_compose.log"
+_PC_FAIL=1
+project_compose() {
+  local n="$1"; shift
+  printf '%s %s\n' "$n" "$*" >> "$pc_log"
+  [ "$_PC_FAIL" = 1 ] && return 1
+  return 0
+}
 
 export HARBOR_YES=1   # bypass the (unrelated) shrink-confirm prompt
 render2_rc=0
@@ -331,6 +350,77 @@ assert_contains "services: reports the ports-not-allocated fix hint" \
   "ports not allocated for noports" "$(cat "$noports_out")"
 assert_eq "services: manifest untouched by the ports-preflight die (no half-applied write)" \
   "$before_sum4" "$after_sum4"
+
+# --- cmd_services: Finding 1 end-to-end — a bare `services:` must not get a
+# user permanently stuck ------------------------------------------------------
+# Full reproduction from the review: hand-edit `services: { mysql: "..." }`
+# down to a bare `services:` (the obvious YAML way to write "none"). Before
+# the fix, `_project_services` silently resolved this back to the framework
+# default ("mysql"), so `cmd_services add <name> mysql` computed
+# new == cur == "mysql" and reported "no change" — the user had no way to add
+# mysql through the tool at all. This is pure growth (nothing dropped, no
+# existing compose file), so no confirm gate is involved.
+mkproj barefull 'services:'
+printf 'HARBOR_INDEX=5\nDB_PORT=20100\n' > "$HARBOR_PORTS_DIR/barefull"
+
+bare_out="$tmp/bare.out"
+bare_rc=0
+cmd_services add barefull mysql >"$bare_out" 2>&1 || bare_rc=$?
+
+assert_eq "Finding 1: bare services: -> add mysql succeeds" "0" "$bare_rc"
+assert_fail "Finding 1: add is NOT reported as 'no change'" \
+  grep -q "no change" "$bare_out"
+assert_eq "Finding 1: manifest now resolves mysql as an active service" \
+  "mysql" "$(_project_services barefull laravel)"
+assert_ok "Finding 1: project_has_service now sees mysql" \
+  project_has_service barefull mysql
+
+# --- init_render_compose: Finding 2 — a PARTIAL shrink stops only the DROPPED
+# service, leaving the rest of the stack running -------------------------------
+# Before the fix, `init_render_compose` only ran `project_compose ... down`
+# on the shrink-to-EMPTY path; shrinking to a still-non-empty list just
+# rewrote docker-compose.yml. `docker compose up -d` merely WARNS about
+# "orphans" and leaves them running (`project_compose` never passes
+# `--remove-orphans`), so the dropped service's container/heap stayed up —
+# directly contradicting the shrink-confirm prompt the user just agreed to.
+# The shared project_compose stub (defined above) records its calls instead
+# of touching real Docker; here it must SUCCEED (unlike its default fail
+# mode), so its logged calls reflect what init_render_compose actually asked
+# it to do. The manifest already resolves to mysql-only (as if `services rm
+# opensearch` already rewrote it), while the EXISTING compose file on disk
+# still lists both, which is exactly the "old vs. new" comparison
+# init_render_compose now makes before overwriting that file.
+mkproj partialshrink 'services: { mysql: "mysql:8.0" }'
+ports_allocate partialshrink >/dev/null
+cat > "$(project_harbor_dir partialshrink)/docker-compose.yml" <<'EOF'
+services:
+  mysql:
+    image: mysql:8.0
+  opensearch:
+    image: opensearchproject/opensearch:2.19.0
+volumes:
+  dbdata:
+  osdata:
+EOF
+
+: > "$pc_log"
+_PC_FAIL=0
+ps_init_rc=0
+init_render_compose partialshrink laravel >/dev/null 2>&1 || ps_init_rc=$?
+_PC_FAIL=1   # restore default in case anything later in this file relies on it
+
+assert_eq "partial shrink: init_render_compose succeeds" "0" "$ps_init_rc"
+assert_contains "partial shrink: stops only the dropped service (opensearch)" \
+  "partialshrink rm -s -f opensearch" "$(cat "$pc_log")"
+assert_fail "partial shrink: does NOT stop the kept service (mysql)" \
+  grep -q 'rm -s -f.*mysql' "$pc_log"
+assert_fail "partial shrink: never calls a full 'down' (would drop the kept service too)" \
+  grep -q ' down' "$pc_log"
+psshrink_cf="$(project_harbor_dir partialshrink)/docker-compose.yml"
+assert_contains "partial shrink: rewritten compose file keeps mysql" \
+  "mysql:" "$(cat "$psshrink_cf")"
+assert_fail "partial shrink: rewritten compose file drops opensearch" \
+  grep -q 'opensearch:' "$psshrink_cf"
 
 # --- _ps_db_column: `harbor ps` DB-column decision logic (pure) ---------------
 # Regression test: `harbor ps` used to render `db:-` for BOTH "no mysql
