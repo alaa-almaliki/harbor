@@ -9,32 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Optional backing services — a project can now run with no database at
-  all.** `harbor init` asks which services a project needs: an interactive
-  picker (numbered, alphabetical — the catalog derived from
+  all.** `harbor init` asks which backing services a project needs: an
+  interactive picker (numbered, alphabetical — the catalog derived from
   `templates/compose/services/*.yml.tmpl`: `elasticsearch`, `meilisearch`,
   `mysql`, `opensearch`, `rabbitmq`) when stdin is a terminal and `HARBOR_YES`
-  is unset, or `--services "mysql,opensearch"` directly. `--services ""` or
+  is unset, or `--services "mysql,opensearch"` directly. `--services ""` /
   `--services none` (or typing `none` at the prompt) selects no containers —
   the manifest gets an explicit `services: {}` and the project has no
   `docker-compose.yml`. A non-interactive caller (script, CI, `HARBOR_YES=1`)
   silently gets the framework default, so existing scripted `harbor init`
-  calls behave exactly as before. The manifest's `services:` key is now
-  authoritative whenever PRESENT — including an explicit empty map — and only
-  an ABSENT key falls back to the framework default, so manifests written
+  calls behave exactly as before. The manifest's `services:` key is
+  authoritative whenever present — including an explicit empty map — and only
+  an absent key falls back to the framework default, so manifests written
   before this feature keep working unchanged.
 - **`harbor services` — change a project's backing services after `init`.**
   `harbor services <name>` opens the same interactive picker as `init`, with
-  the project's CURRENT services preselected (not the framework default —
-  pressing Enter means "keep what I have"). `harbor services list <name>`
-  shows what's on/off with resolved images; `harbor services add|rm <name>
+  the project's current services preselected (pressing Enter keeps what's
+  there, not the framework default). `harbor services list <name>` shows
+  what's on/off with resolved images; `harbor services add|rm <name>
   <svc>...` changes the list directly — adding a service already present, or
   removing one that isn't, is a no-op, not an error. Writes the manifest and
   re-renders, but deliberately does **not** run `harbor up` (rendering is
-  idempotent, restarting containers isn't). Routes through `harbor render`'s
-  existing confirm gate before dropping a service whose data volume still
-  exists — asked once, not duplicated — and rolls the manifest write back if
-  that prompt is declined, so a decline is byte-for-byte a no-op.
-  `HARBOR_YES=1` is the only bypass (no `--yes` flag).
+  idempotent, restarting containers isn't). `HARBOR_YES=1` is the only
+  bypass — there is no `--yes` flag.
+- **`harbor render` now confirms before a manifest edit drops a service whose
+  data volume still exists** — shrinking `services:` (by hand, or via
+  `harbor services rm`, which routes through the same gate) used to silently
+  stop the container and detach its volume. Removing a service does **not**
+  destroy data: the volume stays (scoped to `name: harbor-<name>`) and
+  re-adding the service reattaches it intact — only `harbor destroy` drops
+  volumes, and the prompt says so plainly. Only prompts when the dropped
+  service's Docker volume actually exists — growing the list, or shrinking a
+  service that was never `up`ed, never prompts; if Docker is unreachable the
+  check assumes the data is at risk and prompts anyway. Declining leaves the
+  manifest, compose file, and running containers untouched. `HARBOR_YES=1` is
+  the only bypass, same as every other destructive-op confirm.
+- **Magento now names every missing required service in one shot**, instead
+  of crashing or reporting only the first — `harbor install`/`harbor render`
+  on a Magento project missing any of `mysql`, `opensearch`, `rabbitmq` says
+  exactly which ones, with a `magento needs: <missing services>` fix hint.
 
 ### Changed
 - **Lifecycle commands no-op instead of erroring on a service-less project.**
@@ -43,172 +56,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no services, rather than dying on a missing compose file — a bulk/scripted
   run over every project shouldn't fail just because one of them has no
   database.
-
-### Fixed
-- **Commands no longer crash with an unbound-variable error on a service-less
-  (no `mysql`) project.** After a database became optional, `connection.env`
-  carries no `DB_*` keys at all when a project has no `mysql` service, but
-  several commands still read those variables unconditionally under the
-  global `set -euo pipefail`. `harbor mysql`/`harbor db backup`/etc. now refuse
-  up front with a fix hint (`_db_require` in `lib/db.sh`) instead of either
-  crashing or misreporting "stack not running." `harbor doctor` no longer
-  demands the `pdo_mysql` extension for a project with no database.
-  `harbor ps` shows `db:-` instead of a stale/blank port for a DB-less
-  project. `harbor wire` skips the `DB_*` lines for Laravel/CodeIgniter/
-  Symfony/plain projects (still wires Redis + mail) and refuses early, with a
-  fix hint, for a DB-less Magento project (which requires a database).
-  `harbor install`/Magento's install script now refuse with a
-  `magento needs: <missing services>` fix hint if a Magento project is
-  missing `mysql`, `opensearch`, or `rabbitmq`, instead of dying on an unbound
-  variable partway through generating the `setup:install` command.
-- **`harbor ps` no longer reports a project as DB-less when it actually has a
-  `mysql` service but a missing/broken `var/ports/<name>` allocation file.**
-  `db:-` previously meant both "no `mysql` service" (intentional) and "has
-  `mysql` but `ports_load` failed" (a real, reachable drift case) — the same
-  marker for two very different states, which is actively misleading now that
-  `db:-` has a documented "no database" meaning. `cmd_ps` now checks
-  `project_has_service` before `ports_load` (extracted into `_ps_db_column` in
-  `lib/ergo.sh` for testability) and renders `db:?` for the "has mysql but no
-  allocated ports" case, distinct from `db:-` for "no mysql service".
-- **`harbor destroy` no longer leaks a project's Docker volume when the project
-  has no services** (`services: {}`). `render` already deletes a service-less
-  project's compose file (stack stopped first, volume kept), but `destroy`'s
-  volume drop rode on `docker compose down -v`, which only runs when a compose
-  file exists — so a service-less project's volume became unreachable by any
-  Harbor command, and `destroy` reported success while leaving it behind.
-  `destroy` now also removes any volume named `harbor-<name>_*` directly,
-  whether or not a compose file is present; the match is anchored so a project
-  whose name is a prefix of another's (`shop` vs `shop2`) can never catch the
-  wrong one. Idempotent — running `destroy` again is a no-op if the volume is
-  already gone. The name-anchor is now covered by a unit test
-  (`test/test_compose.sh`) that stubs `docker volume ls`/`rm` and asserts
-  destroying `shop` never touches `shop2`, `shop-staging`, or `shopping`.
-- **`harbor render` no longer deletes a service-less project's compose file if
-  stopping its stack fails.** In the `services: {}` branch, `init_render_compose`
-  used to `rm -f` the compose file regardless of whether `docker compose down`
-  succeeded — a failed `down` (daemon hiccup, stuck container) deleted Harbor's
-  only handle on a possibly-still-running stack, exactly the orphaned-container
-  problem the branch exists to prevent, and silently made `project_has_stack`
-  report false so `down`/`destroy`/`logs` could never reach those containers
-  again. `render` now keeps the compose file and returns nonzero on a failed
-  `down`, with a message naming the retry path (`harbor down <name>`, then
-  re-render); the file is only removed once `down` actually succeeds.
-- **`harbor render`'s shrink-confirm gate no longer fail-opens on a
-  `docker volume inspect` error that isn't "no such volume."** `services_confirm_shrink`
-  (`lib/services.sh`) used to treat any `docker volume inspect` failure —
-  including permission errors, a transient daemon/storage-driver fault, or a
-  misconfigured `DOCKER_HOST`/context pointing at a different daemon — as proof
-  the volume didn't exist, and silently skipped the confirmation prompt. Now the
-  outcome is three-way: `inspect` succeeding means at risk; `inspect` failing
-  with wording that clearly means the volume is absent (`no such volume`,
-  matched case-insensitively) means not at risk; any other failure is unknown
-  and treated as at risk, same as an unreachable daemon. When in doubt, prompt.
-  Extracted the risk assessment into a new pure helper, `_services_at_risk <name>
-  <old> <new>`, so the three outcomes are covered by unit tests
-  (`test/test_services.sh`) with a stubbed `docker` — no real Docker calls.
-- **Declining `harbor render`'s shrink-confirm gate no longer mutates the
-  manifest.** `cmd_render` (`lib/init.sh`) ran `_materialize_services` — which
-  migrates a legacy list-format `services:` into the explicit map form and
-  strips `db.image` — BEFORE `services_confirm_shrink`'s prompt, so a project
-  still on the old list format got its manifest rewritten on disk even when
-  the user answered "no", while Harbor printed "aborted — manifest unchanged"
-  (a confirm gate whose "no" still writes is not a gate). `_materialize_services`
-  now runs only after the gate passes; `_project_services`/`_services_is_map`
-  already resolve a legacy list without needing materialization, so the gate's
-  inputs are unaffected by the move. Pinned by a new regression test in
-  `test/test_services.sh` that drives `cmd_render` on a legacy-manifest
-  fixture, declines via piped stdin, and asserts the manifest file is
-  byte-identical (checksum) before and after.
-- **`harbor install` on a service-less Magento project now reports every
-  missing service in one shot.** `cmd_install`'s magento branch used to run
-  the mysql-only `_db_up_check` before `magento_require_services`, so a
-  project with no services at all first heard only "no database service",
-  added `mysql`, re-ran, and only then learned `opensearch`/`rabbitmq` were
-  also missing. `magento_require_services` now runs first. Also added unit
-  tests for `_db_require` (`test/test_db.sh`) and `magento_require_services`
-  (new `test/test_magento.sh`) covering exit status, that the message names
-  *all* missing services (not just the first), and that it reaches stderr —
-  both guards were previously untested pure-logic functions per CLAUDE.md §6.5.
-- **`harbor services <name>` (the bare picker) no longer preselects a database
-  for a project that has none.** `services_select` took its current-services
-  argument as `"${3-}"` and treated an *empty value* the same as *no argument
-  given*, falling back to the framework default — so a DB-less project's
-  actual empty list was indistinguishable from `cmd_init`'s two-arg call, the
-  picker marked `mysql` as `*default`, and pressing Enter silently added a
-  database (the exact inverse of what this argument exists to prevent). Now
-  distinguished by argument count (`[ "$#" -lt 3 ]`), not emptiness; `cmd_init`
-  still gets the framework default with its two-arg call.
-- **A declined `harbor services` change no longer writes a bare `services:`
-  line into a manifest that had no `services:` key at all** (legacy projects
-  predating the key). The restore path rewrote the captured (empty) previous
-  value with `manifest_set_line`, which appends `services:` with nothing after
-  it when the key didn't previously exist — resolved semantics survive
-  (`manifest_has` reads it as absent either way) but the file is no longer
-  byte-identical after an operation the user cancelled. `cmd_services` now
-  captures presence via `manifest_has` *before* writing, and on a decline
-  either restores the previous line or, if the key was absent, removes it with
-  the new `manifest_del_line <file> <key>` helper (`lib/manifest.sh`) — same
-  top-level-anchored literal match (`index($0, k) == 1`) as `manifest_set_line`,
-  reused rather than reimplemented as a regex.
-- **`harbor services` no longer produces a false "rendered"/false "reverted"
-  outcome when the render underneath it actually fails.** `cmd_services` calls
-  `cmd_render` as an `if !` condition — the first place in the codebase
-  `cmd_render` is invoked as a condition rather than a bare dispatch statement
-  — and bash disables `set -e` for a condition's *entire call graph*, not just
-  the top-level command. `init_render_compose`'s failed-`docker-compose-down`
-  path (a bare `return 1`) relied on `set -e` to abort `cmd_render`; under
-  `if !` that reliance silently no-opped, so `cmd_render` fell through to `ok
-  "rendered ..."` and returned 0 while the manifest and the actual compose
-  file disagreed (reproduced with a stubbed failing `docker compose down`:
-  `RC=0`, manifest said `services: {  }`, `docker-compose.yml` still listed
-  `mysql`). `cmd_render` (`lib/init.sh`) now propagates every call in its body
-  that can meaningfully fail with an explicit `|| return 1`, instead of
-  delegating to errexit. Separately, a `die` reachable inside `cmd_render`'s
-  call graph (`ports_ensure`'s own "ports not allocated") calls `exit`,
-  terminating the process *before* `cmd_services`' restore could run at all —
-  reproduced by deleting a project's `var/ports/<name>` file before `harbor
-  services add`, which left the manifest rewritten with the new service and
-  no restore, with an error message giving no hint the manifest had already
-  changed. `cmd_services` now pre-flights that same `ports_ensure` precondition
-  *before* writing the manifest, so the precondition either fails before any
-  mutation or reliably passes before `cmd_render` re-checks it (idempotent,
-  lock-guarded, cheap to run twice). Also: `harbor services list <name>` now
-  rejects trailing garbage arguments (`usage_die`, matching `add`/`rm`)
-  instead of silently ignoring them.
-
-### Added
-- **`harbor render` now confirms before a manifest edit drops a service whose
-  data volume still exists** — shrinking `services:` (by hand, or later via
-  `harbor services rm`, which will route through the same gate) used to
-  silently stop the container and detach its volume. Removing a service does
-  **not** destroy data: the volume is named and scoped to the compose project
-  (`name: harbor-<name>`), so it's left in place and re-adding the service
-  reattaches it intact — only `harbor destroy` drops volumes, and the prompt
-  says so plainly rather than reading as alarmist. New pure helper
-  `services_dropped <old> <new>` (`lib/services.sh`) diffs the two service
-  lists; `services_confirm_shrink <name> <old> <new>` only prompts for a
-  dropped service whose Docker volume actually exists (`docker volume
-  inspect`), so growing the list, or shrinking a service that was never
-  `up`ed, never prompts. If Docker is unreachable the check assumes the data
-  is at risk and prompts anyway — skipping the gate because the daemon
-  happens to be down would silently turn it off exactly when it's needed.
-  Declining leaves the manifest, compose file, and running containers
-  untouched and exits nonzero. Bypassed by `HARBOR_YES=1` only, same as every
-  other destructive-op confirm — no new flag.
 - **`harbor init`'s manifest and connection files are now conditional on the
   resolved service list**, not written unconditionally for every project. The
-  manifest `db:` block is only emitted when `mysql` is selected (`{{DB_BLOCK}}`
-  in `templates/manifest/harbor.yml.tmpl`, fed from `cmd_init`); `connection.env`/
-  `connection.txt` only get `DB_*` when `mysql` is selected, and `OPENSEARCH_*`/
-  `RABBITMQ_*`/`MEILISEARCH_*`/`ELASTICSEARCH_*` only when their service is
-  selected — Redis and Mailpit stay unconditional since they're shared, always-on
-  Harbor services. `init_write_connection` resolves the project's service list
-  once and `case`s against it for all five services, rather than re-parsing the
-  manifest per service. New predicate `project_has_service <name> <svc>`
-  (`lib/services.sh`) for one-off checks elsewhere (doctor, wire, db). A
-  DB-less project (`services: {}`) now gets a manifest with no `db:` block and a
-  `connection.env` containing only `REDIS_*`/`MAIL_*` vars — no leftover
-  credentials for a database that doesn't exist.
+  manifest `db:` block is only emitted when `mysql` is selected;
+  `connection.env`/`connection.txt` only get `DB_*` when `mysql` is selected,
+  and `OPENSEARCH_*`/`RABBITMQ_*`/`MEILISEARCH_*`/`ELASTICSEARCH_*` only when
+  their service is selected — Redis and Mailpit stay unconditional since
+  they're shared, always-on Harbor services.
+- **`harbor doctor` no longer requires the `pdo_mysql` PHP extension** for a
+  project with no database service (an explicit `extensions:` entry still
+  wins).
+- **`harbor ps` shows a distinct `db:-` marker** for a project with no
+  `mysql` service, instead of a stale or blank port.
+
+### Fixed
+- **`connection.env`/`connection.txt` no longer advertise services a project
+  never runs.** Both files were written unconditionally for every project
+  regardless of which services were actually configured — a plain Laravel
+  project (mysql only) got live-looking `OPENSEARCH_HOST`/`RABBITMQ_HOST`/
+  `MEILISEARCH_HOST`/`ELASTICSEARCH_HOST` entries for containers that were
+  never part of its stack. Both files now only include entries for services
+  the project actually has.
+- **`harbor mysql`/`harbor db backup`/etc. now refuse up front with a fix
+  hint, instead of crashing or misreporting "stack not running,"** when a
+  project has no database configured. `harbor wire` skips the `DB_*` lines
+  for Laravel/CodeIgniter/Symfony/plain projects (still wires Redis + mail)
+  and refuses early, with a fix hint, for a DB-less Magento project (which
+  requires a database).
+- **`harbor destroy` no longer leaks a project's Docker volume when the
+  project has no services.** `destroy` now also removes any volume named
+  `harbor-<name>_*` directly, whether or not a compose file is present; the
+  match is anchored so a project whose name is a prefix of another's (`shop`
+  vs `shop2`) can never catch the wrong one.
+- **`harbor ps` no longer conflates "no database service" with "has `mysql`
+  but a missing/broken port allocation."** `db:-` used to mean both — the
+  same marker for two very different states. `ps` now checks whether the
+  project has a `mysql` service before loading its ports, rendering a
+  distinct `db:?` for "has `mysql` but no allocated ports," separate from
+  `db:-` for "no `mysql` service."
+
+### Added
 - **`harbor restart` with no project name restarts Harbor itself** — equivalent
   to `harbor stop && harbor start` (shared stack, php pools, dnsmasq, nginx).
   Running project stacks are left alone; `harbor restart <name>` still restarts
@@ -389,23 +276,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   meaning and loads the partial dump anyway (with a warning).
 
 ### Fixed
-- **`manifest_set_line` no longer silently drops the write for a key with an
-  ERE-only metachar, and no longer corrupts a file with no trailing newline.**
-  It used to decide replace-vs-append with `grep -q "^$kesc:"` (BRE) and then
-  do the replace with `awk '$0 ~ k'` (ERE) — two dialects that disagree on
-  `+ ? | ( ) { }` (literal in BRE, metachars in ERE). A key like
-  `php+version` took the replace branch (grep matched) but `awk` never
-  rewrote the line (ERE didn't), so the new value was silently dropped and
-  nothing was appended either. Escaping more characters would still leave the
-  two dialects able to disagree, so the match is now a **literal substring
-  test** (`awk`'s `index($0, key) == 1`) — no regex, so no escaping and no
-  dialect to get wrong. The key/value are also passed to `awk` via `ENVIRON`
-  instead of `-v`, since `-v name=value` runs the value through awk's
-  string-literal escape processing (`\b`, `\t`, `\\`, …), which would mangle a
-  key containing a literal backslash. Appending to a manifest that doesn't end
-  in a newline used to glue the new key onto the end of the last existing
-  line; a trailing newline is now written first when missing. Pinned by new
-  cases in `test/test_manifest.sh`.
 - **The README's Downloads badge no longer renders broken.** It used a shields.io
   `?endpoint=` badge, which makes shields fetch
   `.github/traffic/clones-badge.json` from raw.githubusercontent on every render
