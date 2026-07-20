@@ -18,7 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whether or not a compose file is present; the match is anchored so a project
   whose name is a prefix of another's (`shop` vs `shop2`) can never catch the
   wrong one. Idempotent — running `destroy` again is a no-op if the volume is
-  already gone.
+  already gone. The name-anchor is now covered by a unit test
+  (`test/test_compose.sh`) that stubs `docker volume ls`/`rm` and asserts
+  destroying `shop` never touches `shop2`, `shop-staging`, or `shopping`.
+- **`harbor render` no longer deletes a service-less project's compose file if
+  stopping its stack fails.** In the `services: {}` branch, `init_render_compose`
+  used to `rm -f` the compose file regardless of whether `docker compose down`
+  succeeded — a failed `down` (daemon hiccup, stuck container) deleted Harbor's
+  only handle on a possibly-still-running stack, exactly the orphaned-container
+  problem the branch exists to prevent, and silently made `project_has_stack`
+  report false so `down`/`destroy`/`logs` could never reach those containers
+  again. `render` now keeps the compose file and returns nonzero on a failed
+  `down`, with a message naming the retry path (`harbor down <name>`, then
+  re-render); the file is only removed once `down` actually succeeds.
 
 ### Added
 - **`harbor restart` with no project name restarts Harbor itself** — equivalent

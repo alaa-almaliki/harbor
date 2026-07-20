@@ -51,4 +51,37 @@ assert_fail "unknown service aborts" _compose_assemble nosuchsvc
 assert_contains "unknown service names itself" "unknown service 'nosuchsvc'" \
   "$( (_compose_assemble nosuchsvc) 2>&1 || true )"
 
+# --- _destroy_project_volumes: the name-anchor must not over-match -----------
+# Highest-risk logic in the optional-services work: `harbor destroy` selects
+# volumes with `grep -E "^harbor-${name}_"`. A greedy pattern (missing the
+# trailing `_`) would silently drop a DIFFERENT project's database whenever one
+# project name is a prefix of another (shop / shop2 / shop-staging / shopping).
+# No Docker call here — `docker` is stubbed: `volume ls -q` returns a fixed
+# fixture list, `volume rm <v>` records <v> to a log file we assert on.
+rm_log="$tmp/rm.log"
+: > "$rm_log"
+docker() {
+  case "$1 $2" in
+    "volume ls") cat <<'VOLS'
+harbor-shop_dbdata
+harbor-shop_esdata
+harbor-shop2_dbdata
+harbor-shop-staging_dbdata
+harbor-shopping_dbdata
+VOLS
+      ;;
+    "volume rm") printf '%s\n' "$3" >> "$rm_log" ;;
+    *) return 0 ;;
+  esac
+}
+
+_destroy_project_volumes shop
+removed="$(cat "$rm_log")"
+
+assert_contains "destroy shop: removes its own dbdata" "harbor-shop_dbdata" "$removed"
+assert_contains "destroy shop: removes its own esdata" "harbor-shop_esdata" "$removed"
+assert_fail "destroy shop: leaves shop2's volume"          grep -q '^harbor-shop2_dbdata$'         "$rm_log"
+assert_fail "destroy shop: leaves shop-staging's volume"   grep -q '^harbor-shop-staging_dbdata$'  "$rm_log"
+assert_fail "destroy shop: leaves shopping's volume"       grep -q '^harbor-shopping_dbdata$'      "$rm_log"
+
 report

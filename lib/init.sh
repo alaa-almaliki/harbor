@@ -117,7 +117,16 @@ init_render_compose() {
     # dropping data is `harbor destroy`'s job, never render's.
     if [ -f "$cf" ]; then
       log "no services for '$name' — stopping its stack before removing the compose file"
-      project_compose "$name" down || warn "could not stop '$name' cleanly — check: docker ps"
+      if ! project_compose "$name" down; then
+        # Do NOT delete the compose file here: it's the only handle Harbor has
+        # on that stack. Deleting it now would make project_has_stack report
+        # false, stranding the containers exactly as described above — a
+        # render that "succeeded" but left an unreachable stack running is
+        # worse than one that visibly failed. Keep the file, fail loudly, and
+        # tell the user the retry path.
+        warn "could not stop '$name' cleanly — kept $cf so 'harbor down $name' can retry; check: docker ps"
+        return 1
+      fi
     fi
     rm -f "$cf"
     return 0
