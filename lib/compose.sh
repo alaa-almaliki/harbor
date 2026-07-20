@@ -152,12 +152,39 @@ cmd_restart() {
   ok "restarted: $name"
 }
 
+# Drop any Docker volumes left for this project, whether or not a compose file
+# still exists. `render` deletes the compose file once `services:` goes empty
+# (stack stopped first, volumes deliberately kept — dropping data is destroy's
+# job, never render's), so a service-less project has no compose file for
+# `down -v` to act on; this is the fallback that still reaches its volumes.
+# Volumes are named harbor-<name>_<vol> by the compose `name:` header
+# (templates/compose/header.yml.tmpl). Project names are
+# `[a-z0-9][a-z0-9-]*` (valid_name) — no underscores — so the first `_` after
+# "harbor-<name>" is always the compose-inserted separator, never part of
+# another project's name: anchoring on "^harbor-<name>_" cannot match
+# "harbor-<name>2_...". Safe to call even when nothing matches (idempotent).
+_destroy_project_volumes() {
+  local name="$1" vols v
+  vols="$(docker volume ls -q 2>/dev/null | grep -E "^harbor-${name}_" || true)"
+  if [ -n "$vols" ]; then
+    while IFS= read -r v; do
+      [ -n "$v" ] || continue
+      docker volume rm "$v" >/dev/null 2>&1 || true
+    done <<EOF
+$vols
+EOF
+  fi
+}
+
 cmd_destroy() {
   require_name "${1-}"; local name="$1"; shift || true
   local files=0; [ "${1-}" = "--files" ] && files=1
   confirm "Destroy '$name' (drop containers + volumes + ports + vhost)?" || { warn "aborted"; return 1; }
   redis_flush_project "$name"
-  [ -f "$(project_compose_file "$name")" ] && project_compose "$name" down -v >/dev/null 2>&1 || true
+  if [ -f "$(project_compose_file "$name")" ]; then
+    project_compose "$name" down -v >/dev/null 2>&1 || true
+  fi
+  _destroy_project_volumes "$name"
   cmd_unlink "$name" >/dev/null 2>&1 || true
   ports_release "$name"
   if [ "$files" = 1 ]; then rm -rf "$(project_dir "$name")"; warn "deleted $(project_dir "$name")"; fi

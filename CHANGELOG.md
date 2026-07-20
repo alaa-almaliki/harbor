@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`harbor destroy` no longer leaks a project's Docker volume when the project
+  has no services** (`services: {}`). `render` already deletes a service-less
+  project's compose file (stack stopped first, volume kept), but `destroy`'s
+  volume drop rode on `docker compose down -v`, which only runs when a compose
+  file exists — so a service-less project's volume became unreachable by any
+  Harbor command, and `destroy` reported success while leaving it behind.
+  `destroy` now also removes any volume named `harbor-<name>_*` directly,
+  whether or not a compose file is present; the match is anchored so a project
+  whose name is a prefix of another's (`shop` vs `shop2`) can never catch the
+  wrong one. Idempotent — running `destroy` again is a no-op if the volume is
+  already gone.
+
 ### Added
 - **`harbor restart` with no project name restarts Harbor itself** — equivalent
   to `harbor stop && harbor start` (shared stack, php pools, dnsmasq, nginx).
