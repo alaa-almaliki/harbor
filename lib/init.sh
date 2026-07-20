@@ -103,7 +103,25 @@ init_render_compose() {
   ports_load "$name" || die "ports not allocated for $name"
   # shellcheck disable=SC2046  # word-split the service list into positionals
   set -- $(_project_services "$name" "$framework")
-  [ "$#" -gt 0 ] || die "no services resolved for $name (empty services: in manifest?)"
+  local cf; cf="$(project_harbor_dir "$name")/docker-compose.yml"
+  if [ "$#" -eq 0 ]; then
+    # No services is a valid choice, not an error. Emit no compose file at all
+    # rather than one with a dangling `services:` key (which docker rejects).
+    #
+    # Stop the stack BEFORE deleting the file: the compose file is the only
+    # handle Harbor (and docker compose) has on those containers. Delete it
+    # while they're running and they keep running, unmanageable by `harbor
+    # down`/`destroy` — the user's app still talks to a database Harbor no
+    # longer knows about. Down-then-delete keeps the "everything reversible"
+    # rule (CLAUDE.md §1.6) true. `down` (not `down -v`) so volumes survive:
+    # dropping data is `harbor destroy`'s job, never render's.
+    if [ -f "$cf" ]; then
+      log "no services for '$name' — stopping its stack before removing the compose file"
+      project_compose "$name" down || warn "could not stop '$name' cleanly — check: docker ps"
+    fi
+    rm -f "$cf"
+    return 0
+  fi
   # validate every service has a fragment BEFORE truncating the output file
   for svc in "$@"; do
     [ -f "$HARBOR_TEMPLATES/compose/services/$svc.yml.tmpl" ] || \
@@ -131,7 +149,7 @@ init_render_compose() {
   MEILI_PORT="$MEILI_PORT" \
   MEILI_MASTER_KEY="$(config_get MEILI_MASTER_KEY harbor-local-meili-master)" \
   MEILI_MEMORY="$(config_get MEILI_INDEXING_MEMORY 512Mb)" \
-  _compose_assemble "$@" > "$(project_harbor_dir "$name")/docker-compose.yml"
+  _compose_assemble "$@" > "$cf"
 }
 
 # harbor render <name> — regenerate derived stack files (docker-compose.yml +

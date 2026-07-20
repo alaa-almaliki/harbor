@@ -28,6 +28,10 @@ shared_down() {
 # ── per-project stacks ──────────────────────────────────────────────────────
 project_compose_file() { printf '%s' "$(project_harbor_dir "$1")/docker-compose.yml"; }
 
+# does this project have a container stack at all? A project with `services: {}`
+# has no compose file — that is a valid state, not an error.
+project_has_stack() { [ -f "$(project_compose_file "$1")" ]; }
+
 # _compose_assemble <svc...> — print a docker-compose.yml on stdout by concatenating
 # per-service fragments (templates/compose/services/<svc>.yml.tmpl) under one
 # `services:` header, then their volume decls under one `volumes:` footer. Render
@@ -105,6 +109,14 @@ redis_flush_project() {
 
 cmd_up() {
   require_name "${1-}"; local name="$1"
+  # Lifecycle commands run in bulk across every project degrade to a no-op;
+  # commands that are a direct request for a specific missing thing refuse
+  # (see `harbor db`/`harbor mysql`, Task 8). `up` is bulk-run material (e.g.
+  # from a script over every project), so a service-less project is a no-op,
+  # not a failure.
+  if ! project_has_stack "$name"; then
+    step "nothing to start for '$name' (no services)"; return 0
+  fi
   require_docker
   log "starting stack: $name"
   project_compose "$name" up -d
@@ -114,6 +126,11 @@ cmd_up() {
 
 cmd_down() {
   require_name "${1-}"; local name="$1"
+  # See cmd_up: bulk lifecycle commands no-op on a service-less project rather
+  # than refusing.
+  if ! project_has_stack "$name"; then
+    step "nothing to stop for '$name' (no services)"; return 0
+  fi
   log "stopping stack: $name (flushing its Redis indices)"
   redis_flush_project "$name"
   project_compose "$name" down
@@ -125,6 +142,11 @@ cmd_down() {
 cmd_restart() {
   if [ -z "${1-}" ]; then platform_restart; return; fi
   local name="$1"
+  # See cmd_up: bulk lifecycle commands no-op on a service-less project rather
+  # than refusing.
+  if ! project_has_stack "$name"; then
+    step "nothing to restart for '$name' (no services)"; return 0
+  fi
   project_compose "$name" restart
   _wait_ready "$name" || true
   ok "restarted: $name"
@@ -175,6 +197,11 @@ cmd_logs() {
     php)     shift; tail -n 200 ${1:+-F} "$HARBOR_LOG_DIR"/php-*.log 2>/dev/null || warn "no php logs yet" ;;
     dnsmasq) shift; tail -n 200 ${1:+-F} "$HARBOR_LOG_DIR"/dnsmasq.log 2>/dev/null || warn "no dnsmasq log yet" ;;
     *) require_name "${1-}"; local name="$1"; shift || true
+       # See cmd_up: bulk lifecycle commands no-op on a service-less project
+       # rather than refusing.
+       if ! project_has_stack "$name"; then
+         step "no container logs for '$name' (no services)"; return 0
+       fi
        project_compose "$name" logs --tail=200 "$@" ;;
   esac
 }
