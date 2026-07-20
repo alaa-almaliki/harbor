@@ -31,6 +31,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again. `render` now keeps the compose file and returns nonzero on a failed
   `down`, with a message naming the retry path (`harbor down <name>`, then
   re-render); the file is only removed once `down` actually succeeds.
+- **Declining `harbor render`'s shrink-confirm gate no longer mutates the
+  manifest.** `cmd_render` (`lib/init.sh`) ran `_materialize_services` — which
+  migrates a legacy list-format `services:` into the explicit map form and
+  strips `db.image` — BEFORE `services_confirm_shrink`'s prompt, so a project
+  still on the old list format got its manifest rewritten on disk even when
+  the user answered "no", while Harbor printed "aborted — manifest unchanged"
+  (a confirm gate whose "no" still writes is not a gate). `_materialize_services`
+  now runs only after the gate passes; `_project_services`/`_services_is_map`
+  already resolve a legacy list without needing materialization, so the gate's
+  inputs are unaffected by the move. Pinned by a new regression test in
+  `test/test_services.sh` that drives `cmd_render` on a legacy-manifest
+  fixture, declines via piped stdin, and asserts the manifest file is
+  byte-identical (checksum) before and after.
 
 ### Added
 - **`harbor render` now confirms before a manifest edit drops a service whose

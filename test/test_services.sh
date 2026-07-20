@@ -2,7 +2,7 @@
 # test_services.sh — service catalog, selection parsing, resolution semantics.
 set -uo pipefail
 . "$HARBOR_TEST_DIR/lib.sh"
-harbor_load common manifest init services
+harbor_load common manifest ports services compose init
 
 # --- catalog -------------------------------------------------------------------
 cat="$(services_catalog)"
@@ -87,5 +87,63 @@ assert_eq "dropped: none"        ""          "$(services_dropped "mysql opensear
 assert_eq "dropped: one"         "opensearch" "$(services_dropped "mysql opensearch" "mysql")"
 assert_eq "dropped: all"         "mysql"     "$(services_dropped "mysql" "")"
 assert_eq "dropped: growth only" ""          "$(services_dropped "mysql" "mysql opensearch")"
+
+# --- cmd_render: declining the confirm gate must not touch the manifest -------
+# Regression test: _materialize_services (which rewrites a legacy list-format
+# `services:` into the explicit map form, and strips db.image) used to run
+# BEFORE services_confirm_shrink. So declining the shrink prompt still left the
+# manifest mutated on disk while Harbor printed "aborted — manifest unchanged".
+# Pins the invariant that matters: the manifest is byte-identical after a
+# declined render, for a legacy list-format project.
+export HARBOR_PROJECTS="$tmp/projects"
+export HARBOR_PORTS_DIR="$tmp/ports"
+export HARBOR_LOCK_DIR="$tmp/lock"
+mkdir -p "$HARBOR_PORTS_DIR" "$HARBOR_LOCK_DIR"
+
+mkproj shrink 'services: [mysql, rabbitmq]'
+# Pre-allocate ports (ports_ensure requires an existing file) and a compose file
+# whose service list is a SUPERSET of what the manifest resolves to — mysql +
+# rabbitmq + opensearch vs. the manifest's mysql + rabbitmq — which is exactly
+# the "shrink" that makes services_confirm_shrink prompt.
+printf 'HARBOR_INDEX=0\nDB_PORT=20000\n' > "$HARBOR_PORTS_DIR/shrink"
+cat > "$(project_harbor_dir shrink)/docker-compose.yml" <<'EOF'
+services:
+  mysql:
+    image: mysql:8.0
+  rabbitmq:
+    image: rabbitmq:3.13
+  opensearch:
+    image: opensearchproject/opensearch:2.19.0
+volumes:
+  dbdata:
+EOF
+
+mf="$(manifest_path shrink)"
+before_sum="$(shasum "$mf")"
+
+# Stub `docker` so `docker info` fails deterministically — no real Docker calls,
+# no dependence on whether Docker happens to be running on this machine. This
+# forces services_confirm_shrink to assume data is at risk and prompt, without
+# ever reaching `docker volume inspect`.
+docker() { return 1; }
+
+# confirm() reads stdin via `read -r -p`; a piped 'n' declines without a TTY.
+# HARBOR_YES=1 FORCES yes, so it must stay unset here — the whole point of this
+# test is exercising a real decline.
+unset HARBOR_YES
+render_out="$tmp/render.out"
+render_rc=0
+( printf 'n\n' | cmd_render shrink ) >"$render_out" 2>&1 || render_rc=$?
+
+after_sum="$(shasum "$mf")"
+
+assert_eq "render decline: cmd_render returns nonzero" "1" "$render_rc"
+assert_contains "render decline: gate was actually reached (shrink warning shown)" \
+  "removing opensearch from 'shrink'" "$(cat "$render_out")"
+assert_contains "render decline: prints 'manifest unchanged'" \
+  "aborted — manifest unchanged" "$(cat "$render_out")"
+assert_eq "render decline: manifest byte-identical after decline" "$before_sum" "$after_sum"
+assert_eq "render decline: legacy services: line still list-form" \
+  "services: [mysql, rabbitmq]" "$(grep '^services:' "$mf")"
 
 report

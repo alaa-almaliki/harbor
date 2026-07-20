@@ -170,12 +170,14 @@ cmd_render() {
   [ -f "$mf" ] || die "not initialized: $name → harbor init $name"
   ports_ensure "$name" || die "ports not allocated for $name → harbor init $name"
   ports_load "$name"
-  _materialize_services "$name"   # upgrade a legacy list-format services: in place
   local framework; framework="$(manifest_get "$mf" framework "")"
 
   # A hand-edited manifest that drops a service must not silently detach its
   # data. One gate, one place: services rm (phase 2) routes through here too, so
-  # a user is never asked twice for one action.
+  # a user is never asked twice for one action. Read-only up to this point —
+  # `_project_services` resolves legacy list-format `services:` via
+  # `manifest_map_keys` without needing materialization, so nothing on disk
+  # changes until the user has agreed to proceed.
   local newlist oldlist=""
   newlist="$(_project_services "$name" "$framework")"
   if [ -f "$(project_compose_file "$name")" ]; then
@@ -191,6 +193,8 @@ cmd_render() {
   fi
   services_confirm_shrink "$name" "$oldlist" "$newlist" || { warn "aborted — manifest unchanged"; return 1; }
 
+  # Only NOW may the manifest be touched — the user has agreed to proceed.
+  _materialize_services "$name"   # upgrade a legacy list-format services: in place
   init_render_compose "$name" "$framework"
   init_write_connection "$name"
   init_write_agent_skills "$name"    # seed existing projects too (non-clobbering)
