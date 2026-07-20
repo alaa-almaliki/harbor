@@ -242,8 +242,13 @@ cmd_render() {
   init_write_agent_skills "$name" || return 1    # seed existing projects too (non-clobbering)
   init_write_import_samples "$name" || return 1  # ditto: import-rules + hook samples
   # $newlist was already resolved above for the confirm gate — reusing it saves
-  # re-parsing the manifest just to print it.
-  ok "rendered $name stack: $newlist — harbor up $name to apply"
+  # re-parsing the manifest just to print it. A service-less project has no
+  # stack to list and no `up` to run, so say that instead of a dangling colon.
+  if [ -n "$newlist" ]; then
+    ok "rendered $name stack: $newlist — harbor up $name to apply"
+  else
+    ok "rendered $name (no services — nothing to start)"
+  fi
 }
 
 # Harbor-owned connection files (source of truth for `wire`, Phase 6)
@@ -511,7 +516,11 @@ cmd_init() {
   render "$HARBOR_TEMPLATES/manifest/harbor.yml.tmpl" "$(manifest_path "$name")"
   [ -n "$msopt" ] && warn "multistore '$msopt' requested — add 'multistore: { mode: $msopt, stores: {} }' to the manifest"
 
-  init_render_compose "$name" "$framework"
+  # Propagate failure explicitly — bin/harbor's `set -e` is suppressed for any
+  # caller that invokes cmd_init under an `if`/`&&`/`||` (CLAUDE.md §3), and
+  # `harbor new` already calls the wire step that way. Without this, a failed
+  # render would fall through to the writes below and report a bad init as ok.
+  init_render_compose "$name" "$framework" || return 1
   init_write_connection "$name"
   init_write_gitignore "$name"
   init_write_scripts "$name"

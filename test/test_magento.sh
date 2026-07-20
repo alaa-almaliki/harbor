@@ -20,23 +20,29 @@ mkproj() {  # mkproj <name> <services-line-or-empty>
 mkproj full    'services: { mysql: "mysql:8.0", opensearch: "os:2", rabbitmq: "rabbitmq:3.13" }'
 mkproj none    'services: {}'
 mkproj partial 'services: { mysql: "mysql:8.0" }'
+mkproj norabbit 'services: { mysql: "mysql:8.0", opensearch: "os:2" }'
 
 # --- exit status -----------------------------------------------------------
+# RabbitMQ is OPTIONAL for Magento: only mysql + opensearch are required.
 assert_ok   "magento_require_services: all three present -> ok"    magento_require_services full
+assert_ok   "magento_require_services: mysql+opensearch (no rabbitmq) -> ok" magento_require_services norabbit
 assert_fail "magento_require_services: none present -> fails"      magento_require_services none
-assert_fail "magento_require_services: opensearch+rabbitmq missing -> fails" magento_require_services partial
+assert_fail "magento_require_services: opensearch missing -> fails" magento_require_services partial
 
-# --- message content: names ALL missing services, not just the first one ---
+# --- message content: names ALL missing REQUIRED services, not just the first --
 # (real failure mode this guards against: an off-by-one/early-exit in the
 # accumulation loop reporting only the first missing service it hits)
 out_none="$( (magento_require_services none) 2>&1 1>/dev/null )"
 assert_contains "none: message names mysql"      "mysql"      "$out_none"
 assert_contains "none: message names opensearch" "opensearch" "$out_none"
-assert_contains "none: message names rabbitmq"   "rabbitmq"   "$out_none"
+case "$out_none" in
+  *"rabbitmq"*) fail "none: message does not demand rabbitmq (optional)" \
+    "no 'rabbitmq'" "$out_none" ;;
+  *) pass "none: message does not demand rabbitmq (optional)" ;;
+esac
 
 out_partial="$( (magento_require_services partial) 2>&1 1>/dev/null )"
 assert_contains "partial: message names opensearch" "opensearch" "$out_partial"
-assert_contains "partial: message names rabbitmq"   "rabbitmq"   "$out_partial"
 case "$out_partial" in
   *"mysql"*) fail "partial: message does not re-list mysql (already present)" \
     "no 'mysql'" "$out_partial" ;;

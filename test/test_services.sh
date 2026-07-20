@@ -466,4 +466,15 @@ assert_eq "apply: rm absent"      "mysql"            "$(services_apply "mysql" r
 assert_eq "apply: rm last"        ""                 "$(services_apply "mysql" rm mysql)"
 assert_eq "apply: add two"        "mysql a b"        "$(services_apply "mysql" add a b)"
 
+# --- services_fix_hint: the shared refusal tail (used by db.sh + magento.sh) ---
+# It must name the project's manifest path, carry both the `render` and `up`
+# next-steps, interpolate <what>, and reach STDOUT (it's advice, not the error).
+fh_dir="$(mktemp -d)"; trap 'rm -rf "$fh_dir"' EXIT
+( export HARBOR_PROJECTS="$fh_dir/projects"
+  hint="$(services_fix_hint shop them 2>/dev/null)"     # capture stdout only
+  assert_contains "fix_hint: names the manifest path"  "shop/.harbor/harbor.yml" "$hint"
+  assert_contains "fix_hint: interpolates <what>"      "add them to"             "$hint"
+  assert_contains "fix_hint: gives the render step"    "harbor render shop"      "$hint"
+  assert_contains "fix_hint: gives the up step"        "harbor up shop"          "$hint" )
+
 report

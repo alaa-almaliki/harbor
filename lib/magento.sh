@@ -4,9 +4,13 @@
 
 # Magento needs all three; connection.env only carries a service's vars when the
 # service is selected, so without this the next line dies on an unbound variable.
+# Magento's HARD requirements: mysql (data) and opensearch (2.4+ requires a
+# search engine). RabbitMQ is optional — it only backs async/bulk operations,
+# and setup:install runs fine without it — so it is NOT demanded here, even
+# though `_init_services` still selects it by default for a new project.
 magento_require_services() {
   local name="$1" svc missing=""
-  for svc in mysql opensearch rabbitmq; do
+  for svc in mysql opensearch; do
     if ! project_has_service "$name" "$svc"; then missing="$missing $svc"; fi
   done
   if [ -n "$missing" ]; then
