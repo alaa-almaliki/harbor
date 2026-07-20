@@ -33,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-render); the file is only removed once `down` actually succeeds.
 
 ### Added
+- **`harbor init`'s manifest and connection files are now conditional on the
+  resolved service list**, not written unconditionally for every project. The
+  manifest `db:` block is only emitted when `mysql` is selected (`{{DB_BLOCK}}`
+  in `templates/manifest/harbor.yml.tmpl`, fed from `cmd_init`); `connection.env`/
+  `connection.txt` only get `DB_*` when `mysql` is selected, and `OPENSEARCH_*`/
+  `RABBITMQ_*`/`MEILISEARCH_*`/`ELASTICSEARCH_*` only when their service is
+  selected — Redis and Mailpit stay unconditional since they're shared, always-on
+  Harbor services. `init_write_connection` resolves the project's service list
+  once and `case`s against it for all five services, rather than re-parsing the
+  manifest per service. New predicate `project_has_service <name> <svc>`
+  (`lib/services.sh`) for one-off checks elsewhere (doctor, wire, db). A
+  DB-less project (`services: {}`) now gets a manifest with no `db:` block and a
+  `connection.env` containing only `REDIS_*`/`MAIL_*` vars — no leftover
+  credentials for a database that doesn't exist.
 - **`harbor restart` with no project name restarts Harbor itself** — equivalent
   to `harbor stop && harbor start` (shared stack, php pools, dnsmasq, nginx).
   Running project stacks are left alone; `harbor restart <name>` still restarts

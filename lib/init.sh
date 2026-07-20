@@ -124,7 +124,7 @@ init_render_compose() {
         # render that "succeeded" but left an unreachable stack running is
         # worse than one that visibly failed. Keep the file, fail loudly, and
         # tell the user the retry path.
-        warn "could not stop '$name' cleanly — kept $cf so 'harbor down $name' can retry; check: docker ps"
+        warn "could not stop '$name' cleanly — kept $cf so 'harbor down $name' can retry; check: docker ps; then re-run 'harbor render $name' to finish"
         return 1
       fi
     fi
@@ -185,13 +185,15 @@ init_write_connection() {
   ports_load "$name"
   local ident; ident="$(db_ident "$name")"
   local root; root="$(config_get MYSQL_ROOT_PASSWORD root)"
-  cat > "$hdir/connection.env" <<EOF
-DB_HOST=127.0.0.1
-DB_PORT=$DB_PORT
-DB_DATABASE=$ident
-DB_USERNAME=$ident
-DB_PASSWORD=$ident
-DB_ROOT_PASSWORD=$root
+  local ce="$hdir/connection.env" ct="$hdir/connection.txt"
+  # Resolve the service list ONCE — five project_has_service calls would re-parse
+  # the manifest ten times. Padded with spaces so `case` can match whole words.
+  local framework svcs
+  framework="$(manifest_get "$(manifest_path "$name")" framework "")"
+  svcs=" $(_project_services "$name" "$framework") "
+
+  # Redis and mail are shared, always-on Harbor services — never per-project.
+  cat > "$ce" <<EOF
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 REDIS_DB=$REDIS_DB_CACHE
@@ -201,26 +203,44 @@ REDIS_SESSION_DB=$REDIS_DB_SESSION
 REDIS_PREFIX=${ident}_
 MAIL_HOST=127.0.0.1
 MAIL_PORT=1025
-OPENSEARCH_HOST=127.0.0.1
-OPENSEARCH_PORT=$OPENSEARCH_PORT
-RABBITMQ_HOST=127.0.0.1
-RABBITMQ_PORT=$RABBITMQ_PORT
-MEILISEARCH_HOST=http://127.0.0.1:$MEILI_PORT
-MEILISEARCH_KEY=$(config_get MEILI_MASTER_KEY harbor-local-meili-master)
-ELASTICSEARCH_HOST=127.0.0.1
-ELASTICSEARCH_PORT=$ELASTIC_PORT
 EOF
-  cat > "$hdir/connection.txt" <<EOF
+  cat > "$ct" <<EOF
 Harbor connection info for "$name"
   URL        https://$name.$HARBOR_TLD
-  MySQL      127.0.0.1:$DB_PORT  db/user/pass: $ident / $ident / $ident  (root: $root)
   Redis      127.0.0.1:6379  db: $REDIS_DB_CACHE (cache) $REDIS_DB_PAGE (page) $REDIS_DB_SESSION (session)  prefix: ${ident}_
   Mailpit    smtp 127.0.0.1:1025   ui http://localhost:8025
-  OpenSearch 127.0.0.1:$OPENSEARCH_PORT
-  RabbitMQ   amqp 127.0.0.1:$RABBITMQ_PORT   ui http://localhost:$RABBITMQ_UI_PORT
-  Meilisearch http://127.0.0.1:$MEILI_PORT   key: $(config_get MEILI_MASTER_KEY harbor-local-meili-master)
-  Elasticsearch http://127.0.0.1:$ELASTIC_PORT   (security disabled for local dev)
 EOF
+
+  case "$svcs" in *" mysql "*)
+    cat >> "$ce" <<EOF
+DB_HOST=127.0.0.1
+DB_PORT=$DB_PORT
+DB_DATABASE=$ident
+DB_USERNAME=$ident
+DB_PASSWORD=$ident
+DB_ROOT_PASSWORD=$root
+EOF
+    printf '  MySQL      127.0.0.1:%s  db/user/pass: %s / %s / %s  (root: %s)\n' \
+      "$DB_PORT" "$ident" "$ident" "$ident" "$root" >> "$ct"
+  ;; esac
+  case "$svcs" in *" opensearch "*)
+    printf 'OPENSEARCH_HOST=127.0.0.1\nOPENSEARCH_PORT=%s\n' "$OPENSEARCH_PORT" >> "$ce"
+    printf '  OpenSearch 127.0.0.1:%s\n' "$OPENSEARCH_PORT" >> "$ct"
+  ;; esac
+  case "$svcs" in *" rabbitmq "*)
+    printf 'RABBITMQ_HOST=127.0.0.1\nRABBITMQ_PORT=%s\n' "$RABBITMQ_PORT" >> "$ce"
+    printf '  RabbitMQ   amqp 127.0.0.1:%s   ui http://localhost:%s\n' \
+      "$RABBITMQ_PORT" "$RABBITMQ_UI_PORT" >> "$ct"
+  ;; esac
+  case "$svcs" in *" meilisearch "*)
+    local mkey; mkey="$(config_get MEILI_MASTER_KEY harbor-local-meili-master)"
+    printf 'MEILISEARCH_HOST=http://127.0.0.1:%s\nMEILISEARCH_KEY=%s\n' "$MEILI_PORT" "$mkey" >> "$ce"
+    printf '  Meilisearch http://127.0.0.1:%s   key: %s\n' "$MEILI_PORT" "$mkey" >> "$ct"
+  ;; esac
+  case "$svcs" in *" elasticsearch "*)
+    printf 'ELASTICSEARCH_HOST=127.0.0.1\nELASTICSEARCH_PORT=%s\n' "$ELASTIC_PORT" >> "$ce"
+    printf '  Elasticsearch http://127.0.0.1:%s   (security disabled for local dev)\n' "$ELASTIC_PORT" >> "$ct"
+  ;; esac
 }
 
 init_write_gitignore() {
@@ -418,7 +438,9 @@ cmd_init() {
   # shellcheck disable=SC2086  # word-split the service names
   FRAMEWORK="$framework" PHP_VER="$phpver" \
   SERVICES_MAP="$(_services_map_body "$name" $svcnames)" \
-  DB_NAME="$ident" DB_USER="$ident" DB_PASS="$ident" \
+  DB_BLOCK="$(case " $svcnames " in
+                (*" mysql "*) printf 'db: { name: %s, user: %s, password: %s }' "$ident" "$ident" "$ident" ;;
+              esac)" \
   render "$HARBOR_TEMPLATES/manifest/harbor.yml.tmpl" "$(manifest_path "$name")"
   [ -n "$msopt" ] && warn "multistore '$msopt' requested — add 'multistore: { mode: $msopt, stores: {} }' to the manifest"
 

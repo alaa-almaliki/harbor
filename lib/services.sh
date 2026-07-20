@@ -105,3 +105,16 @@ services_select() {
     warn "not a valid selection: $reply"
   done
 }
+
+# project_has_service <name> <svc> — is <svc> in this project's resolved list?
+# Convenience for one-off checks (doctor, wire, db). Callers that test several
+# services in a row should resolve the list ONCE and `case` against it instead —
+# see init_write_connection — since each call here re-parses the manifest.
+project_has_service() {
+  local name="$1" svc="$2" framework
+  framework="$(manifest_get "$(manifest_path "$name")" framework "")"
+  case " $(_project_services "$name" "$framework") " in
+    *" $svc "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}

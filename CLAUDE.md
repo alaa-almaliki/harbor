@@ -104,6 +104,15 @@ This is the project's defining constraint. Concretely:
   `KEY=VALUE` files; serialize with the mkdir-based `harbor_with_lock`. Manifest
   **nesting must use flow style** (`{…}`/`[…]`) — the parser doesn't do block
   sequences/maps.
+- **A `case` inside `$(...)` needs a leading `(` on every pattern** —
+  `*" mysql "*)` inside a command substitution is a hard syntax error on this
+  bash 3.2 (`command substitution: … syntax error near unexpected token
+  'newline'`), because its parser loses track of which `)` closes the case arm
+  vs. the substitution. Write `(*" mysql "*)` instead; identical behavior,
+  parses everywhere. Only bites `case` used as an expression (e.g.
+  `X="$(case … esac)"` to build a manifest fragment) — a `case` used as a plain
+  statement is unaffected. Test any new `$(case …)` with a real `bash
+  <path-to-script>` run, not just `shellcheck` (which doesn't catch this).
 - Functions over inline blocks; prefix internal helpers with `_`. Keep each `lib/*.sh`
   focused on one area (see `plan.md` layout).
 - **No heavy runtime deps.** No `jq`, no `yq` as hard requirements. Persist state
