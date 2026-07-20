@@ -351,6 +351,27 @@ assert_contains "services: reports the ports-not-allocated fix hint" \
 assert_eq "services: manifest untouched by the ports-preflight die (no half-applied write)" \
   "$before_sum4" "$after_sum4"
 
+# --- cmd_services: EXIT trap restores after a `die` AFTER the manifest write --
+# The ports preflight covers the one die reachable before the write. This pins
+# the general net: a `die` deeper in cmd_render's graph — reachable only AFTER
+# cmd_services has already rewritten the services line — calls `exit` and skips
+# the explicit `if ! cmd_render` restore. The EXIT trap must fire and put the
+# manifest back byte-for-byte anyway. Stub init_render_compose to die post-write.
+mkproj svcdie 'services: { mysql: "mysql:8.0" }'
+printf 'HARBOR_INDEX=6\nDB_PORT=20120\n' > "$HARBOR_PORTS_DIR/svcdie"
+mf5="$(manifest_path svcdie)"
+before_sum5="$(shasum "$mf5")"
+die_out="$tmp/svcdie.out"
+die_rc=0
+# shellcheck disable=SC2329  # invoked indirectly: cmd_render calls it by name
+( init_render_compose() { die "boom after the manifest write"; }
+  HARBOR_YES=1 cmd_services add svcdie opensearch ) >"$die_out" 2>&1 || die_rc=$?
+after_sum5="$(shasum "$mf5")"
+
+assert_eq "services: a die deep in cmd_render exits nonzero" "1" "$die_rc"
+assert_eq "services: EXIT trap restores the manifest after a post-write die" \
+  "$before_sum5" "$after_sum5"
+
 # --- cmd_services: Finding 1 end-to-end — a bare `services:` must not get a
 # user permanently stuck ------------------------------------------------------
 # Full reproduction from the review: hand-edit `services: { mysql: "..." }`

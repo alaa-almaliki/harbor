@@ -283,17 +283,13 @@ cmd_services() {
 
   if [ "$new" = "$cur" ]; then ok "no change: $name services unchanged ($cur)"; return 0; fi
 
-  # Pre-flight the one precondition cmd_render's call graph would `die` on
-  # (ports_ensure — lib/init.sh) BEFORE the manifest is touched below. A `die`
-  # calls `exit`, which terminates the process outright — including the
-  # restore a few lines down — regardless of whether cmd_render otherwise
-  # returns cleanly. Reproduced: delete var/ports/<name>, then `harbor services
-  # add <name> <svc>`; without this preflight the manifest was rewritten to
-  # include the new service and the process died on "ports not allocated"
-  # before ever reaching the restore, leaving the half-applied manifest as the
-  # user's only trace. ports_ensure is a cheap, idempotent, lock-guarded
-  # backfill (CLAUDE.md §1.7) — running it again inside cmd_render right after
-  # this is harmless.
+  # Fast-fail on the one precondition cmd_render's call graph would `die` on
+  # (ports_ensure — lib/init.sh) BEFORE touching the manifest, so the common
+  # "not initialized / no ports" case fails cleanly with an exact hint and no
+  # write-then-restore churn. (The EXIT trap below would also catch this die,
+  # but failing before any mutation is tidier.) ports_ensure is a cheap,
+  # idempotent, lock-guarded backfill (CLAUDE.md §1.7) — running it again inside
+  # cmd_render right after this is harmless.
   ports_ensure "$name" || die "ports not allocated for $name → harbor init $name"
 
   # Write, then render — and RESTORE the manifest if the render's confirm gate is
@@ -312,20 +308,25 @@ cmd_services() {
   # restoring would DELETE the line instead of putting the bare line back.
   local prev had_prev=0; prev="$(manifest_raw_line "$mf" services)"
   manifest_key_present "$mf" services && had_prev=1
+
+  # Arm the restore BEFORE the write, via an EXIT trap. This covers two exits:
+  # a declined confirm (cmd_render returns 1 — handled explicitly below) AND a
+  # `die` deeper in cmd_render's call graph, which calls `exit` and would
+  # otherwise sail past the explicit restore, leaving a half-applied manifest.
+  # The ports_ensure preflight above handles the one such die reachable today;
+  # this trap makes the revert immune to any future one, so the "add a die
+  # without a matching preflight and the bug is back" residual risk is closed.
+  # No other EXIT trap exists in this call graph (verified), so it can't clobber
+  # one. Every return path below disarms it (trap - EXIT) so it never fires with
+  # $mf/$prev out of scope after cmd_services returns.
+  trap 'manifest_restore_line "$mf" services "$prev" "$had_prev"' EXIT
   # shellcheck disable=SC2086  # word-split the resolved service list
   manifest_set_line "$mf" services "{ $(_services_map_body "$name" $new) }"
   if ! cmd_render "$name"; then       # carries the shrink-confirm gate from Task 7
-    if [ "$had_prev" = 1 ]; then
-      manifest_set_raw_line "$mf" services "$prev"
-    else
-      # The key never existed before (legacy manifest). Restoring with
-      # manifest_set_line would leave a bare "services:" line — present but
-      # empty is not the same file as the key being absent, even though
-      # manifest_get can't tell the two apart on read. Remove the line so a
-      # decline is byte-for-byte a no-op.
-      manifest_del_line "$mf" services
-    fi
+    manifest_restore_line "$mf" services "$prev" "$had_prev"
+    trap - EXIT
     warn "reverted: $name services unchanged"
     return 1
   fi
+  trap - EXIT
 }

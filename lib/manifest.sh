@@ -278,6 +278,17 @@ manifest_del_line() {
   ' "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
+# manifest_restore_line <file> <key> <verbatim-line> <had_it: 0|1> — put a key's
+# line back to a snapshotted state. If the key existed, rewrite it verbatim
+# (comment and all); if it did NOT, delete the line — a bare `services:` is a
+# different file from an absent key, and only deletion is byte-for-byte. Pairs
+# with manifest_raw_line + manifest_key_present for capture. Callers use this to
+# undo a write on a failed operation (see cmd_services' restore).
+manifest_restore_line() {
+  if [ "$4" = 1 ]; then manifest_set_raw_line "$1" "$2" "$3"
+  else manifest_del_line "$1" "$2"; fi
+}
+
 manifest_path() { printf '%s' "$(project_harbor_dir "$1")/harbor.yml"; }
 
 # setting_get <project> <manifest.path> <CONFIG_KEY> <builtin-default>

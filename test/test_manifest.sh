@@ -221,4 +221,23 @@ assert_eq "del_line: untouched file stays exactly one line" 1 "$(wc -l < "$dfx" 
 
 rm -f "$dfx"
 
+# --- manifest_restore_line: had_it=1 rewrites verbatim, had_it=0 deletes ------
+rfx="$(mktemp)"
+cat > "$rfx" <<'YAML'
+framework: laravel
+services: { mysql: "mysql:8.0" }  # pinned by ops
+YAML
+# key existed -> restore rewrites the captured line verbatim (comment kept)
+raw="$(manifest_raw_line "$rfx" services)"
+manifest_set_line "$rfx" services '{ opensearch: "os:1" }'   # mutate
+manifest_restore_line "$rfx" services "$raw" 1               # restore
+assert_eq "restore_line: had_it=1 puts the verbatim line (comment) back" \
+  'services: { mysql: "mysql:8.0" }  # pinned by ops' "$(grep '^services:' "$rfx")"
+# key absent -> restore deletes the line rather than leaving a bare key
+manifest_set_line "$rfx" node 20
+manifest_restore_line "$rfx" node "" 0
+assert_eq "restore_line: had_it=0 deletes the line entirely" \
+  "" "$(grep '^node:' "$rfx" || true)"
+rm -f "$rfx"
+
 report
