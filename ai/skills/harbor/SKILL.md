@@ -89,6 +89,15 @@ harbor db drop <name> [db]            # confirm-gated
 `db import` auto-backs-up first (`--no-backup` to skip) and runs
 `.harbor/hooks/pre-import.d/` + `post-import.d/` (credential scrub, etc.).
 
+**This project may have no database at all.** Check `services:` in
+`.harbor/harbor.yml` — if it's `{}` or has no `mysql` key, `harbor db …` and
+`harbor mysql` refuse with a fix hint instead of running (not a "stack not
+running" error). Magento needs `mysql` + `opensearch` + `rabbitmq` — its
+`install`/`wire` refuse up front, naming every missing service, if any are
+absent. To add a database: put `mysql: "mysql:8.0"` under `services:` in the
+manifest, then `harbor render <name> && harbor up <name>` (this may prompt if a
+previously-dropped service's old volume still exists — see Configuration).
+
 **Throwaway DB, no project attachment** — a scratch MySQL on `127.0.0.1:3306`:
 ```bash
 harbor db sandbox create test         # auto-starts the server on first use
@@ -160,13 +169,14 @@ domains: [extra.test]       # extra hostnames beyond <name>.test
 extensions: [imagick, redis]   # required PHP ext — `harbor doctor <name>` validates
 php_ini: { memory_limit: 2G, "opcache.validate_timestamps": 1 }
 services: { mysql: "mysql:8.0" }   # add opensearch/rabbitmq/meilisearch/elasticsearch here
+                                    # {} (empty) means NO containers — no database at all
 tools: [wkhtmltopdf, ghostscript]  # containerized CLI binaries (see below)
 ```
 
 After editing the manifest (all of these need an explicit `<name>`):
 | You changed… | Run |
 |---|---|
-| `services:` (add/version a DB/search/queue) | `harbor render <name> && harbor up <name>` |
+| `services:` (add/version/remove a DB/search/queue) | `harbor render <name> && harbor up <name>` — `render` **confirms** before dropping a service whose data volume still exists (data is kept either way; `HARBOR_YES=1` skips) |
 | `php:` (and `.php-version`) | `harbor link <name>` (re-points the vhost to the new pool) |
 | `docroot:` / `domains:` | `harbor link <name>` |
 | `extensions:` | `harbor doctor <name>` (validates; install missing PHP ext via `pecl`) |

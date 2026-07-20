@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Optional backing services — a project can now run with no database at
+  all.** `harbor init` asks which services a project needs: an interactive
+  picker (numbered, alphabetical — the catalog derived from
+  `templates/compose/services/*.yml.tmpl`: `elasticsearch`, `meilisearch`,
+  `mysql`, `opensearch`, `rabbitmq`) when stdin is a terminal and `HARBOR_YES`
+  is unset, or `--services "mysql,opensearch"` directly. `--services ""` or
+  `--services none` (or typing `none` at the prompt) selects no containers —
+  the manifest gets an explicit `services: {}` and the project has no
+  `docker-compose.yml`. A non-interactive caller (script, CI, `HARBOR_YES=1`)
+  silently gets the framework default, so existing scripted `harbor init`
+  calls behave exactly as before. The manifest's `services:` key is now
+  authoritative whenever PRESENT — including an explicit empty map — and only
+  an ABSENT key falls back to the framework default, so manifests written
+  before this feature keep working unchanged.
+
+### Changed
+- **Lifecycle commands no-op instead of erroring on a service-less project.**
+  `harbor up`/`down`/`restart <name>`/`logs <name>` print "nothing to
+  start/stop/restart" (or "no container logs") and exit 0 for a project with
+  no services, rather than dying on a missing compose file — a bulk/scripted
+  run over every project shouldn't fail just because one of them has no
+  database.
+
 ### Fixed
 - **Commands no longer crash with an unbound-variable error on a service-less
   (no `mysql`) project.** After a database became optional, `connection.env`
