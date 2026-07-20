@@ -27,6 +27,7 @@ mkproj absent ""
 mkproj empty 'services: {}'
 mkproj written 'services: { opensearch: "os:1" }'
 mkproj legacy 'services: [mysql, rabbitmq]'
+mkproj esearch 'services: { elasticsearch: "es:1" }'
 
 { export HARBOR_PROJECTS="$tmp/projects"
   assert_eq "resolve: absent key -> framework default" \
@@ -38,7 +39,23 @@ mkproj legacy 'services: [mysql, rabbitmq]'
   assert_eq "resolve: legacy list -> as written" \
     "mysql rabbitmq" "$(_project_services legacy laravel)"
   assert_eq "resolve: absent key, magento -> magento default" \
-    "mysql opensearch rabbitmq" "$(_project_services absent magento)"; }
+    "mysql opensearch rabbitmq" "$(_project_services absent magento)"
+
+  # --- project_has_service -----------------------------------------------------
+  assert_ok   "has_service: legacy list includes mysql" project_has_service legacy mysql
+  assert_ok   "has_service: legacy list includes rabbitmq" project_has_service legacy rabbitmq
+  assert_fail "has_service: legacy list excludes opensearch" project_has_service legacy opensearch
+  assert_fail "has_service: empty map -> no service present" project_has_service empty mysql
+  assert_ok   "has_service: absent key -> framework default present" project_has_service absent mysql
+
+  # substring-bleed guard: space-padded `case` match must not let "opensearch"/
+  # "elasticsearch" satisfy a check for "search". If the padding in
+  # project_has_service's `case " $(...) " in *" $svc "*)` were dropped, these
+  # would false-positive.
+  assert_fail "has_service: opensearch does not bleed into 'search'" project_has_service written search
+  assert_fail "has_service: elasticsearch does not bleed into 'search'" project_has_service esearch search
+  assert_ok   "has_service: opensearch project reports opensearch" project_has_service written opensearch
+  assert_ok   "has_service: elasticsearch project reports elasticsearch" project_has_service esearch elasticsearch; }
 
 # --- --services parsing --------------------------------------------------------
 assert_eq "parse: csv"           "mysql opensearch" "$(services_parse_arg 'mysql,opensearch')"
