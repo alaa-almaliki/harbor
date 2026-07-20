@@ -82,4 +82,10 @@ assert_eq "pick: leading/trailing spaces"  "mysql rabbitmq"   "$(services_pick_p
 assert_eq "pick: inner spacing preserved as separate tokens" \
                                            "mysql rabbitmq"   "$(services_pick_parse '1   3' "$CAT" "$DEF")"
 
+# --- shrink detection (pure) ---------------------------------------------------
+assert_eq "dropped: none"        ""          "$(services_dropped "mysql opensearch" "mysql opensearch")"
+assert_eq "dropped: one"         "opensearch" "$(services_dropped "mysql opensearch" "mysql")"
+assert_eq "dropped: all"         "mysql"     "$(services_dropped "mysql" "")"
+assert_eq "dropped: growth only" ""          "$(services_dropped "mysql" "mysql opensearch")"
+
 report

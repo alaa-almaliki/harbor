@@ -33,6 +33,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-render); the file is only removed once `down` actually succeeds.
 
 ### Added
+- **`harbor render` now confirms before a manifest edit drops a service whose
+  data volume still exists** — shrinking `services:` (by hand, or later via
+  `harbor services rm`, which will route through the same gate) used to
+  silently stop the container and detach its volume. Removing a service does
+  **not** destroy data: the volume is named and scoped to the compose project
+  (`name: harbor-<name>`), so it's left in place and re-adding the service
+  reattaches it intact — only `harbor destroy` drops volumes, and the prompt
+  says so plainly rather than reading as alarmist. New pure helper
+  `services_dropped <old> <new>` (`lib/services.sh`) diffs the two service
+  lists; `services_confirm_shrink <name> <old> <new>` only prompts for a
+  dropped service whose Docker volume actually exists (`docker volume
+  inspect`), so growing the list, or shrinking a service that was never
+  `up`ed, never prompts. If Docker is unreachable the check assumes the data
+  is at risk and prompts anyway — skipping the gate because the daemon
+  happens to be down would silently turn it off exactly when it's needed.
+  Declining leaves the manifest, compose file, and running containers
+  untouched and exits nonzero. Bypassed by `HARBOR_YES=1` only, same as every
+  other destructive-op confirm — no new flag.
 - **`harbor init`'s manifest and connection files are now conditional on the
   resolved service list**, not written unconditionally for every project. The
   manifest `db:` block is only emitted when `mysql` is selected (`{{DB_BLOCK}}`

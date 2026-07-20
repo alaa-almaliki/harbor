@@ -172,6 +172,25 @@ cmd_render() {
   ports_load "$name"
   _materialize_services "$name"   # upgrade a legacy list-format services: in place
   local framework; framework="$(manifest_get "$mf" framework "")"
+
+  # A hand-edited manifest that drops a service must not silently detach its
+  # data. One gate, one place: services rm (phase 2) routes through here too, so
+  # a user is never asked twice for one action.
+  local newlist oldlist=""
+  newlist="$(_project_services "$name" "$framework")"
+  if [ -f "$(project_compose_file "$name")" ]; then
+    # Only the keys under `services:` — a generated compose also has a top-level
+    # `volumes:` block whose entries sit at the SAME two-space indent, so a bare
+    # /^  [a-z]+:$/ picks up `dbdata` and reports it as a dropped "service".
+    # (Verified against a real generated file: it matched `mysql` AND `dbdata`.)
+    oldlist="$(awk '
+      /^services:/ { in_s = 1; next }
+      /^[a-z]/     { in_s = 0 }
+      in_s && /^  [a-z][a-z0-9_-]*:$/ { gsub(/[ :]/, ""); print }
+    ' "$(project_compose_file "$name")" | tr '\n' ' ')"
+  fi
+  services_confirm_shrink "$name" "$oldlist" "$newlist" || { warn "aborted — manifest unchanged"; return 1; }
+
   init_render_compose "$name" "$framework"
   init_write_connection "$name"
   init_write_agent_skills "$name"    # seed existing projects too (non-clobbering)

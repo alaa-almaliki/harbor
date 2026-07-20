@@ -106,6 +106,57 @@ services_select() {
   done
 }
 
+# services_dropped <old> <new> — services present in <old> but not <new>.
+services_dropped() {
+  local old="$1" new="$2" svc out=""
+  for svc in $old; do
+    case " $new " in
+      *" $svc "*) ;;
+      *) if [ -z "$out" ]; then out="$svc"; else out="$out $svc"; fi ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# _service_volume <name> <svc> — the docker volume a service's data lives in, or
+# empty if it has none. Volumes are named and scoped to the compose project
+# (`name: harbor-<name>` in templates/compose/header.yml.tmpl).
+_service_volume() {
+  local name="$1" svc="$2" vol=""
+  [ -f "$HARBOR_TEMPLATES/compose/volumes/$svc.yml.tmpl" ] || { printf ''; return 0; }
+  vol="$(tr -d ' :' < "$HARBOR_TEMPLATES/compose/volumes/$svc.yml.tmpl" | head -1)"
+  printf 'harbor-%s_%s' "$name" "$vol"
+}
+
+# services_confirm_shrink <name> <old> <new> — confirm before dropping a service
+# whose data volume still exists. Removing a service does NOT delete data: the
+# named volume is left in place and re-adding the service reattaches it intact;
+# only `harbor destroy` drops volumes. Say so — an alarmist prompt for a
+# reversible action trains people to ignore the prompts that aren't.
+services_confirm_shrink() {
+  local name="$1" old="$2" new="$3" svc vol atrisk="" dockerup=1
+  # If we can't reach Docker we can't tell whether data exists. Assume it does
+  # and prompt anyway: skipping the prompt because the daemon happens to be down
+  # turns a safety gate into a coin flip, and "no prompt appeared" is exactly how
+  # a user concludes nothing was at stake.
+  docker info >/dev/null 2>&1 || dockerup=0
+  for svc in $(services_dropped "$old" "$new"); do
+    vol="$(_service_volume "$name" "$svc")"
+    [ -n "$vol" ] || continue
+    if [ "$dockerup" = 0 ] || docker volume inspect "$vol" >/dev/null 2>&1; then
+      atrisk="$atrisk $svc:$vol"
+    fi
+  done
+  [ -n "$atrisk" ] || return 0
+  local pair
+  for pair in $atrisk; do
+    warn "removing ${pair%%:*} from '$name' stops its container and unmounts its data"
+    step "the volume ${pair#*:} is KEPT — re-adding ${pair%%:*} reattaches it intact"
+    step "only 'harbor destroy $name' drops it"
+  done
+  confirm "Remove$(for pair in $atrisk; do printf ' %s' "${pair%%:*}"; done) from '$name'?"
+}
+
 # project_has_service <name> <svc> — is <svc> in this project's resolved list?
 # Convenience for one-off checks (doctor, wire, db). Callers that test several
 # services in a row should resolve the list ONCE and `case` against it instead —

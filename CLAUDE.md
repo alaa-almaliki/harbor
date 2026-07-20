@@ -242,6 +242,20 @@ and **[SemVer](https://semver.org)**.
   **MariaDB** are not a new service — they're a `services.mysql: "mariadb:…"`
   image swap; keep the compose service named `mysql` so `harbor mysql`/`db` keep
   working, and make engine-specific server flags conditional in `_db_command`.)
+- **Shrinking a project's `services:` list** → any path that can drop a service
+  (hand-edited manifest, a future `harbor services rm`) must route through
+  `cmd_render`'s gate (`services_confirm_shrink`, `lib/services.sh`), not
+  reimplement its own confirm. One gate, one place — a user is never asked
+  twice for one action. The gate only prompts when the dropped service's named
+  Docker volume actually exists (`_service_volume` + `docker volume inspect`);
+  growing the list, or shrinking one that was never `up`ed, must stay silent.
+  If Docker is unreachable, assume the data is at risk and prompt anyway —
+  never let a down daemon silently disable the gate. Frame the prompt
+  accurately: removing a service does **not** destroy data (the volume is
+  scoped to `harbor-<name>` and survives; re-adding the service reattaches it;
+  only `harbor destroy` drops it) — an alarmist prompt for a reversible action
+  trains people to stop reading prompts, which is what makes the genuinely
+  destructive ones dangerous.
 - **New CLI tool** → add to the `tools:` catalog (name→image); never a host install.
 - **Singleton (non-project) stack** → for something Harbor owns but no project owns
   (the shared mailpit+redis stack; the `db sandbox` MySQL), render a standalone
