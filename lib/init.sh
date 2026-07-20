@@ -11,13 +11,26 @@ _init_services() {
   esac
 }
 
-# the stack's services (space-separated): manifest `services:` (map keys or list
-# items — manifest_map_keys handles both) -> framework default
+# the stack's services (space-separated). The manifest is authoritative when the
+# `services:` key is PRESENT — including when it is empty, which means "no
+# containers". Only an ABSENT key falls back to the framework default, so
+# manifests written before `services:` existed keep working.
+#
+# Presence is tested with manifest_key_present, NOT manifest_has: manifest_has
+# tests the RESOLVED VALUE, so a hand-edited bare `services:` (the obvious
+# YAML way to write "none") reads identically to the key being absent — a
+# project meant to have no containers silently gets the framework default
+# back (e.g. mysql) and, worse, `harbor services add <name> <svc>` then
+# resolves "current" as that same wrong default, so an add that already
+# matches it reports "no change" with no way to actually add the service.
 _project_services() {
-  local name="$1" framework="$2" list
-  list="$(manifest_map_keys "$(manifest_path "$name")" services)"
-  [ -n "$list" ] || list="$(_init_services "$framework" | tr ',' ' ')"
-  printf '%s' "$list"
+  local name="$1" framework="$2" mf
+  mf="$(manifest_path "$name")"
+  if manifest_key_present "$mf" services; then
+    manifest_map_keys "$mf" services
+    return 0
+  fi
+  _init_services "$framework" | tr -s ', ' ' '
 }
 
 # the db server command line — engine-aware. MariaDB rejects MySQL 8's
@@ -83,13 +96,11 @@ _materialize_services() {
   # shellcheck disable=SC2086  # word-split the service names
   body="$(_services_map_body "$name" $names)"
   [ -n "$body" ] || return 0
+  manifest_set_line "$mf" services "{ $body }"
+  # drop the now-redundant db.image field left by the legacy format
   tmp="$mf.tmp.$$"
-  # rewrite the services: line as a map; drop the now-redundant db.image field
-  awk -v svc="services: { $body }" '
-    /^services:/ { print svc; next }
-    /^db:/       { sub(/,[[:space:]]*image:[[:space:]]*[^},[:space:]]*/, ""); print; next }
-    { print }
-  ' "$mf" > "$tmp" && mv "$tmp" "$mf"
+  awk '/^db:/ { sub(/,[[:space:]]*image:[[:space:]]*[^},[:space:]]*/, ""); print; next } { print }' \
+    "$mf" > "$tmp" && mv "$tmp" "$mf"
   step "materialized explicit service versions in $mf"
 }
 
@@ -100,7 +111,65 @@ init_render_compose() {
   ports_load "$name" || die "ports not allocated for $name"
   # shellcheck disable=SC2046  # word-split the service list into positionals
   set -- $(_project_services "$name" "$framework")
-  [ "$#" -gt 0 ] || die "no services resolved for $name (empty services: in manifest?)"
+  local cf; cf="$(project_compose_file "$name")"
+  if [ "$#" -eq 0 ]; then
+    # No services is a valid choice, not an error. Emit no compose file at all
+    # rather than one with a dangling `services:` key (which docker rejects).
+    #
+    # Stop the stack BEFORE deleting the file: the compose file is the only
+    # handle Harbor (and docker compose) has on those containers. Delete it
+    # while they're running and they keep running, unmanageable by `harbor
+    # down`/`destroy` — the user's app still talks to a database Harbor no
+    # longer knows about. Down-then-delete keeps the "everything reversible"
+    # rule (CLAUDE.md §1.6) true. `down` (not `down -v`) so volumes survive:
+    # dropping data is `harbor destroy`'s job, never render's.
+    if [ -f "$cf" ]; then
+      log "no services for '$name' — stopping its stack before removing the compose file"
+      if ! project_compose "$name" down; then
+        # Do NOT delete the compose file here: it's the only handle Harbor has
+        # on that stack. Deleting it now would make project_has_stack report
+        # false, stranding the containers exactly as described above — a
+        # render that "succeeded" but left an unreachable stack running is
+        # worse than one that visibly failed. Keep the file, fail loudly, and
+        # tell the user the retry path.
+        warn "could not stop '$name' cleanly — kept $cf so 'harbor down $name' can retry; check: docker ps; then re-run 'harbor render $name' to finish"
+        return 1
+      fi
+    fi
+    rm -f "$cf"
+    return 0
+  fi
+  # A partial shrink (still-non-empty new list) must not leave a DROPPED
+  # service's container running just because rewriting the compose file below
+  # doesn't touch running containers. `docker compose up -d` only WARNS about
+  # orphans and leaves them running (`project_compose` never passes
+  # `--remove-orphans`) — so without this, the container survives holding its
+  # port and its heap until an unrelated `harbor down`, directly contradicting
+  # the shrink-confirm prompt the user just agreed to (services_confirm_shrink:
+  # "stops its container and unmounts its data").
+  #
+  # Must run BEFORE the compose file is overwritten below: the OLD file (still
+  # listing the dropped service) is the only handle `docker compose` has on
+  # that container. `rm -s -f` (stop then remove, no `-v`) targets only the
+  # dropped service(s) — the rest of the stack keeps running — and leaves the
+  # volume in place: dropping data remains `harbor destroy`'s job, never
+  # render's.
+  if [ -f "$cf" ]; then
+    local dropped; dropped="$(services_dropped "$(project_compose_services "$cf")" "$*")"
+    if [ -n "$dropped" ]; then
+      log "dropping service(s) ($dropped) from '$name' — stopping their container(s)"
+      # shellcheck disable=SC2086  # word-split the dropped service list
+      if ! project_compose "$name" rm -s -f $dropped >/dev/null 2>&1; then
+        # Same reasoning as the empty-list branch above: leave the (about to
+        # be stale) compose file in place rather than overwrite it out from
+        # under a container docker still has to reach. Returning here means
+        # the new compose file is never written, so a retry sees the same
+        # dropped service and tries the stop again.
+        warn "could not stop dropped service(s) ($dropped) for '$name' cleanly — check: docker ps; then re-run 'harbor render $name' to retry"
+        return 1
+      fi
+    fi
+  fi
   # validate every service has a fragment BEFORE truncating the output file
   for svc in "$@"; do
     [ -f "$HARBOR_TEMPLATES/compose/services/$svc.yml.tmpl" ] || \
@@ -128,7 +197,7 @@ init_render_compose() {
   MEILI_PORT="$MEILI_PORT" \
   MEILI_MASTER_KEY="$(config_get MEILI_MASTER_KEY harbor-local-meili-master)" \
   MEILI_MEMORY="$(config_get MEILI_INDEXING_MEMORY 512Mb)" \
-  _compose_assemble "$@" > "$(project_harbor_dir "$name")/docker-compose.yml"
+  _compose_assemble "$@" > "$cf"
 }
 
 # harbor render <name> — regenerate derived stack files (docker-compose.yml +
@@ -139,14 +208,47 @@ cmd_render() {
   local mf; mf="$(manifest_path "$name")"
   [ -f "$mf" ] || die "not initialized: $name → harbor init $name"
   ports_ensure "$name" || die "ports not allocated for $name → harbor init $name"
-  ports_load "$name"
-  _materialize_services "$name"   # upgrade a legacy list-format services: in place
+  # Explicit `||`, not a bare statement relying on `set -e` to abort: cmd_render
+  # is now called as an `if` condition (cmd_services' render-then-restore), and
+  # bash disables errexit for the WHOLE call graph under an if/&&/|| condition
+  # (see CLAUDE.md §3) — a bare failing statement here would be silently
+  # absorbed instead of aborting, and the function would fall through to
+  # `ok "rendered ..."` and return 0. Every call below that can meaningfully
+  # fail is guarded the same way, for the same reason.
+  ports_load "$name" || return 1
   local framework; framework="$(manifest_get "$mf" framework "")"
-  init_render_compose "$name" "$framework"
-  init_write_connection "$name"
-  init_write_agent_skills "$name"    # seed existing projects too (non-clobbering)
-  init_write_import_samples "$name"  # ditto: import-rules + hook samples
-  ok "rendered $name stack: $(_project_services "$name" "$framework") — harbor up $name to apply"
+
+  # A hand-edited manifest that drops a service must not silently detach its
+  # data. One gate, one place: services rm (phase 2) routes through here too, so
+  # a user is never asked twice for one action. No manifest/compose mutation
+  # yet, only the harmless, idempotent var/ports/<name> write from ports_ensure
+  # above — `_project_services` resolves legacy list-format `services:` via
+  # `manifest_map_keys` without needing materialization, so nothing on disk
+  # changes until the user has agreed to proceed.
+  local newlist oldlist=""
+  newlist="$(_project_services "$name" "$framework")"
+  oldlist="$(project_compose_services "$(project_compose_file "$name")")"
+  services_confirm_shrink "$name" "$oldlist" "$newlist" || { warn "aborted — manifest unchanged"; return 1; }
+
+  # Only NOW may the manifest be touched — the user has agreed to proceed.
+  _materialize_services "$name"   # upgrade a legacy list-format services: in place; never fails
+  # `|| return 1` on every call below that can fail (see the note above
+  # `ports_load`) — this is exactly the line the reviewer's stubbed-`docker`
+  # repro caught: `init_render_compose`'s `project_compose ... down` failure
+  # path ends in a bare `return 1` (lib/init.sh), which needs the same explicit
+  # propagation here or it's swallowed under cmd_services' `if !`.
+  init_render_compose "$name" "$framework" || return 1
+  init_write_connection "$name" || return 1
+  init_write_agent_skills "$name" || return 1    # seed existing projects too (non-clobbering)
+  init_write_import_samples "$name" || return 1  # ditto: import-rules + hook samples
+  # $newlist was already resolved above for the confirm gate — reusing it saves
+  # re-parsing the manifest just to print it. A service-less project has no
+  # stack to list and no `up` to run, so say that instead of a dangling colon.
+  if [ -n "$newlist" ]; then
+    ok "rendered $name stack: $newlist — harbor up $name to apply"
+  else
+    ok "rendered $name (no services — nothing to start)"
+  fi
 }
 
 # Harbor-owned connection files (source of truth for `wire`, Phase 6)
@@ -155,13 +257,15 @@ init_write_connection() {
   ports_load "$name"
   local ident; ident="$(db_ident "$name")"
   local root; root="$(config_get MYSQL_ROOT_PASSWORD root)"
-  cat > "$hdir/connection.env" <<EOF
-DB_HOST=127.0.0.1
-DB_PORT=$DB_PORT
-DB_DATABASE=$ident
-DB_USERNAME=$ident
-DB_PASSWORD=$ident
-DB_ROOT_PASSWORD=$root
+  local ce="$hdir/connection.env" ct="$hdir/connection.txt"
+  # Resolve the service list ONCE — five project_has_service calls would re-parse
+  # the manifest ten times. Padded with spaces so `case` can match whole words.
+  local framework svcs
+  framework="$(manifest_get "$(manifest_path "$name")" framework "")"
+  svcs=" $(_project_services "$name" "$framework") "
+
+  # Redis and mail are shared, always-on Harbor services — never per-project.
+  cat > "$ce" <<EOF
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 REDIS_DB=$REDIS_DB_CACHE
@@ -171,26 +275,44 @@ REDIS_SESSION_DB=$REDIS_DB_SESSION
 REDIS_PREFIX=${ident}_
 MAIL_HOST=127.0.0.1
 MAIL_PORT=1025
-OPENSEARCH_HOST=127.0.0.1
-OPENSEARCH_PORT=$OPENSEARCH_PORT
-RABBITMQ_HOST=127.0.0.1
-RABBITMQ_PORT=$RABBITMQ_PORT
-MEILISEARCH_HOST=http://127.0.0.1:$MEILI_PORT
-MEILISEARCH_KEY=$(config_get MEILI_MASTER_KEY harbor-local-meili-master)
-ELASTICSEARCH_HOST=127.0.0.1
-ELASTICSEARCH_PORT=$ELASTIC_PORT
 EOF
-  cat > "$hdir/connection.txt" <<EOF
+  cat > "$ct" <<EOF
 Harbor connection info for "$name"
   URL        https://$name.$HARBOR_TLD
-  MySQL      127.0.0.1:$DB_PORT  db/user/pass: $ident / $ident / $ident  (root: $root)
   Redis      127.0.0.1:6379  db: $REDIS_DB_CACHE (cache) $REDIS_DB_PAGE (page) $REDIS_DB_SESSION (session)  prefix: ${ident}_
   Mailpit    smtp 127.0.0.1:1025   ui http://localhost:8025
-  OpenSearch 127.0.0.1:$OPENSEARCH_PORT
-  RabbitMQ   amqp 127.0.0.1:$RABBITMQ_PORT   ui http://localhost:$RABBITMQ_UI_PORT
-  Meilisearch http://127.0.0.1:$MEILI_PORT   key: $(config_get MEILI_MASTER_KEY harbor-local-meili-master)
-  Elasticsearch http://127.0.0.1:$ELASTIC_PORT   (security disabled for local dev)
 EOF
+
+  case "$svcs" in *" mysql "*)
+    cat >> "$ce" <<EOF
+DB_HOST=127.0.0.1
+DB_PORT=$DB_PORT
+DB_DATABASE=$ident
+DB_USERNAME=$ident
+DB_PASSWORD=$ident
+DB_ROOT_PASSWORD=$root
+EOF
+    printf '  MySQL      127.0.0.1:%s  db/user/pass: %s / %s / %s  (root: %s)\n' \
+      "$DB_PORT" "$ident" "$ident" "$ident" "$root" >> "$ct"
+  ;; esac
+  case "$svcs" in *" opensearch "*)
+    printf 'OPENSEARCH_HOST=127.0.0.1\nOPENSEARCH_PORT=%s\n' "$OPENSEARCH_PORT" >> "$ce"
+    printf '  OpenSearch 127.0.0.1:%s\n' "$OPENSEARCH_PORT" >> "$ct"
+  ;; esac
+  case "$svcs" in *" rabbitmq "*)
+    printf 'RABBITMQ_HOST=127.0.0.1\nRABBITMQ_PORT=%s\n' "$RABBITMQ_PORT" >> "$ce"
+    printf '  RabbitMQ   amqp 127.0.0.1:%s   ui http://localhost:%s\n' \
+      "$RABBITMQ_PORT" "$RABBITMQ_UI_PORT" >> "$ct"
+  ;; esac
+  case "$svcs" in *" meilisearch "*)
+    local mkey; mkey="$(config_get MEILI_MASTER_KEY harbor-local-meili-master)"
+    printf 'MEILISEARCH_HOST=http://127.0.0.1:%s\nMEILISEARCH_KEY=%s\n' "$MEILI_PORT" "$mkey" >> "$ce"
+    printf '  Meilisearch http://127.0.0.1:%s   key: %s\n' "$MEILI_PORT" "$mkey" >> "$ct"
+  ;; esac
+  case "$svcs" in *" elasticsearch "*)
+    printf 'ELASTICSEARCH_HOST=127.0.0.1\nELASTICSEARCH_PORT=%s\n' "$ELASTIC_PORT" >> "$ce"
+    printf '  Elasticsearch http://127.0.0.1:%s   (security disabled for local dev)\n' "$ELASTIC_PORT" >> "$ct"
+  ;; esac
 }
 
 init_write_gitignore() {
@@ -343,11 +465,15 @@ init_write_agent_skills() {
 cmd_init() {
   require_name "${1-}"; local name="$1"; shift || true
   local framework="" phpopt="" msopt="" existing=0
+  local svcopt="" svcopt_set=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --php) phpopt="${2-}"; shift 2 ;;
       --multistore) msopt="${2-}"; shift 2 ;;
       --existing) existing=1; shift ;;
+      --services)
+        [ "$#" -ge 2 ] || usage_die init "--services needs a value (use --services \"\" for none)"
+        svcopt="$2"; svcopt_set=1; shift 2 ;;
       --*) die "unknown option: $1" ;;
       *) framework="$1"; shift ;;
     esac
@@ -374,22 +500,41 @@ cmd_init() {
 
   # manifest — services written as an explicit { svc: "image", ... } map so every
   # version is visible and editable in place
-  local ident svcnames; ident="$(db_ident "$name")"
-  svcnames="$(_init_services "$framework" | tr ',' ' ')"
+  local ident; ident="$(db_ident "$name")"
+  local svcnames
+  if [ "$svcopt_set" = 1 ]; then
+    svcnames="$(services_parse_arg "$svcopt")"
+  else
+    svcnames="$(services_select "$name" "$framework")"
+  fi
   # shellcheck disable=SC2086  # word-split the service names
   FRAMEWORK="$framework" PHP_VER="$phpver" \
   SERVICES_MAP="$(_services_map_body "$name" $svcnames)" \
-  DB_NAME="$ident" DB_USER="$ident" DB_PASS="$ident" \
+  DB_BLOCK="$(case " $svcnames " in
+                (*" mysql "*) printf 'db: { name: %s, user: %s, password: %s }' "$ident" "$ident" "$ident" ;;
+              esac)" \
   render "$HARBOR_TEMPLATES/manifest/harbor.yml.tmpl" "$(manifest_path "$name")"
   [ -n "$msopt" ] && warn "multistore '$msopt' requested — add 'multistore: { mode: $msopt, stores: {} }' to the manifest"
 
-  init_render_compose "$name" "$framework"
+  # Propagate failure explicitly — bin/harbor's `set -e` is suppressed for any
+  # caller that invokes cmd_init under an `if`/`&&`/`||` (CLAUDE.md §3), and
+  # `harbor new` already calls the wire step that way. Without this, a failed
+  # render would fall through to the writes below and report a bad init as ok.
+  init_render_compose "$name" "$framework" || return 1
   init_write_connection "$name"
   init_write_gitignore "$name"
   init_write_scripts "$name"
   init_write_import_samples "$name"
   init_write_agent_skills "$name"
 
-  ok "init $name ($framework, php $phpver) — db port $(ports_load "$name"; echo "$DB_PORT")"
+  # Only mention the db port when mysql is actually part of the stack — a
+  # DB-less project (`--services none`/"") has no DB_PORT worth reporting, and
+  # printing one anyway ("— db port 20020") implies a database that was never
+  # provisioned.
+  local dbmsg=""
+  case " $svcnames " in
+    (*" mysql "*) dbmsg=" — db port $(ports_load "$name"; echo "$DB_PORT")" ;;
+  esac
+  ok "init $name ($framework, php $phpver)$dbmsg"
   step "next: harbor up $name  &&  harbor link $name"
 }

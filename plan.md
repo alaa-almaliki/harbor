@@ -227,7 +227,11 @@ harbor php sync                        # re-create pools after brew install/unin
 harbor xdebug on|off|status
 harbor new <name> <framework>         # scaffold + init + up + wire + install + link + open
 harbor init <name> [framework] [--existing] [--multistore domain|path] [--php <ver>]
+                                [--services "a,b"]   # "" or "none" = no containers; omit to be asked
 harbor render <name>                  # regenerate compose+connection from the manifest (services: versions)
+harbor services <name>                 # pick a project's services interactively (current preselected)
+harbor services list|add|rm <name> [svc...]   # inspect/change services after init; add/rm are no-ops
+                                      #   when already/not present; re-renders (no auto `up`); confirm-gated shrink
 harbor link <name>                    # nginx vhost <name>.test (+ *.<name>.test
                                       #   automatically for domain-multistore Magento)
 harbor unlink <name>
@@ -377,6 +381,20 @@ rendered into Harbor's `etc/`; nothing is written into brew dirs):
   `mysql` is the primary-DB slot; each entry's value is its image, so a
   MySQL-compatible engine (MariaDB) is a `mysql: "mariadb:11.4"` swap, with an
   engine-aware server command (`_db_command`).
+- **Services are optional, including none at all.** `harbor init` asks which
+  services a project needs — an interactive picker (numbered, alphabetical —
+  same order the catalog is globbed from `templates/compose/services/*.yml.tmpl`)
+  when stdin is a terminal and `HARBOR_YES` is unset, or `--services "a,b"`
+  directly; `--services ""`/`--services none` (or `none` at the prompt) means no
+  containers at all. A non-interactive caller (script, CI, `HARBOR_YES=1`) gets
+  the framework default silently, so existing scripted `init` calls are
+  unaffected. The manifest `services:` key is authoritative whenever PRESENT —
+  including an explicit empty map — and only an ABSENT key falls back to the
+  framework default, so pre-existing manifests keep working. A service-less
+  project has no `docker-compose.yml`; `up`/`down`/`restart`/`logs` are no-ops
+  for it rather than errors, and `harbor db`/`mysql`/Magento `install`/`wire`
+  refuse with a fix hint instead of crashing or misreporting "stack not
+  running".
 - **Invariant:** containers mount only their own data volumes — **never project
   source**. PHP on the host reads the code natively (fast FS, native Xdebug).
 - **Invariant:** all ports/UIs publish to `127.0.0.1` only (never `0.0.0.0`) — no
@@ -395,6 +413,23 @@ rendered into Harbor's `etc/`; nothing is written into brew dirs):
 - **Data vs cache:** `down` flushes Redis (cache) but **keeps MySQL volumes**
   (data) — only `destroy` / `down -v` drops the database. Stated loudly so an empty
   Redis after a restart is never mistaken for data loss.
+- **`harbor render <name>` confirms before a manifest edit shrinks `services:`**
+  if the dropped service's data volume still exists — the volume is kept either
+  way (only `destroy` drops volumes); the prompt just makes sure you know before
+  the container stops and the volume detaches. Growing the list, or dropping a
+  service that was never `up`ed, never prompts. `HARBOR_YES=1` is the only
+  bypass (no `--yes` flag).
+- **`harbor services <name> | list|add|rm <name> [svc...]`** changes a
+  project's stack after `init` — a thin layer over the same catalog/validation/
+  picker/render path: bare `<name>` opens the interactive picker with the
+  project's CURRENT services preselected (not the framework default — pressing
+  Enter must mean "keep what I have"); `add`/`rm` a service already/not present
+  is a no-op, not an error. It writes the manifest then calls `harbor render`,
+  which owns the one shrink-confirm gate (not duplicated here) — and if that
+  gate is declined, the manifest write is rolled back so a decline is
+  byte-for-byte a no-op, not half-applied. Re-renders but deliberately does
+  **not** run `harbor up`: rendering is idempotent, restarting containers is
+  not, and a user may be changing several services in a row.
 - **`harbor destroy <name>`**: unlink vhost, `down -v` (drop volumes), flush Redis
   indices, release the port/redis-db allocation, drop the SAN; `--files` also
   deletes the project directory. Confirm-gated.

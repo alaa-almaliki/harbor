@@ -8,6 +8,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Optional backing services — a project can now run with no database at
+  all.** `harbor init` asks which backing services a project needs: an
+  interactive picker (numbered, alphabetical — the catalog derived from
+  `templates/compose/services/*.yml.tmpl`: `elasticsearch`, `meilisearch`,
+  `mysql`, `opensearch`, `rabbitmq`) when stdin is a terminal and `HARBOR_YES`
+  is unset, or `--services "mysql,opensearch"` directly. `--services ""` /
+  `--services none` (or typing `none` at the prompt) selects no containers —
+  the manifest gets an explicit `services: {}` and the project has no
+  `docker-compose.yml`. A non-interactive caller (script, CI, `HARBOR_YES=1`)
+  silently gets the framework default, so existing scripted `harbor init`
+  calls behave exactly as before. The manifest's `services:` key is
+  authoritative whenever present — including an explicit empty map — and only
+  an absent key falls back to the framework default, so manifests written
+  before this feature keep working unchanged.
+- **`harbor services` — change a project's backing services after `init`.**
+  `harbor services <name>` opens the same interactive picker as `init`, with
+  the project's current services preselected (pressing Enter keeps what's
+  there, not the framework default). `harbor services list <name>` shows
+  what's on/off with resolved images; `harbor services add|rm <name>
+  <svc>...` changes the list directly — adding a service already present, or
+  removing one that isn't, is a no-op, not an error. Writes the manifest and
+  re-renders, but deliberately does **not** run `harbor up` (rendering is
+  idempotent, restarting containers isn't). `HARBOR_YES=1` is the only
+  bypass — there is no `--yes` flag.
+- **`harbor render` now confirms before a manifest edit drops a service whose
+  data volume still exists** — shrinking `services:` (by hand, or via
+  `harbor services rm`, which routes through the same gate) used to silently
+  stop the container and detach its volume. Removing a service does **not**
+  destroy data: the volume stays (scoped to `name: harbor-<name>`) and
+  re-adding the service reattaches it intact — only `harbor destroy` drops
+  volumes, and the prompt says so plainly. Only prompts when the dropped
+  service's Docker volume actually exists — growing the list, or shrinking a
+  service that was never `up`ed, never prompts; if Docker is unreachable the
+  check assumes the data is at risk and prompts anyway. Declining leaves the
+  manifest, compose file, and running containers untouched. `HARBOR_YES=1` is
+  the only bypass, same as every other destructive-op confirm.
+- **Magento now names every missing required service in one shot**, instead
+  of crashing or reporting only the first — `harbor install`/`harbor render`
+  on a Magento project missing `mysql` or `opensearch` (its required services;
+  RabbitMQ is optional) says exactly which ones, with a `magento needs:
+  <missing services>` fix hint.
+
+### Changed
+- **Lifecycle commands no-op instead of erroring on a service-less project.**
+  `harbor up`/`down`/`restart <name>`/`logs <name>` print "nothing to
+  start/stop/restart" (or "no container logs") and exit 0 for a project with
+  no services, rather than dying on a missing compose file — a bulk/scripted
+  run over every project shouldn't fail just because one of them has no
+  database.
+- **`harbor init`'s manifest and connection files are now conditional on the
+  resolved service list**, not written unconditionally for every project. The
+  manifest `db:` block is only emitted when `mysql` is selected;
+  `connection.env`/`connection.txt` only get `DB_*` when `mysql` is selected,
+  and `OPENSEARCH_*`/`RABBITMQ_*`/`MEILISEARCH_*`/`ELASTICSEARCH_*` only when
+  their service is selected — Redis and Mailpit stay unconditional since
+  they're shared, always-on Harbor services.
+- **`harbor doctor` no longer requires the `pdo_mysql` PHP extension** for a
+  project with no database service (an explicit `extensions:` entry still
+  wins).
+- **`harbor ps` shows a distinct `db:-` marker** for a project with no
+  `mysql` service, instead of a stale or blank port.
+
+### Fixed
+- **`connection.env`/`connection.txt` no longer advertise services a project
+  never runs.** Both files were written unconditionally for every project
+  regardless of which services were actually configured — a plain Laravel
+  project (mysql only) got live-looking `OPENSEARCH_HOST`/`RABBITMQ_HOST`/
+  `MEILISEARCH_HOST`/`ELASTICSEARCH_HOST` entries for containers that were
+  never part of its stack. Both files now only include entries for services
+  the project actually has.
+- **`harbor mysql`/`harbor db backup`/etc. now refuse up front with a fix
+  hint, instead of crashing or misreporting "stack not running,"** when a
+  project has no database configured. `harbor wire` skips the `DB_*` lines
+  for Laravel/CodeIgniter/Symfony/plain projects (still wires Redis + mail)
+  and refuses early, with a fix hint, for a DB-less Magento project (which
+  requires a database).
+- **`harbor destroy` no longer leaks a project's Docker volume when the
+  project has no services.** `destroy` now also removes any volume named
+  `harbor-<name>_*` directly, whether or not a compose file is present; the
+  match is anchored so a project whose name is a prefix of another's (`shop`
+  vs `shop2`) can never catch the wrong one.
+- **`harbor ps` no longer conflates "no database service" with "has `mysql`
+  but a missing/broken port allocation."** `db:-` used to mean both — the
+  same marker for two very different states. `ps` now checks whether the
+  project has a `mysql` service before loading its ports, rendering a
+  distinct `db:?` for "has `mysql` but no allocated ports," separate from
+  `db:-` for "no `mysql` service."
+- **A hand-edited bare `services:` (the obvious YAML way to write "none") no
+  longer gets a project silently stuck on the framework default.** Presence
+  of the `services:` key is now tested with a real presence check
+  (`manifest_key_present`, `lib/manifest.sh`), not `manifest_has` (a VALUE
+  test that reads an empty value the same as an absent key) — before this,
+  a bare `services:` line resolved back to e.g. `mysql`, and `harbor services
+  add <name> mysql` then reported "no change" with no way to actually add it.
+  `manifest_has` itself is unchanged (still used elsewhere for its existing
+  value semantics); the new helper is additive.
+- **`harbor services rm`/`add` declining its confirm gate now restores the
+  manifest's previous `services:` line byte-for-byte, comment included** —
+  it used to rebuild the line from the resolved value (`manifest_get`, which
+  strips trailing comments) and could also mis-detect a bare `services:` as
+  "key was absent," restoring by deleting the line instead of putting the
+  bare line back. Restoration now snapshots and replays the raw line
+  (`manifest_raw_line`/`manifest_set_raw_line`).
+- **A partial `harbor services rm` (the project still has other services
+  left) now actually stops the dropped service's container**, instead of
+  only rewriting `docker-compose.yml` and leaving it running until an
+  unrelated `harbor down` — `docker compose up -d` merely warns about
+  "orphans" and Harbor never passed `--remove-orphans`. `harbor render`
+  now stops (and removes, without `-v`) just the dropped service(s) before
+  rewriting the compose file; the rest of the stack, and all volumes, are
+  left untouched.
+- **`harbor destroy` no longer reports success while leaking every volume
+  when Docker is unreachable.** Its volume sweep (`docker volume ls -q |
+  grep ... || true`) used to turn a failed listing into the same empty
+  result as "no matching volumes," so `destroy` would unlink, release ports,
+  and print "destroyed" while the project's volumes stayed on disk with no
+  Harbor command left able to reach them. `destroy` now distinguishes the
+  two, still unlinks/releases ports (those don't need Docker), and reports
+  the volume sweep as failed with a fix hint instead of claiming full
+  success.
+- **`harbor init --services none` (or any DB-less selection) no longer
+  reports a `db port` in its summary line** — the port belongs to a `mysql`
+  service that was never provisioned.
+
+### Added
 - **`harbor restart` with no project name restarts Harbor itself** — equivalent
   to `harbor stop && harbor start` (shared stack, php pools, dnsmasq, nginx).
   Running project stacks are left alone; `harbor restart <name>` still restarts

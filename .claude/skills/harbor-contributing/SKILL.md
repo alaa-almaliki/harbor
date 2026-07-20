@@ -36,6 +36,13 @@ the same commit.
   `project_compose`, `link_detect_framework`, `_db_load`, `cli_php_pathdir`.
 - Templates, not heredocs, for emitted config. Fail fast with a fix hint.
 - Destructive ops confirm interactively + honor `--yes` (`HARBOR_YES=1`).
+- **Empty ≠ absent ≠ "couldn't ask".** In bash all three collapse to `""`, so
+  reconstruct the distinction deliberately: test presence with a real presence
+  check (`manifest_key_present`, `[ "$#" -ge N ]`), not the emptiness of a
+  value; and when a failed probe leaves you unsure of a SAFETY-relevant state
+  (`docker info`/`volume inspect` failing, whitespace-only input), assume the
+  risky case and prompt/refuse — never skip. This class bit optional-services
+  ~6 times; see CLAUDE.md §3 for the full rule.
 
 ## Extension points
 - **New command** → dispatch case in `bin/harbor`, implement in the right `lib/*.sh`,

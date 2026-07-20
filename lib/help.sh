@@ -106,7 +106,8 @@ Harbor's own config (/etc/resolver/test, cert, CA bundle, nginx.conf), and
 optional extras (composer, nvm, xdebug per PHP version).
 
 Exits nonzero only if a REQUIRED item is missing — missing optional/config items
-report but don't fail.
+report but don't fail. A project with no `mysql` service isn't asked for
+`pdo_mysql` in its extension baseline.
 
 Examples:
   harbor doctor
@@ -222,7 +223,10 @@ shown in green. Only directories with a manifest are listed.
 
   STACK    up = its compose stack has running containers
   LINKED   yes = etc/nginx/sites/<name>.test.conf exists
-  PORTS    the project's MySQL port
+  PORTS    the project's MySQL port; `db:-` for a project with no `mysql`
+           service (intentional); `db:?` for a project WITH a `mysql` service
+           but no allocated ports file — needs attention, e.g. `harbor up
+           <name>` or `harbor render <name>` to reallocate
 
 See also: harbor status (platform services too) · harbor up | down <name>
 EOF
@@ -394,6 +398,11 @@ Chains 6 steps: init -> up -> scaffold (composer create-project) -> wire ->
 install -> link + open. Fails if the project dir exists and isn't empty (use
 `harbor init` to adopt existing code).
 
+No --services flag here — the init step underneath still prompts (interactive
+picker on a terminal) or silently takes the framework default under
+HARBOR_YES=1/non-interactive. Need a different list? Let it default, then edit
+`services:` in the manifest and `harbor render <name> && harbor up <name>`.
+
 wire and install are best-effort — only init, up and link are fatal.
 Sudo: the final link reloads nginx.
 
@@ -409,6 +418,7 @@ EOF
 harbor init — allocate ports and write the manifest (no scaffolding)
 
 Usage: harbor init <name> [framework] [--php <ver>] [--existing]
+                    [--services "a,b"]
 
   framework        Auto-DETECTED from the code if omitted (bin/magento -> magento,
                    artisan -> laravel, bin/console -> symfony, spark ->
@@ -416,6 +426,14 @@ Usage: harbor init <name> [framework] [--php <ver>] [--existing]
   --php <ver>      Pin PHP. Default: .php-version, else the global default
   --existing       Advisory only: warns if the dir has no app code yet
   --multistore <m> Accepted but only prints a hint — edit the manifest instead
+  --services "a,b"  Which backing services to run. Omit to be asked (or to get
+                    the framework default when not on a terminal, or under
+                    HARBOR_YES=1 — scripted `harbor init` calls are unaffected).
+                    --services ""  or  --services none  -> no containers at all.
+                    Catalog is derived from templates/compose/services/*.yml.tmpl
+                    and shown numbered, alphabetically, by the interactive
+                    picker — run `harbor init <name>` on a terminal to see it
+                    rather than trusting a list here that can drift.
 
 Writes projects/<name>/.harbor/harbor.yml (the source of truth), the compose
 file, connection.env, .gitignore, scripts, and the agent skill. Default services:
@@ -432,21 +450,54 @@ EOF
   ;;
 
   render) cat <<'EOF'
-harbor render — regenerate compose + connection.env from the manifest
+harbor render — regenerate compose + connection.env from the manifest  [confirms]
 
 Usage: harbor render <name>        (no flags)
 
-Run after editing the manifest's `services:` versions. Regenerating does NOT
-apply anything — follow with `harbor up <name>`.
+Run after editing the manifest's `services:` (versions, or adding/removing a
+service). Regenerating does NOT apply anything — follow with `harbor up <name>`.
 
-Safe: it doesn't touch your manifest, except to materialize a legacy list-format
-`services:` into the explicit map form. Also reseeds the project's agent skill
-(non-clobbering).
+Dropping a service whose data volume still exists confirms first. Your data is
+NOT deleted — the named volume is kept and re-adding the service reattaches it
+intact; only `harbor destroy <name>` drops volumes. Growing the list, or
+dropping a service that was never `up`ed (no volume yet), never prompts.
+HARBOR_YES=1 skips the prompt (there is no --yes flag). Declining leaves the
+manifest, compose file and containers untouched.
+
+Otherwise safe: it doesn't touch your manifest beyond that, except to
+materialize a legacy list-format `services:` into the explicit map form. Also
+reseeds the project's agent skill (non-clobbering).
 
 Example:
   harbor render shop && harbor up shop
 
-See also: harbor up · harbor init --help
+See also: harbor up · harbor init --help · harbor destroy --help
+EOF
+  ;;
+
+  services) cat <<'EOF'
+harbor services — inspect or change a project's backing services  [confirms]
+
+Usage: harbor services <name>              pick interactively (current preselected)
+       harbor services list <name>
+       harbor services add  <name> <svc>...
+       harbor services rm   <name> <svc>...
+
+Catalog: mysql · opensearch · rabbitmq · meilisearch · elasticsearch
+
+Adding a service you already have, or removing one you don't, is a no-op.
+Changes are written to the manifest and re-rendered; run `harbor up <name>`
+afterwards to apply them to running containers.
+
+Removing a service whose data volume exists CONFIRMS first. Your data is not
+deleted — the volume is kept and re-adding the service reattaches it intact.
+Only `harbor destroy <name>` drops volumes. HARBOR_YES=1 skips the prompt
+(there is no --yes flag).
+
+Example:
+  harbor services add shop opensearch && harbor up shop
+
+See also: harbor render · harbor init --help · harbor destroy
 EOF
   ;;
 
@@ -508,6 +559,11 @@ Per framework:
   magento      nothing — Magento is configured by `harbor install` (setup:install)
   plain        .harbor/connection.php
 
+A project with no `mysql` service skips the DB_* lines (still wires Redis +
+mail) — laravel/symfony/codeigniter/plain wire fine without one. A DB-less
+Magento project instead refuses up front with a fix hint (Magento requires a
+database).
+
 Use 127.0.0.1 (not localhost) and the project's allocated port — both are in the
 printed output.
 
@@ -526,6 +582,10 @@ Usage: harbor up <name>        (no flags)
 Starts the containers and waits up to 180s for healthchecks (a timeout only
 warns). Needs the Docker daemon.
 
+A project with `services: {}` (no `mysql`/etc.) has no containers at all — `up`
+is a no-op for it, not an error, since bulk/scripted runs over every project
+shouldn't fail on a DB-less one.
+
 Does NOT start the shared Redis/Mailpit — that's `harbor mail up` (or setup).
 
 See also: harbor down · harbor restart · harbor ps
@@ -542,6 +602,9 @@ a stopped project shouldn't leave stale cache behind for the next one. If you
 need the cache preserved, don't use `down`.
 
 MySQL volumes are kept. To drop volumes use `harbor destroy <name>`.
+
+No-op (not an error) for a project with `services: {}` — there's nothing to
+stop.
 
 See also: harbor up · harbor destroy --help · harbor stop (all of Harbor)
 EOF
@@ -561,7 +624,8 @@ that path asks for sudo. Running project stacks are left alone — they sit on
 
 With a name it restarts only that project's containers. Unlike `down`, it does
 NOT flush Redis. It does not re-render compose either — after editing the
-manifest run `harbor render <name> && harbor up <name>`.
+manifest run `harbor render <name> && harbor up <name>`. No-op (not an error)
+for a project with `services: {}` — there's nothing to restart.
 
 See also: harbor stop · harbor start · harbor up · harbor down · harbor render
 EOF
@@ -604,6 +668,9 @@ Usage: harbor logs <name> [service] [-f]
 Platform logs follow on ANY extra argument, not just -f — `harbor logs nginx x`
 follows too.
 
+`harbor logs <name>` is a no-op (not an error) for a project with `services: {}`
+— there are no containers to log.
+
 `clear` truncates in place rather than deleting, so running daemons keep their
 file handles. No sudo needed: nginx's logs are deliberately user-owned.
 
@@ -642,6 +709,10 @@ Usage: harbor install <name>        (no flags; <name> is required)
 
 Caution: this runs migrations with --force and no prompt — it can change or drop
 data in the project's database. Stack must be up (Magento checks; others don't).
+
+Magento needs `mysql` + `opensearch` + `rabbitmq` — missing any of them names
+ALL the missing ones (`magento needs: opensearch rabbitmq`) with a fix hint,
+rather than dying partway through on an unbound variable.
 
 See also: harbor seed --help · harbor wire --help · harbor up
 EOF
@@ -914,6 +985,11 @@ import flags (also accepted by `pull`):
   --no-rules         Skip .harbor/import-rules
   --reconfigure      Magento: fix base URLs + search engine after import
 
+Requires a `mysql` service. A project with none (`services: {}` or no `mysql`
+key) gets `no database service for '<name>'` and a fix hint (add it to
+`services:`, then `harbor render && harbor up`) — not a "stack not running"
+error.
+
 Notes: `import` overwrites the target DB with no prompt — the auto-backup
 (backups/db/<name>/pre-import-<ts>.sql.gz) is the safety net. A dump that ends
 mid-statement (truncated download/export) is refused with a hint — every table
@@ -1029,7 +1105,8 @@ database already selected — no host mysql client needed. Extra args go to the
 mysql client.
 
 Notes: connects as root, not the app user. There's no [db] argument — `USE
-other_db;` to switch. The stack must be up.
+other_db;` to switch. The stack must be up. Requires a `mysql` service — a
+project with none gets a fix hint instead of a misleading "stack not running".
 
 Examples:
   harbor mysql shop

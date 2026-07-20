@@ -28,6 +28,30 @@ shared_down() {
 # ── per-project stacks ──────────────────────────────────────────────────────
 project_compose_file() { printf '%s' "$(project_harbor_dir "$1")/docker-compose.yml"; }
 
+# does this project have a container stack at all? A project with `services: {}`
+# has no compose file — that is a valid state, not an error.
+project_has_stack() { [ -f "$(project_compose_file "$1")" ]; }
+
+# project_compose_services <compose-file> — the service names (top-level keys
+# under `services:`) actually present in a GENERATED compose file,
+# space-separated; empty if the file doesn't exist. Only the keys under
+# `services:` — a generated compose also has a top-level `volumes:` block
+# whose entries sit at the SAME two-space indent, so a bare /^  [a-z]+:$/
+# would pick up e.g. `dbdata` too and misreport it as a service (verified
+# against a real generated file: it matched `mysql` AND `dbdata`). Shared by
+# cmd_render (to detect a shrink for the confirm gate) and
+# init_render_compose (to know which container(s) to stop on a partial
+# shrink) so the two never drift on what "the old service list" means.
+project_compose_services() {
+  local f="$1"
+  [ -f "$f" ] || { printf ''; return 0; }
+  awk '
+    /^services:/ { in_s = 1; next }
+    /^[a-z]/     { in_s = 0 }
+    in_s && /^  [a-z][a-z0-9_-]*:$/ { gsub(/[ :]/, ""); print }
+  ' "$f" | tr '\n' ' ' | sed 's/ $//'
+}
+
 # _compose_assemble <svc...> — print a docker-compose.yml on stdout by concatenating
 # per-service fragments (templates/compose/services/<svc>.yml.tmpl) under one
 # `services:` header, then their volume decls under one `volumes:` footer. Render
@@ -105,6 +129,14 @@ redis_flush_project() {
 
 cmd_up() {
   require_name "${1-}"; local name="$1"
+  # Lifecycle commands run in bulk across every project degrade to a no-op;
+  # commands that are a direct request for a specific missing thing refuse
+  # (see `harbor db`/`harbor mysql`, Task 8). `up` is bulk-run material (e.g.
+  # from a script over every project), so a service-less project is a no-op,
+  # not a failure.
+  if ! project_has_stack "$name"; then
+    step "nothing to start for '$name' (no services)"; return 0
+  fi
   require_docker
   log "starting stack: $name"
   project_compose "$name" up -d
@@ -114,6 +146,11 @@ cmd_up() {
 
 cmd_down() {
   require_name "${1-}"; local name="$1"
+  # See cmd_up: bulk lifecycle commands no-op on a service-less project rather
+  # than refusing.
+  if ! project_has_stack "$name"; then
+    step "nothing to stop for '$name' (no services)"; return 0
+  fi
   log "stopping stack: $name (flushing its Redis indices)"
   redis_flush_project "$name"
   project_compose "$name" down
@@ -125,9 +162,53 @@ cmd_down() {
 cmd_restart() {
   if [ -z "${1-}" ]; then platform_restart; return; fi
   local name="$1"
+  # See cmd_up: bulk lifecycle commands no-op on a service-less project rather
+  # than refusing.
+  if ! project_has_stack "$name"; then
+    step "nothing to restart for '$name' (no services)"; return 0
+  fi
   project_compose "$name" restart
   _wait_ready "$name" || true
   ok "restarted: $name"
+}
+
+# Drop any Docker volumes left for this project, whether or not a compose file
+# still exists. `render` deletes the compose file once `services:` goes empty
+# (stack stopped first, volumes deliberately kept — dropping data is destroy's
+# job, never render's), so a service-less project has no compose file for
+# `down -v` to act on; this is the fallback that still reaches its volumes.
+# Volumes are named harbor-<name>_<vol> by the compose `name:` header
+# (templates/compose/header.yml.tmpl). Project names are
+# `[a-z0-9][a-z0-9-]*` (valid_name) — no underscores — so the first `_` after
+# "harbor-<name>" is always the compose-inserted separator, never part of
+# another project's name: anchoring on "^harbor-<name>_" cannot match
+# "harbor-<name>2_...". Safe to call even when nothing matches (idempotent).
+#
+# Returns 1 (WITHOUT removing anything) when `docker volume ls` itself fails,
+# rather than treating a failed listing the same as an empty one. Those are
+# not the same thing: `docker volume ls -q 2>/dev/null | grep ... || true`
+# turns "the daemon is unreachable" into the empty string, which reads
+# identically to "genuinely no matching volumes" — the caller (cmd_destroy)
+# would then confirm, skip `down -v`, find "no" volumes, unlink, release
+# ports, and report success while `harbor-<name>_dbdata` stays on disk with no
+# Harbor command left able to reach it (the compose file and manifest are
+# already gone by then). The one command whose entire job is reversibility
+# must not claim to have removed things it could not even enumerate.
+_destroy_project_volumes() {
+  local name="$1" out vols v
+  if ! out="$(docker volume ls -q 2>&1)"; then
+    warn "could not list docker volumes for '$name' ($out)"
+    return 1
+  fi
+  vols="$(printf '%s\n' "$out" | grep -E "^harbor-${name}_" || true)"
+  if [ -n "$vols" ]; then
+    # one `docker volume rm` for all of them — volume names never contain
+    # whitespace, so the word-split is safe and saves a daemon round-trip per
+    # volume (a Magento stack has three).
+    # shellcheck disable=SC2086  # deliberate word-split of the volume list
+    docker volume rm $vols >/dev/null 2>&1 || true
+  fi
+  return 0
 }
 
 cmd_destroy() {
@@ -135,10 +216,22 @@ cmd_destroy() {
   local files=0; [ "${1-}" = "--files" ] && files=1
   confirm "Destroy '$name' (drop containers + volumes + ports + vhost)?" || { warn "aborted"; return 1; }
   redis_flush_project "$name"
-  [ -f "$(project_compose_file "$name")" ] && project_compose "$name" down -v >/dev/null 2>&1 || true
+  if project_has_stack "$name"; then
+    project_compose "$name" down -v >/dev/null 2>&1 || true
+  fi
+  # Unlink/ports-release don't touch Docker, so they still run (and are
+  # reported) even when the volume sweep couldn't — a partial destroy that
+  # says so honestly beats one that silently claims full success (see
+  # _destroy_project_volumes above).
+  local vols_ok=1
+  _destroy_project_volumes "$name" || vols_ok=0
   cmd_unlink "$name" >/dev/null 2>&1 || true
   ports_release "$name"
   if [ "$files" = 1 ]; then rm -rf "$(project_dir "$name")"; warn "deleted $(project_dir "$name")"; fi
+  if [ "$vols_ok" = 0 ]; then
+    warn "destroy: $name unlinked and ports released, but its volumes could NOT be confirmed removed (docker unreachable?) — check: docker volume ls | grep harbor-$name ; re-run 'harbor destroy $name' once docker is reachable"
+    return 1
+  fi
   ok "destroyed: $name"
 }
 
@@ -175,6 +268,11 @@ cmd_logs() {
     php)     shift; tail -n 200 ${1:+-F} "$HARBOR_LOG_DIR"/php-*.log 2>/dev/null || warn "no php logs yet" ;;
     dnsmasq) shift; tail -n 200 ${1:+-F} "$HARBOR_LOG_DIR"/dnsmasq.log 2>/dev/null || warn "no dnsmasq log yet" ;;
     *) require_name "${1-}"; local name="$1"; shift || true
+       # See cmd_up: bulk lifecycle commands no-op on a service-less project
+       # rather than refusing.
+       if ! project_has_stack "$name"; then
+         step "no container logs for '$name' (no services)"; return 0
+       fi
        project_compose "$name" logs --tail=200 "$@" ;;
   esac
 }

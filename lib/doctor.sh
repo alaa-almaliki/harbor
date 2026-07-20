@@ -89,6 +89,10 @@ _d_project() {
     laravel|symfony) baseline="ctype curl dom mbstring openssl pdo_mysql tokenizer xml" ;;
     *) baseline="curl mbstring pdo_mysql" ;;
   esac
+  # a project with no database has no business being told it needs pdo_mysql
+  if ! project_has_service "$name" mysql; then
+    baseline="$(printf '%s' "$baseline" | sed 's/pdo_mysql//; s/  */ /g; s/^ //; s/ $//')"
+  fi
   want="$baseline $(manifest_list "$mf" extensions)"
   for e in $want; do
     case " $loaded " in

@@ -164,6 +164,131 @@ EOF
 
 manifest_has() { [ -n "$(manifest_get "$1" "$2" "")" ]; }
 
+# manifest_key_present <file> <key> — is <key> present as a TOP-LEVEL line,
+# regardless of its value? A true PRESENCE test, unlike manifest_has (a VALUE
+# test: non-empty resolved value). A bare `services:` (nothing after the
+# colon) is the natural hand-edit for "no services" — manifest_has reads it
+# the same as an ABSENT key and a caller keying off it falls back to a
+# framework default instead of "none", with no way to express "none" through
+# the manifest at all. manifest_has is left alone (see manifest_set_line's
+# callers) since changing its long-standing value semantics globally is
+# riskier than adding this distinct, narrowly-scoped helper.
+#
+# Same top-level literal-anchored match as manifest_set_line/manifest_del_line
+# (awk `index($0, k) == 1`), reused rather than a fresh regex for the same
+# BRE/ERE-mismatch reason documented on manifest_set_line below.
+manifest_key_present() {
+  local file="$1" key="$2"
+  [ -f "$file" ] || return 1
+  MF_K="$key:" awk 'BEGIN { k = ENVIRON["MF_K"] }
+      index($0, k) == 1 { found = 1 } END { exit !found }' "$file"
+}
+
+# manifest_raw_line <file> <key> — the exact TOP-LEVEL line for <key>,
+# including any trailing comment, or empty if absent. Companion to
+# manifest_key_present: this returns the verbatim bytes so a caller can
+# snapshot a key and restore it later without reconstructing "key: value" —
+# manifest_get can't be used for that, since it runs _mf_decomment and would
+# silently drop a trailing "# comment" on restore.
+manifest_raw_line() {
+  local file="$1" key="$2"
+  [ -f "$file" ] || return 0
+  MF_K="$key:" awk 'BEGIN { k = ENVIRON["MF_K"] }
+      index($0, k) == 1 { print; exit }' "$file"
+}
+
+# _mf_replace_or_append_line <file> <key> <line> — internal: replace a
+# TOP-LEVEL key's line with the EXACT text <line>, appending it if the key is
+# absent. Shared by manifest_set_line (which builds "<key>: <value>") and
+# manifest_set_raw_line (an arbitrary verbatim line, e.g. one captured earlier
+# by manifest_raw_line, comment and all). Every other byte of the file is
+# preserved — the manifest is hand-editable and must survive a machine write.
+#
+# Matching is a LITERAL prefix test (awk `index($0, k) == 1`), not a regex —
+# no escaping needed, and no dialect to get wrong. This used to build a
+# regex-escaped key with sed and match it with `grep -q "^$kesc:"` (BRE) to
+# decide replace-vs-append, then `awk '$0 ~ k'` (ERE) to do the replace. Those
+# two dialects disagree on `+ ? | ( ) { }` — literal in BRE, metachars in ERE
+# — so a key like "php+version" would take the replace branch (grep matches)
+# but awk would never rewrite the line (ERE doesn't), silently dropping the
+# write. `index()` does plain substring search regardless of key content, so
+# that whole class of bug is gone rather than patched. `index($0, k) == 1`
+# anchors to column 0 (awk `index` is 1-based), which is what makes this a
+# TOP-LEVEL key match — a key nested inside a flow map never starts its line.
+#
+# Key/line are passed via ENVIRON, not `awk -v`: `-v name=value` runs `value`
+# through awk's string-literal escape processing (`\b`, `\t`, `\\`, …), so a
+# key containing a literal backslash would come out mangled. Environment
+# variables are handed to awk as raw bytes with no such processing.
+_mf_replace_or_append_line() {
+  local file="$1" key="$2" line="$3" tmp
+  tmp="$file.tmp.$$"
+  if manifest_key_present "$file" "$key"; then
+    MF_K="$key:" MF_LINE="$line" awk '
+      BEGIN { k = ENVIRON["MF_K"]; line = ENVIRON["MF_LINE"] }
+      index($0, k) == 1 { print line; next }
+      { print }
+    ' "$file" > "$tmp" && mv "$tmp" "$file"
+  else
+    if [ -s "$file" ] && [ -n "$(tail -c1 "$file")" ]; then printf '\n' >> "$file"; fi
+    printf '%s\n' "$line" >> "$file"
+  fi
+}
+
+# manifest_set_line <file> <key> <value> — set a TOP-LEVEL key's line to
+# "<key>: <value>", replacing it in place or appending if absent. One line is
+# enough because CLAUDE.md requires flow style for nesting, so a value like
+# `services: { … }` never spans lines. See _mf_replace_or_append_line for the
+# matching rationale.
+manifest_set_line() {
+  local file="$1" key="$2" value="$3"
+  _mf_replace_or_append_line "$file" "$key" "$key: $value"
+}
+
+# manifest_set_raw_line <file> <key> <rawline> — like manifest_set_line, but
+# writes <rawline> VERBATIM instead of building "<key>: <value>" — pairs with
+# manifest_raw_line to restore a snapshotted line (including a trailing
+# comment) byte-for-byte, rather than losing the comment through
+# manifest_get's decommenting on the way to reconstructing the line.
+manifest_set_raw_line() {
+  local file="$1" key="$2" rawline="$3"
+  _mf_replace_or_append_line "$file" "$key" "$rawline"
+}
+
+# manifest_del_line <file> <key> — remove a TOP-LEVEL key's line entirely
+# (as opposed to manifest_set_line, which would leave a bare "<key>:" behind).
+# A safe no-op when the key is absent. Every other byte is preserved.
+#
+# Needed to make a declined write a true no-op: if a key was absent before a
+# manifest_set_line, restoring with manifest_set_line would leave a bare
+# "<key>:" line — present-but-empty is a different state than absent even
+# though manifest_get reads both the same way (manifest_has is what tells
+# them apart). Same `index($0, k) == 1` top-level-anchored literal match as
+# manifest_set_line, for the same reason (see its comment) — reused here
+# rather than a regex so this can't independently regress into the BRE/ERE
+# mismatch that once silently dropped a write.
+manifest_del_line() {
+  local file="$1" key="$2" tmp
+  [ -f "$file" ] || return 0
+  tmp="$file.tmp.$$"
+  MF_K="$key:" awk '
+    BEGIN { k = ENVIRON["MF_K"] }
+    index($0, k) == 1 { next }
+    { print }
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
+# manifest_restore_line <file> <key> <verbatim-line> <had_it: 0|1> — put a key's
+# line back to a snapshotted state. If the key existed, rewrite it verbatim
+# (comment and all); if it did NOT, delete the line — a bare `services:` is a
+# different file from an absent key, and only deletion is byte-for-byte. Pairs
+# with manifest_raw_line + manifest_key_present for capture. Callers use this to
+# undo a write on a failed operation (see cmd_services' restore).
+manifest_restore_line() {
+  if [ "$4" = 1 ]; then manifest_set_raw_line "$1" "$2" "$3"
+  else manifest_del_line "$1" "$2"; fi
+}
+
 manifest_path() { printf '%s' "$(project_harbor_dir "$1")/harbor.yml"; }
 
 # setting_get <project> <manifest.path> <CONFIG_KEY> <builtin-default>

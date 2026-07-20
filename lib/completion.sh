@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # completion.sh — emit bash/zsh completion (commands + project names).
 
-_HARBOR_CMDS="doctor setup stop start teardown update php xdebug init render link unlink wire up down restart destroy logs run composer artisan console spark magento node npm tool tools db install seed store media new open status ps list mysql redis shell secure mail completion test version help"
+_HARBOR_CMDS="doctor setup stop start teardown update php xdebug init render services link unlink wire up down restart destroy logs run composer artisan console spark magento node npm tool tools db install seed store media new open status ps list mysql redis shell secure mail completion test version help"
 
 cmd_completion() {
   case "${1-}" in
@@ -30,6 +30,7 @@ _harbor() {
     db) COMPREPLY=(\$(compgen -W "create drop backup import pull sandbox" -- "\$cur")); return ;;
     sandbox) COMPREPLY=(\$(compgen -W "create drop list backup restore console up down destroy status" -- "\$cur")); return ;;
     store) COMPREPLY=(\$(compgen -W "add list rm" -- "\$cur")); return ;;
+    services) COMPREPLY=(\$(compgen -W "list add rm \$(ls \"$HARBOR_PROJECTS\" 2>/dev/null)" -- "\$cur")); return ;;
     help) COMPREPLY=(\$(compgen -W "$(help_topics | tr '\n' ' ')" -- "\$cur")); return ;;
   esac
   projects=\$(ls "$HARBOR_PROJECTS" 2>/dev/null)
@@ -55,6 +56,7 @@ _harbor() {
     db) compadd create drop backup import pull sandbox; return ;;
     sandbox) compadd create drop list backup restore console up down destroy status; return ;;
     store) compadd add list rm; return ;;
+    services) compadd list add rm \$(ls "$HARBOR_PROJECTS" 2>/dev/null); return ;;
     help) compadd $(help_topics | tr '\n' ' '); return ;;
   esac
   projects=(\$(ls "$HARBOR_PROJECTS" 2>/dev/null))

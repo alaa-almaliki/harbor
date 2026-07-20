@@ -104,6 +104,61 @@ This is the project's defining constraint. Concretely:
   `KEY=VALUE` files; serialize with the mkdir-based `harbor_with_lock`. Manifest
   **nesting must use flow style** (`{…}`/`[…]`) — the parser doesn't do block
   sequences/maps.
+- **A `case` inside `$(...)` needs a leading `(` on every pattern** —
+  `*" mysql "*)` inside a command substitution is a hard syntax error on this
+  bash 3.2 (`command substitution: … syntax error near unexpected token
+  'newline'`), because its parser loses track of which `)` closes the case arm
+  vs. the substitution. Write `(*" mysql "*)` instead; identical behavior,
+  parses everywhere. Only bites `case` used as an expression (e.g.
+  `X="$(case … esac)"` to build a manifest fragment) — a `case` used as a plain
+  statement is unaffected. Test any new `$(case …)` with a real `bash
+  <path-to-script>` run, not just `shellcheck` (which doesn't catch this).
+- **A function invoked as an `if`/`&&`/`||` condition runs its whole call graph
+  with `set -e` disabled** — not just the top-level command, every callee
+  beneath it, transitively. A callee that relies on a bare failing statement to
+  trigger `set -e`'s abort (rather than an explicit `|| return 1`/`|| die`)
+  will instead silently continue and can report false success. This first bit
+  `cmd_render` (`lib/init.sh`) the first time it was called under a condition
+  (`cmd_services`' `if ! cmd_render "$name"; then …restore…; fi`):
+  `init_render_compose`'s failed-`docker-compose-down` path is a bare
+  `return 1`, and `cmd_render` called it as a bare statement — fine everywhere
+  else `cmd_render` was a plain dispatch statement, but under `if !` the abort
+  never fired, so `cmd_render` fell through to `ok "rendered …"` and returned 0
+  while the manifest and the actual compose file disagreed. **Fix: propagate
+  every callee's failure explicitly** (`callee "$@" || return 1`) in any
+  function that might ever be called as a condition — don't assume a bare
+  statement's `set -e` reliance is safe just because it works today; the
+  function's *caller* determines that, and a caller can change. This is a
+  real platform-level trap, not specific to this one bug, and will recur.
+- **An empty value is not the same as "absent," and a failed command is not
+  the same as "empty" — don't let one get read as the other.** This class of
+  bug has recurred multiple times: `manifest_has` (`[ -n "$(manifest_get …)"
+  ]`) is a VALUE test, so a hand-edited bare `services:` (present, no value —
+  the obvious way to write "none") read identically to the key being absent,
+  silently falling back to a framework default with no way to undo it
+  through the tool (fixed by adding `manifest_key_present`, a true presence
+  test, rather than changing `manifest_has`'s long-standing value semantics
+  globally). Separately, `docker volume ls -q 2>/dev/null | grep … || true`
+  turned "the daemon is unreachable" into the same empty string as
+  "genuinely no matching volumes," letting `harbor destroy` report success
+  while leaking every volume it couldn't even enumerate. When a helper
+  collapses "absent"/"empty"/"failed" into the same falsy/empty result,
+  check whether a caller needs to tell them apart — if so, give it a
+  distinct, explicitly-named test (`_key_present`, checking a command's own
+  exit status) rather than reusing a value-shaped one. Two rules of thumb the
+  optional-services work paid for (~6 instances total):
+  - **Test presence, not emptiness.** Use a real presence check —
+    `manifest_key_present`, or `[ "$#" -ge N ]` for "was the arg supplied"
+    (an arg *count*, since `[ -n "$3" ]` can't tell an empty arg from an unset
+    one — this is what made `services_select` re-add a database on a project
+    that had none). Emptiness of a value answers a different question.
+  - **When the ambiguity is a SAFETY decision, resolve the unknown toward the
+    risky side — prompt or refuse, never skip.** A `docker info`/`volume
+    inspect` that fails, whitespace-only picker input, a missing
+    `var/ports/<name>` — each returns the same empty/falsy as "all clear," and
+    reading it that way silently skips a data-loss confirm or picks the
+    destructive branch. A spurious prompt is a mild annoyance; a safety gate
+    that never fired because a probe came back empty loses someone's data.
 - Functions over inline blocks; prefix internal helpers with `_`. Keep each `lib/*.sh`
   focused on one area (see `plan.md` layout).
 - **No heavy runtime deps.** No `jq`, no `yq` as hard requirements. Persist state
@@ -233,6 +288,20 @@ and **[SemVer](https://semver.org)**.
   **MariaDB** are not a new service — they're a `services.mysql: "mariadb:…"`
   image swap; keep the compose service named `mysql` so `harbor mysql`/`db` keep
   working, and make engine-specific server flags conditional in `_db_command`.)
+- **Shrinking a project's `services:` list** → any path that can drop a service
+  (hand-edited manifest, a future `harbor services rm`) must route through
+  `cmd_render`'s gate (`services_confirm_shrink`, `lib/services.sh`), not
+  reimplement its own confirm. One gate, one place — a user is never asked
+  twice for one action. The gate only prompts when the dropped service's named
+  Docker volume actually exists (`_service_volume` + `docker volume inspect`);
+  growing the list, or shrinking one that was never `up`ed, must stay silent.
+  If Docker is unreachable, assume the data is at risk and prompt anyway —
+  never let a down daemon silently disable the gate. Frame the prompt
+  accurately: removing a service does **not** destroy data (the volume is
+  scoped to `harbor-<name>` and survives; re-adding the service reattaches it;
+  only `harbor destroy` drops it) — an alarmist prompt for a reversible action
+  trains people to stop reading prompts, which is what makes the genuinely
+  destructive ones dangerous.
 - **New CLI tool** → add to the `tools:` catalog (name→image); never a host install.
 - **Singleton (non-project) stack** → for something Harbor owns but no project owns
   (the shared mailpit+redis stack; the `db sandbox` MySQL), render a standalone

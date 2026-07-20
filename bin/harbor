@@ -55,6 +55,8 @@ fi
 . "$HARBOR_ROOT/lib/link.sh"
 # shellcheck source=lib/init.sh
 . "$HARBOR_ROOT/lib/init.sh"
+# shellcheck source=lib/services.sh
+. "$HARBOR_ROOT/lib/services.sh"
 # shellcheck source=lib/wire.sh
 . "$HARBOR_ROOT/lib/wire.sh"
 # shellcheck source=lib/tools.sh
@@ -149,6 +151,7 @@ main() {
     unlink) cmd_unlink "$@" ;;
     init) cmd_init "$@" ;;
     render) cmd_render "$@" ;;
+    services) cmd_services "$@" ;;
     up) cmd_up "$@" ;;
     down) cmd_down "$@" ;;
     restart) cmd_restart "$@" ;;

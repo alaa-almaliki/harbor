@@ -60,7 +60,9 @@ Works with **plain PHP, Magento, Laravel, Symfony, and CodeIgniter** side by sid
 | **Docker — per project** | `harbor up`/`down` on demand | MySQL 8, OpenSearch + RabbitMQ (Magento) |
 
 - Every site is reachable at `https://<name>.test` with a trusted certificate.
-- Each project gets its own MySQL container on an automatically allocated port.
+- Each project that uses a database gets its own MySQL container on an
+  automatically allocated port (a project can also run with no services at all —
+  see [Optional backing services](#optional-backing-services)).
 - Redis and Mailpit are shared; each project gets isolated Redis DB indices and a
   key prefix, and its Redis data is flushed when you bring the project down.
 
@@ -487,19 +489,62 @@ Customizations supported per project:
 
 Each project's stack is assembled from the manifest `services:` map — one compose
 **fragment** per service — where each entry is `<name>: "<image:tag>"`, so every
-version is explicit and editable in place. Bundled: `mysql`, `opensearch`,
-`elasticsearch`, `rabbitmq`, `meilisearch` (a plain project defaults to just
-`mysql`; Magento to mysql + opensearch + rabbitmq). `harbor init` writes the map
-with pinned defaults:
+version is explicit and editable in place. Bundled: `elasticsearch`,
+`meilisearch`, `mysql`, `opensearch`, `rabbitmq` (a plain project defaults to
+just `mysql`; Magento to mysql + opensearch + rabbitmq). `harbor init` writes
+the map with pinned defaults:
 
 ```yaml
 services: { mysql: "mysql:8.0", meilisearch: "getmeili/meilisearch:v1.12" }
 ```
-To **change a version**, edit the value; to **add** a service, add a line; then:
+
+**Choosing services at init.** `harbor init` asks which services a project
+needs — a numbered picker (alphabetical, matching the catalog order above) that
+appears whenever stdin is a terminal and `HARBOR_YES` is unset:
+
+```
+Services for 'shop'  (framework: laravel)
+  1) elasticsearch
+  2) meilisearch
+  3) mysql            *default
+  4) opensearch
+  5) rabbitmq
+Select [Enter = defaults · numbers e.g. "1 3" · "none"]:
+```
+
+Or skip the prompt with `--services "mysql,opensearch"` (comma- or
+space-separated). Scripted/non-interactive calls (no TTY, or `HARBOR_YES=1`)
+silently take the framework default, so existing automation is unaffected.
+
+**No database at all.** `--services ""` or `--services none` (or typing `none`
+at the prompt) means **no containers whatsoever** — the manifest gets an empty
+`services: {}`, and the project has no `docker-compose.yml`. For a service-less
+project: `harbor up`/`down`/`restart <name>`/`logs <name>` are no-ops (not
+errors); `harbor db …`/`harbor mysql` refuse with a fix hint instead of
+running; `harbor doctor <name>` doesn't require `pdo_mysql`; Magento `install`/
+`wire` refuse up front, naming every missing required service, since Magento
+requires `mysql` + `opensearch` (RabbitMQ is optional); `harbor ps` shows `db:-`. Add a database later with
+`harbor services add <name> mysql && harbor up <name>` (or edit `services:` by
+hand and run `harbor render <name> && harbor up <name>` — see below); either
+way, render will ask before dropping anything that already has data. (If a project
+DOES have a `mysql` service but its ports were never allocated — e.g. a
+missing `var/ports/<name>` file — `harbor ps` shows `db:?` instead, which
+means "needs attention", not "no database".)
+
+The manifest's `services:` key is authoritative whenever it's present —
+**including when it's an explicit empty map** — so an old project without a
+`services:` key at all still falls back to the framework default and keeps
+working unchanged.
+
+To **change a version**, edit the value; to **add or remove** a service, use
+`harbor services add|rm <name> <svc>...` (or edit `services:` by hand) then:
 ```bash
 harbor render <name>              # regenerate docker-compose.yml + connection.env
 harbor up <name>                  # apply
 ```
+`harbor services list <name>` shows what's currently on/off, and bare
+`harbor services <name>` opens the same interactive picker as `init`, with the
+project's current services preselected.
 A machine-wide default for a fresh project's pin comes from `~/.config/harbor/config`
 (`OPENSEARCH_IMAGE`, `ELASTICSEARCH_IMAGE`, `RABBITMQ_IMAGE`, `MEILISEARCH_IMAGE`,
 `MYSQL_IMAGE` — uppercased service name + `_IMAGE`).
@@ -677,12 +722,13 @@ above.
 | Command | Description |
 |---------|-------------|
 | `harbor new <name> <framework>` | Scaffold + init + up + wire + install + link + open. |
-| `harbor init <name> [framework]` | Allocate ports, write manifest (`--existing` for adopted code). |
-| `harbor render <name>` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:` versions); materializes a legacy list-format `services:` into the explicit map. |
+| `harbor init <name> [framework] [--services "a,b"]` | Allocate ports, write manifest (`--existing` for adopted code). `--services` picks the backing services (`""`/`none` = no containers); omit it to be asked interactively, or to get the framework default when not on a terminal. |
+| `harbor render <name>` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:`); materializes a legacy list-format `services:` into the explicit map. **Confirms** before dropping a service whose data volume still exists — data is kept, not deleted (`HARBOR_YES=1` skips). |
+| `harbor services <name>` \| `list\|add\|rm <name> [svc...]` | Inspect or change a project's backing services after init. Bare `<name>` opens the picker (current selection preselected); `add`/`rm` are idempotent no-ops when the service is already/not present. Writes the manifest and re-renders (does **not** run `harbor up`). **Confirms** before dropping a service whose data volume still exists (`HARBOR_YES=1` skips). |
 | `harbor link <name>` | Create the `https://<name>.test` vhost (adds the cert SAN, reloads nginx). A Magento project with `multistore.mode: domain` also gets `*.<name>.test` automatically. |
 | `harbor unlink <name>` | Remove the vhost. |
 | `harbor wire <name> [--print]` | Inject DB/Redis/mail config into the app (surgical, never clobbers). |
-| `harbor up\|down\|restart <name>` | Start/stop/restart the project's Docker stack (`down` flushes its Redis). Bare `harbor restart` restarts Harbor itself. |
+| `harbor up\|down\|restart <name>` | Start/stop/restart the project's Docker stack (`down` flushes its Redis). Bare `harbor restart` restarts Harbor itself. No-ops (not errors) for a project with no services. |
 | `harbor destroy <name> [--files]` | Remove stack + volumes, vhost, ports, Redis (confirm-gated). |
 | `harbor open <name>` | Open the site in your browser. |
 | `harbor logs <name> [service] [-f]` | Tail project/service logs. |
@@ -725,6 +771,10 @@ above.
 | `harbor db pull <name>` | Pull a remote dump straight into the import pipeline. |
 | `harbor media pull <name>` | rsync remote media/storage. |
 | `harbor redis [<name>] [args…]` | `redis-cli` on the project's **cache** index; args pass through (e.g. `harbor redis shop FLUSHDB`). `harbor down <name>` flushes all four of its indices. |
+
+> `harbor db …`/`harbor mysql` require a `mysql` service. A project with none
+> (see [Optional backing services](#optional-backing-services)) gets a fix hint,
+> not a "stack not running" error.
 
 ### Multi-store (Magento)
 

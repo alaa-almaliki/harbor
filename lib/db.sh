@@ -13,7 +13,24 @@ _db_load() {
 _db_mysql()    { local n="$1"; shift; project_compose "$n" exec -T -e MYSQL_PWD="$DB_ROOT_PASSWORD" mysql mysql -uroot "$@"; }
 _db_mysqldump(){ local n="$1"; shift; project_compose "$n" exec -T -e MYSQL_PWD="$DB_ROOT_PASSWORD" mysql mysqldump -uroot "$@"; }
 
+# A project with no mysql service isn't "not running" — it has no database at
+# all. Say which, and how to get one. (Lifecycle commands no-op for a
+# service-less project; a direct request for a missing thing refuses.)
+_db_require() {
+  local name="$1"
+  if ! project_has_service "$name" mysql; then
+    err "no database service for '$name'"
+    services_fix_hint "$name" one
+    exit 1
+  fi
+}
+
+# _db_require must run before any DB_* variable is read — connection.env has no
+# DB_* keys at all for a service-less project, so callers like cmd_mysql that
+# read $DB_ROOT_PASSWORD after _db_load rely on _db_up_check (which calls
+# _db_require first) having already exited. Keep this ordering if you touch it.
 _db_up_check() {
+  _db_require "$1"
   project_compose "$1" ps -q mysql 2>/dev/null | grep -q . || die "stack not running — run: harbor up $1"
 }
 
