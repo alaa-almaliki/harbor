@@ -11,8 +11,7 @@ magento_require_services() {
   done
   if [ -n "$missing" ]; then
     err "magento needs:$missing"
-    step "add them to $(manifest_path "$name") services:, then:"
-    step "harbor render $name && harbor up $name"
+    services_fix_hint "$name" them
     exit 1
   fi
 }

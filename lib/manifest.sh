@@ -223,8 +223,7 @@ manifest_raw_line() {
 _mf_replace_or_append_line() {
   local file="$1" key="$2" line="$3" tmp
   tmp="$file.tmp.$$"
-  if MF_K="$key:" awk 'BEGIN { k = ENVIRON["MF_K"] }
-      index($0, k) == 1 { found = 1 } END { exit !found }' "$file"; then
+  if manifest_key_present "$file" "$key"; then
     MF_K="$key:" MF_LINE="$line" awk '
       BEGIN { k = ENVIRON["MF_K"]; line = ENVIRON["MF_LINE"] }
       index($0, k) == 1 { print line; next }

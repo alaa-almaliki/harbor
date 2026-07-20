@@ -102,9 +102,10 @@ cmd_wire() {
   # hint instead of failing later, unbound, at lib/magento.sh.
   local has_db=0
   if project_has_service "$name" mysql; then has_db=1; fi
-  if [ "$has_db" = 0 ] && [ "$framework" = magento ]; then
-    die "magento requires a database — add mysql to $(manifest_path "$name") services:, then: harbor render $name"
-  fi
+  # Magento's requirement set lives in ONE place (magento_require_services);
+  # checking only mysql here used to let a Magento project missing opensearch
+  # or rabbitmq sail through `wire` while `install` correctly refused it.
+  if [ "$framework" = magento ]; then magento_require_services "$name"; fi
   case "$framework" in
     laravel) wire_laravel "$dir" "$has_db" ;;
     codeigniter) if [ -f "$dir/spark" ]; then wire_ci4 "$dir" "$has_db"; else wire_plain "$dir" "$has_db"; fi ;;

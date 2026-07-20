@@ -40,3 +40,6 @@
 *.log
 *.pid
 *.sock
+
+# SDD execution scratch (progress ledger, briefs, review packages)
+.superpowers/

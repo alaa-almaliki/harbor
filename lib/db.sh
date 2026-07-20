@@ -20,8 +20,7 @@ _db_require() {
   local name="$1"
   if ! project_has_service "$name" mysql; then
     err "no database service for '$name'"
-    step "add one to $(manifest_path "$name") services:, then:"
-    step "harbor render $name && harbor up $name"
+    services_fix_hint "$name" one
     exit 1
   fi
 }

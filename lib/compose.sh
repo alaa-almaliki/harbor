@@ -202,12 +202,11 @@ _destroy_project_volumes() {
   fi
   vols="$(printf '%s\n' "$out" | grep -E "^harbor-${name}_" || true)"
   if [ -n "$vols" ]; then
-    while IFS= read -r v; do
-      [ -n "$v" ] || continue
-      docker volume rm "$v" >/dev/null 2>&1 || true
-    done <<EOF
-$vols
-EOF
+    # one `docker volume rm` for all of them — volume names never contain
+    # whitespace, so the word-split is safe and saves a daemon round-trip per
+    # volume (a Magento stack has three).
+    # shellcheck disable=SC2086  # deliberate word-split of the volume list
+    docker volume rm $vols >/dev/null 2>&1 || true
   fi
   return 0
 }
@@ -217,7 +216,7 @@ cmd_destroy() {
   local files=0; [ "${1-}" = "--files" ] && files=1
   confirm "Destroy '$name' (drop containers + volumes + ports + vhost)?" || { warn "aborted"; return 1; }
   redis_flush_project "$name"
-  if [ -f "$(project_compose_file "$name")" ]; then
+  if project_has_stack "$name"; then
     project_compose "$name" down -v >/dev/null 2>&1 || true
   fi
   # Unlink/ports-release don't touch Docker, so they still run (and are

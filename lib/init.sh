@@ -111,7 +111,7 @@ init_render_compose() {
   ports_load "$name" || die "ports not allocated for $name"
   # shellcheck disable=SC2046  # word-split the service list into positionals
   set -- $(_project_services "$name" "$framework")
-  local cf; cf="$(project_harbor_dir "$name")/docker-compose.yml"
+  local cf; cf="$(project_compose_file "$name")"
   if [ "$#" -eq 0 ]; then
     # No services is a valid choice, not an error. Emit no compose file at all
     # rather than one with a dangling `services:` key (which docker rejects).
@@ -241,7 +241,9 @@ cmd_render() {
   init_write_connection "$name" || return 1
   init_write_agent_skills "$name" || return 1    # seed existing projects too (non-clobbering)
   init_write_import_samples "$name" || return 1  # ditto: import-rules + hook samples
-  ok "rendered $name stack: $(_project_services "$name" "$framework") — harbor up $name to apply"
+  # $newlist was already resolved above for the confirm gate — reusing it saves
+  # re-parsing the manifest just to print it.
+  ok "rendered $name stack: $newlist — harbor up $name to apply"
 }
 
 # Harbor-owned connection files (source of truth for `wire`, Phase 6)

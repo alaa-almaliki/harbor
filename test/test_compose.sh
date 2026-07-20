@@ -81,7 +81,10 @@ harbor-shop-staging_dbdata
 harbor-shopping_dbdata
 VOLS
       ;;
-    "volume rm") printf '%s\n' "$3" >> "$rm_log" ;;
+    # records EVERY volume argument, not just the first: the removal is batched
+    # into one `docker volume rm a b c`, and what matters is which volumes were
+    # removed, not how many calls it took.
+    "volume rm") shift 2; printf '%s\n' "$@" >> "$rm_log" ;;
     *) return 0 ;;
   esac
 }

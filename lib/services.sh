@@ -153,13 +153,18 @@ _service_volume() {
 # absent, fall into outcome 3. When in doubt, prompt — a spurious prompt is a
 # mild annoyance, a skipped one silently loses someone's database access.
 _services_at_risk() {
-  local name="$1" old="$2" new="$3" svc vol err atrisk="" dockerup=1
+  local name="$1" old="$2" new="$3" svc vol err dropped atrisk="" dockerup=1
+  # Nothing dropped -> nothing at risk. Answer that before touching Docker:
+  # this runs on EVERY harbor render and every services add/rm, and growth or
+  # a no-op is the common case — paying a daemon round-trip for it is waste.
+  dropped="$(services_dropped "$old" "$new")"
+  [ -n "$dropped" ] || { printf ''; return 0; }
   # If we can't reach Docker at all we can't tell whether data exists. Assume
   # it does and prompt anyway: skipping the prompt because the daemon happens
   # to be down turns a safety gate into a coin flip, and "no prompt appeared"
   # is exactly how a user concludes nothing was at stake.
   docker info >/dev/null 2>&1 || dockerup=0
-  for svc in $(services_dropped "$old" "$new"); do
+  for svc in $dropped; do
     vol="$(_service_volume "$name" "$svc")"
     [ -n "$vol" ] || continue
     if [ "$dockerup" = 0 ]; then
@@ -193,6 +198,16 @@ services_confirm_shrink() {
     step "only 'harbor destroy $name' drops it"
   done
   confirm "Remove$(for pair in $atrisk; do printf ' %s' "${pair%%:*}"; done) from '$name'?"
+}
+
+# services_fix_hint <name> <what> — the shared tail of a missing-service
+# refusal ("here's how to get one"). The err line above it stays with each
+# caller because the wording differs; this part must not drift, so it lives
+# once. Callers: _db_require (lib/db.sh), magento_require_services
+# (lib/magento.sh).
+services_fix_hint() {
+  step "add $2 to $(manifest_path "$1") services:, then:"
+  step "harbor render $1 && harbor up $1"
 }
 
 # project_has_service <name> <svc> — is <svc> in this project's resolved list?
