@@ -145,7 +145,20 @@ This is the project's defining constraint. Concretely:
   collapses "absent"/"empty"/"failed" into the same falsy/empty result,
   check whether a caller needs to tell them apart — if so, give it a
   distinct, explicitly-named test (`_key_present`, checking a command's own
-  exit status) rather than reusing a value-shaped one.
+  exit status) rather than reusing a value-shaped one. Two rules of thumb the
+  optional-services work paid for (~6 instances total):
+  - **Test presence, not emptiness.** Use a real presence check —
+    `manifest_key_present`, or `[ "$#" -ge N ]` for "was the arg supplied"
+    (an arg *count*, since `[ -n "$3" ]` can't tell an empty arg from an unset
+    one — this is what made `services_select` re-add a database on a project
+    that had none). Emptiness of a value answers a different question.
+  - **When the ambiguity is a SAFETY decision, resolve the unknown toward the
+    risky side — prompt or refuse, never skip.** A `docker info`/`volume
+    inspect` that fails, whitespace-only picker input, a missing
+    `var/ports/<name>` — each returns the same empty/falsy as "all clear," and
+    reading it that way silently skips a data-loss confirm or picks the
+    destructive branch. A spurious prompt is a mild annoyance; a safety gate
+    that never fired because a probe came back empty loses someone's data.
 - Functions over inline blocks; prefix internal helpers with `_`. Keep each `lib/*.sh`
   focused on one area (see `plan.md` layout).
 - **No heavy runtime deps.** No `jq`, no `yq` as hard requirements. Persist state

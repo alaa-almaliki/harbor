@@ -23,7 +23,7 @@ brackets); name-less it errors with `project name required`.
 | `harbor node\|npm [<name>] …` | Node/npm via nvm + `.nvmrc`. |
 | `harbor tool <name> <tool> …` | Run a containerized CLI tool once. |
 | `harbor tools sync <name>` | (Re)generate tool shims from the manifest. |
-| `harbor install <name>` | Framework installer (Laravel migrate, Magento `setup:install`, …). Magento refuses up front, naming every missing service, if it lacks `mysql`/`opensearch`/`rabbitmq`. |
+| `harbor install <name>` | Framework installer (Laravel migrate, Magento `setup:install`, …). Magento refuses up front, naming every missing required service, if it lacks `mysql` or `opensearch` (RabbitMQ is optional). |
 | `harbor seed <name>` | Framework seeders / migrations. |
 
 ### Consoles
@@ -133,14 +133,18 @@ either path **confirms** before dropping a service whose data volume still
 exists (data is kept, not deleted; `HARBOR_YES=1` skips the prompt, there is
 no `--yes` flag).
 
-**`services: {}` means no containers — no database at all.** This is a valid,
-supported state (chosen at `harbor init` time via its interactive picker or
+**`services: {}` means no containers — no database at all.** (A bare
+`services:` with no value means the same. But *deleting* the whole `services:`
+line is different: an absent key falls back to the framework default and may
+re-add `mysql` on the next `render` — write `{}` to mean "none," don't remove
+the line.) This is a valid, supported state (chosen at `harbor init` time via its interactive picker or
 `--services ""`/`--services none`), not a misconfiguration. For a project with
 no `mysql` service: `harbor up`/`down`/`restart`/`logs` are no-ops (not
 errors); `harbor db …`/`harbor mysql` refuse with a fix hint; `harbor doctor`
 doesn't require `pdo_mysql`; a Magento project's `install`/`wire` refuse up
-front, naming every missing service (Magento needs all three of `mysql`,
-`opensearch`, `rabbitmq`); `harbor ps` shows `db:-`. Add a database later with
+front, naming every missing required service (Magento requires `mysql` +
+`opensearch`; RabbitMQ is optional, though selected by default); `harbor ps`
+shows `db:-`. Add a database later with
 `harbor services add <name> mysql && harbor up <name>` (or hand-edit
 `services:` and `harbor render <name> && harbor up <name>`). If a project instead HAS a `mysql` service but its ports
 were never allocated (missing `var/ports/<name>`), `harbor ps` shows `db:?`

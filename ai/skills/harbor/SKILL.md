@@ -92,9 +92,10 @@ harbor db drop <name> [db]            # confirm-gated
 **This project may have no database at all.** Check `services:` in
 `.harbor/harbor.yml` — if it's `{}` or has no `mysql` key, `harbor db …` and
 `harbor mysql` refuse with a fix hint instead of running (not a "stack not
-running" error). Magento needs `mysql` + `opensearch` + `rabbitmq` — its
-`install`/`wire` refuse up front, naming every missing service, if any are
-absent. To add a database: `harbor services add <name> mysql && harbor up
+running" error). Magento requires `mysql` + `opensearch` (RabbitMQ is
+optional — only async/bulk ops need it, though a new project selects it by
+default); its `install`/`wire` refuse up front, naming every missing required
+service, if either is absent. To add a database: `harbor services add <name> mysql && harbor up
 <name>` (or hand-edit `services:` in the manifest and `harbor render <name> &&
 harbor up <name>`) — this may prompt if a previously-dropped service's old
 volume still exists — see Configuration.

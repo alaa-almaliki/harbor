@@ -46,8 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the only bypass, same as every other destructive-op confirm.
 - **Magento now names every missing required service in one shot**, instead
   of crashing or reporting only the first — `harbor install`/`harbor render`
-  on a Magento project missing any of `mysql`, `opensearch`, `rabbitmq` says
-  exactly which ones, with a `magento needs: <missing services>` fix hint.
+  on a Magento project missing `mysql` or `opensearch` (its required services;
+  RabbitMQ is optional) says exactly which ones, with a `magento needs:
+  <missing services>` fix hint.
 
 ### Changed
 - **Lifecycle commands no-op instead of erroring on a service-less project.**
