@@ -47,6 +47,24 @@ cmd_mail() {
   esac
 }
 
+# db column for `harbor ps` — pure decision logic, pulled out so it's testable
+# without iterating real project directories.
+#
+# project_has_service MUST be checked first: a project with no mysql service
+# must never depend on ports_load succeeding, so "no database" (intentional)
+# and "mysql configured but ports never allocated" (needs attention) render as
+# distinct markers instead of both collapsing to the same "db:-".
+_ps_db_column() {
+  local name="$1"
+  if ! project_has_service "$name" mysql; then
+    printf 'db:-'
+  elif ports_load "$name" 2>/dev/null; then
+    printf 'db:%s' "$DB_PORT"
+  else
+    printf 'db:?'
+  fi
+}
+
 # list all projects with state
 cmd_ps() {
   ensure_dirs
@@ -60,8 +78,7 @@ cmd_ps() {
     php="$(manifest_get "$mf" php "?")"
     if [ -f "$(project_compose_file "$name")" ] && project_compose "$name" ps -q 2>/dev/null | grep -q .; then stack=up; else stack=down; fi
     [ -f "$HARBOR_NGINX_SITES/$name.$HARBOR_TLD.conf" ] && linked=yes || linked=no
-    dbp="db:-"
-    if ports_load "$name" 2>/dev/null && project_has_service "$name" mysql; then dbp="db:$DB_PORT"; fi
+    dbp="$(_ps_db_column "$name")"
     # green the whole row for a project whose stack is up and running
     color=""; reset=""
     [ "$stack" = up ] && { color="$_c_grn"; reset="$_c_reset"; }

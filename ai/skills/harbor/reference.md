@@ -139,7 +139,9 @@ doesn't require `pdo_mysql`; a Magento project's `install`/`wire` refuse up
 front, naming every missing service (Magento needs all three of `mysql`,
 `opensearch`, `rabbitmq`); `harbor ps` shows `db:-`. Add a database later by
 adding `mysql: "mysql:8.0"` to `services:` and running `harbor render <name> &&
-harbor up <name>`.
+harbor up <name>`. If a project instead HAS a `mysql` service but its ports
+were never allocated (missing `var/ports/<name>`), `harbor ps` shows `db:?`
+— that means "needs attention" (e.g. `harbor up <name>`), not "no database".
 
 **MariaDB** is not a separate service — swap the `mysql` image:
 `services: { mysql: "mariadb:11.4" }` (keeps `harbor mysql`/`db import`/wiring

@@ -48,6 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `magento needs: <missing services>` fix hint if a Magento project is
   missing `mysql`, `opensearch`, or `rabbitmq`, instead of dying on an unbound
   variable partway through generating the `setup:install` command.
+- **`harbor ps` no longer reports a project as DB-less when it actually has a
+  `mysql` service but a missing/broken `var/ports/<name>` allocation file.**
+  `db:-` previously meant both "no `mysql` service" (intentional) and "has
+  `mysql` but `ports_load` failed" (a real, reachable drift case) — the same
+  marker for two very different states, which is actively misleading now that
+  `db:-` has a documented "no database" meaning. `cmd_ps` now checks
+  `project_has_service` before `ports_load` (extracted into `_ps_db_column` in
+  `lib/ergo.sh` for testability) and renders `db:?` for the "has mysql but no
+  allocated ports" case, distinct from `db:-` for "no mysql service".
 - **`harbor destroy` no longer leaks a project's Docker volume when the project
   has no services** (`services: {}`). `render` already deletes a service-less
   project's compose file (stack stopped first, volume kept), but `destroy`'s

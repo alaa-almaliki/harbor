@@ -223,8 +223,10 @@ shown in green. Only directories with a manifest are listed.
 
   STACK    up = its compose stack has running containers
   LINKED   yes = etc/nginx/sites/<name>.test.conf exists
-  PORTS    the project's MySQL port, or `db:-` for a project with no `mysql`
-           service
+  PORTS    the project's MySQL port; `db:-` for a project with no `mysql`
+           service (intentional); `db:?` for a project WITH a `mysql` service
+           but no allocated ports file — needs attention, e.g. `harbor up
+           <name>` or `harbor render <name>` to reallocate
 
 See also: harbor status (platform services too) · harbor up | down <name>
 EOF

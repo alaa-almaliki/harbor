@@ -2,7 +2,7 @@
 # test_services.sh — service catalog, selection parsing, resolution semantics.
 set -uo pipefail
 . "$HARBOR_TEST_DIR/lib.sh"
-harbor_load common manifest ports services compose init
+harbor_load common manifest ports services compose init ergo
 
 # --- catalog -------------------------------------------------------------------
 cat="$(services_catalog)"
@@ -198,5 +198,25 @@ assert_contains "render decline: prints 'manifest unchanged'" \
 assert_eq "render decline: manifest byte-identical after decline" "$before_sum" "$after_sum"
 assert_eq "render decline: legacy services: line still list-form" \
   "services: [mysql, rabbitmq]" "$(grep '^services:' "$mf")"
+
+# --- _ps_db_column: `harbor ps` DB-column decision logic (pure) ---------------
+# Regression test: `harbor ps` used to render `db:-` for BOTH "no mysql
+# service" (intentional) and "has mysql but var/ports/<name> is missing" (a
+# real, reachable drift case — verified on a live project). `_ps_db_column`
+# must check project_has_service BEFORE ports_load, so a DB-less project
+# never depends on ports_load succeeding, and the two states must render as
+# visually distinct markers.
+mkproj psdb_none 'services: {}'
+mkproj psdb_ok 'services: [mysql]'
+mkproj psdb_broken 'services: [mysql]'
+printf 'HARBOR_INDEX=1\nDB_PORT=20020\n' > "$HARBOR_PORTS_DIR/psdb_ok"
+rm -f "$HARBOR_PORTS_DIR/psdb_broken"
+
+assert_eq "ps db column: no mysql service -> db:-" \
+  "db:-" "$(_ps_db_column psdb_none)"
+assert_eq "ps db column: mysql + ports allocated -> db:<port>" \
+  "db:20020" "$(_ps_db_column psdb_ok)"
+assert_eq "ps db column: mysql + NO ports file -> db:? (needs attention)" \
+  "db:?" "$(_ps_db_column psdb_broken)"
 
 report

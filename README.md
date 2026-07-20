@@ -523,7 +523,10 @@ running; `harbor doctor <name>` doesn't require `pdo_mysql`; Magento `install`/
 `wire` refuse up front, naming every missing service, since Magento requires a
 database; `harbor ps` shows `db:-`. Add a database later by editing
 `services:` and running `harbor render <name> && harbor up <name>` — see below,
-render will ask before dropping anything that already has data.
+render will ask before dropping anything that already has data. (If a project
+DOES have a `mysql` service but its ports were never allocated — e.g. a
+missing `var/ports/<name>` file — `harbor ps` shows `db:?` instead, which
+means "needs attention", not "no database".)
 
 The manifest's `services:` key is authoritative whenever it's present —
 **including when it's an explicit empty map** — so an old project without a
