@@ -28,6 +28,37 @@ Works with **plain PHP, Magento, Laravel, Symfony, and CodeIgniter** side by sid
 
 ---
 
+## Contents
+
+**Getting started**
+- [Why Harbor](#why-harbor)
+- [Architecture at a glance](#architecture-at-a-glance)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+
+**Guides**
+- [How-to (recipes)](#how-to-recipes) — new project, migrate an app, EOL PHP, Xdebug, MySQL 8 auth, switch stacks
+- [Core concepts](#core-concepts) — domains & TLS, PHP versions, the manifest, ports, databases, the sandbox
+- [Running projects side by side](#running-projects-side-by-side)
+- [Database & import workflow](#database--import-workflow)
+
+**Configuration & features**
+- [Configuration](#configuration) — global config, per-project manifest, [Optional backing services](#optional-backing-services)
+- [Containerized CLI tools](#containerized-cli-tools-no-host-installs)
+- [Xdebug](#xdebug)
+- [For AI coding agents](#for-ai-coding-agents)
+
+**Reference**
+- [Command reference](#command-reference) — [host](#host--lifecycle) · [PHP](#php) · [projects](#projects) · [running code](#running-code) · [consoles](#consoles) · [databases](#databases) · [multi-store](#multi-store-magento) · [shared services](#shared-services--tls)
+- [Per-framework notes](#per-framework-notes)
+- [Remove a project / uninstall Harbor](#remove-a-project--uninstall-harbor)
+- [Known limitations](#known-limitations--not-yet-managed)
+- [How it stays clean](#how-it-stays-clean)
+- [License](#license)
+
+---
+
 ## Why Harbor
 
 - **Light on RAM.** PHP runs as concurrent on-demand FPM pools (idle cost is just
@@ -729,7 +760,7 @@ above.
 | `harbor unlink <name>` | Remove the vhost. |
 | `harbor wire <name> [--print]` | Inject DB/Redis/mail config into the app (surgical, never clobbers). |
 | `harbor up\|down\|restart <name>` | Start/stop/restart the project's Docker stack (`down` flushes its Redis). Bare `harbor restart` restarts Harbor itself. No-ops (not errors) for a project with no services. |
-| `harbor destroy <name> [--files]` | Remove stack + volumes, vhost, ports, Redis (confirm-gated). |
+| `harbor destroy <name> [--files]` | Remove a project: drop containers + volumes (DB gone), unlink vhost, release ports, flush Redis (confirm-gated). `--files` **also deletes the project directory** (your code); it must come right after `<name>`. See [Remove a project](#remove-a-project--uninstall-harbor). |
 | `harbor open <name>` | Open the site in your browser. |
 | `harbor logs <name> [service] [-f]` | Tail project/service logs. |
 | `harbor logs nginx\|php\|dnsmasq [-f]` | Tail Harbor's own platform-service logs. |
@@ -813,14 +844,36 @@ A project uses **one** multi-store mode (domain *or* path), set in the manifest.
 
 ---
 
-## Uninstall
+## Remove a project / uninstall Harbor
+
+**Two different scopes** — don't confuse them:
+
+**Remove one project** — `harbor destroy <name>` (confirm-gated):
+
+```bash
+harbor destroy shop            # drop its containers + volumes (DB is GONE),
+                               #   unlink the vhost, release its ports. KEEPS your code.
+harbor destroy shop --files    # ALSO delete projects/shop/ — your source code too
+harbor db backup shop && harbor destroy shop   # keep the data first
+```
+
+`--files` must come right after `<name>`, and it deletes the project directory
+(your code) — the confirm prompt does **not** spell that out, so be deliberate.
+Skip the prompt with `HARBOR_YES=1` (there is no `--yes` flag). If Docker is
+unreachable, `destroy` still unlinks and releases ports but tells you the volumes
+couldn't be confirmed removed — re-run it once Docker is back rather than trusting
+a false "done".
+
+**Uninstall Harbor itself** — `harbor teardown` (leaves your projects untouched):
 
 ```bash
 harbor teardown          # remove launchd units, resolver entry, stop services
 harbor teardown --purge  # also drop rendered config and certs
 ```
 
-Your Homebrew nginx/php/dnsmasq installs and their config remain untouched.
+Your Homebrew nginx/php/dnsmasq installs and their config remain untouched, and so
+do your `projects/` — `teardown` removes *Harbor*, not your apps. To remove an app,
+use `harbor destroy <name>` above.
 
 ---
 
