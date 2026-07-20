@@ -40,5 +40,68 @@ services_parse_arg() {
   printf '%s' "$out"
 }
 
-# services_select <name> <framework> — replaced by the picker in Task 4.
-services_select() { _init_services "$2" | tr -s ', ' ' '; }
+# services_pick_parse <input> <catalog> <defaults> — pure picker-input parser.
+# "" -> defaults, "none" -> empty, otherwise 1-based indexes into <catalog>
+# (space- or comma-separated). Prints __INVALID__ on anything else, so the
+# caller can re-prompt. Output order follows the catalog, not the input.
+services_pick_parse() {
+  local input="$1" catalog="$2" defaults="$3" tok i n svc out=""
+  # Normalize first: commas -> spaces, runs of whitespace squeezed, ends trimmed.
+  # This must NOT delete inner whitespace ("1 3" is two tokens, not "13").
+  #
+  # The trim matters for correctness, not tidiness: a bare Enter and a
+  # space-then-Enter must both mean "defaults". Without it, whitespace-only
+  # input falls through to the index loop, matches nothing, and returns "" —
+  # silently choosing NO SERVICES from what the user experienced as pressing
+  # Enter. Same failure shape as a bare `--services` with no value.
+  input="$(printf '%s' "$input" | tr ',' ' ' | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')"
+  case "$input" in
+    "")     printf '%s' "$defaults"; return 0 ;;
+    none)   printf ''; return 0 ;;
+  esac
+  # collect chosen indexes, validating each token is a digit in range
+  local chosen=" "
+  n=0; for svc in $catalog; do n=$((n + 1)); done
+  for tok in $input; do          # already comma-free and squeezed
+    case "$tok" in
+      ''|*[!0-9]*) printf '__INVALID__'; return 0 ;;
+    esac
+    if [ "$tok" -lt 1 ] || [ "$tok" -gt "$n" ]; then printf '__INVALID__'; return 0; fi
+    chosen="$chosen$tok "
+  done
+  i=0
+  for svc in $catalog; do
+    i=$((i + 1))
+    case "$chosen" in
+      *" $i "*) if [ -z "$out" ]; then out="$svc"; else out="$out $svc"; fi ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# services_select <name> <framework> — the resolved service list for a new
+# project. Prompts only when Harbor is genuinely interactive; a non-TTY caller
+# (scripts, CI) and HARBOR_YES=1 both get the framework default silently, so no
+# existing scripted `harbor init` changes behavior.
+services_select() {
+  local name="$1" framework="$2" catalog defaults reply parsed i svc mark
+  catalog="$(services_catalog)"
+  defaults="$(_init_services "$framework" | tr -s ', ' ' ')"
+  if [ ! -t 0 ] || [ "${HARBOR_YES:-0}" = "1" ]; then
+    printf '%s' "$defaults"; return 0
+  fi
+  printf '\nServices for %s  (framework: %s)\n' "'$name'" "$framework" >&2
+  i=0
+  for svc in $catalog; do
+    i=$((i + 1)); mark=""
+    case " $defaults " in *" $svc "*) mark="  *default" ;; esac
+    printf '  %d) %-14s%s\n' "$i" "$svc" "$mark" >&2
+  done
+  while :; do
+    printf 'Select [Enter = defaults · numbers e.g. "1 3" · "none"]: ' >&2
+    read -r reply || { printf '%s' "$defaults"; return 0; }
+    parsed="$(services_pick_parse "$reply" "$catalog" "$defaults")"
+    if [ "$parsed" != "__INVALID__" ]; then printf '%s' "$parsed"; return 0; fi
+    warn "not a valid selection: $reply"
+  done
+}

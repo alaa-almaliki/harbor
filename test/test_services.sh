@@ -48,4 +48,21 @@ assert_eq "parse: literal none"  ""                 "$(services_parse_arg 'none'
 assert_eq "parse: dedupes"       "mysql"            "$(services_parse_arg 'mysql,mysql')"
 assert_fail "parse: rejects unknown" services_parse_arg 'mysql,bogus'
 
+# --- picker parsing (pure; no TTY) --------------------------------------------
+CAT="mysql opensearch rabbitmq meilisearch elasticsearch"
+DEF="mysql"
+assert_eq "pick: empty input -> defaults"  "mysql"            "$(services_pick_parse ''       "$CAT" "$DEF")"
+assert_eq "pick: 'none' -> no services"    ""                 "$(services_pick_parse 'none'   "$CAT" "$DEF")"
+assert_eq "pick: numbers"                  "mysql rabbitmq"   "$(services_pick_parse '1 3'    "$CAT" "$DEF")"
+assert_eq "pick: commas accepted"          "mysql rabbitmq"   "$(services_pick_parse '1,3'    "$CAT" "$DEF")"
+assert_eq "pick: order follows catalog"    "mysql rabbitmq"   "$(services_pick_parse '3 1'    "$CAT" "$DEF")"
+assert_eq "pick: dedupes"                  "mysql"            "$(services_pick_parse '1 1'    "$CAT" "$DEF")"
+assert_eq "pick: out of range invalid"     "__INVALID__"      "$(services_pick_parse '9'      "$CAT" "$DEF")"
+assert_eq "pick: zero invalid"             "__INVALID__"      "$(services_pick_parse '0'      "$CAT" "$DEF")"
+assert_eq "pick: garbage invalid"          "__INVALID__"      "$(services_pick_parse 'wat'    "$CAT" "$DEF")"
+assert_eq "pick: whitespace-only -> defaults" "mysql"         "$(services_pick_parse '   '    "$CAT" "$DEF")"
+assert_eq "pick: leading/trailing spaces"  "mysql rabbitmq"   "$(services_pick_parse '  1 3 ' "$CAT" "$DEF")"
+assert_eq "pick: inner spacing preserved as separate tokens" \
+                                           "mysql rabbitmq"   "$(services_pick_parse '1   3' "$CAT" "$DEF")"
+
 report
