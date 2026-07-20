@@ -313,14 +313,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   meaning and loads the partial dump anyway (with a warning).
 
 ### Fixed
-- **The README's Downloads badge no longer renders broken.** It used a shields.io
-  `?endpoint=` badge, which makes shields fetch
-  `.github/traffic/clones-badge.json` from raw.githubusercontent on every render
-  — that hop returns HTTP 524 (Cloudflare: origin timed out) and the badge dies,
-  even though the JSON itself is valid and served fine. The README now embeds a
-  *static* shields badge with the count baked into the URL (no outbound fetch, so
-  it can't 524), and the daily traffic workflow rewrites that URL in place.
-  `clones-badge.json` is still written for anyone consuming it directly.
 - **Four more silent-death guards squashed** — the `[ cond ] && …`-as-last-statement
   bug that once killed `db import` (CLAUDE.md §3). In each case a false guard
   became the function's return value, so a plain caller under `set -e` died with
@@ -546,6 +538,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   slots removed).
 
 ### Removed
+- **In-repo clone-traffic workflow and its daily commit.** The
+  `traffic-clones` GitHub Action, `record-clones.sh`, and the `.github/traffic/`
+  store are gone — clone-traffic tracking moved to a central, external collector
+  that snapshots this repo (and others) and serves one Shields badge per repo
+  from GitHub Pages, so Harbor's history no longer takes a daily
+  `chore(traffic)` commit. The README **Downloads** badge now reads from that
+  Pages endpoint (a CDN — reliable, no origin 524) instead of a count baked into
+  the repo.
 - `lib/php.sh` switcher-era scaffold (superseded by concurrent ondemand pools,
   to be implemented in Phase 3).
 
