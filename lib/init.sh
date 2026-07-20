@@ -11,13 +11,18 @@ _init_services() {
   esac
 }
 
-# the stack's services (space-separated): manifest `services:` (map keys or list
-# items — manifest_map_keys handles both) -> framework default
+# the stack's services (space-separated). The manifest is authoritative when the
+# `services:` key is PRESENT — including when it is empty, which means "no
+# containers". Only an ABSENT key falls back to the framework default, so
+# manifests written before `services:` existed keep working.
 _project_services() {
-  local name="$1" framework="$2" list
-  list="$(manifest_map_keys "$(manifest_path "$name")" services)"
-  [ -n "$list" ] || list="$(_init_services "$framework" | tr ',' ' ')"
-  printf '%s' "$list"
+  local name="$1" framework="$2" mf
+  mf="$(manifest_path "$name")"
+  if [ -f "$mf" ] && manifest_has "$mf" services; then
+    manifest_map_keys "$mf" services
+    return 0
+  fi
+  _init_services "$framework" | tr -s ', ' ' '
 }
 
 # the db server command line — engine-aware. MariaDB rejects MySQL 8's
