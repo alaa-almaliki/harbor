@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Commands no longer crash with an unbound-variable error on a service-less
+  (no `mysql`) project.** After a database became optional, `connection.env`
+  carries no `DB_*` keys at all when a project has no `mysql` service, but
+  several commands still read those variables unconditionally under the
+  global `set -euo pipefail`. `harbor mysql`/`harbor db backup`/etc. now refuse
+  up front with a fix hint (`_db_require` in `lib/db.sh`) instead of either
+  crashing or misreporting "stack not running." `harbor doctor` no longer
+  demands the `pdo_mysql` extension for a project with no database.
+  `harbor ps` shows `db:-` instead of a stale/blank port for a DB-less
+  project. `harbor wire` skips the `DB_*` lines for Laravel/CodeIgniter/
+  Symfony/plain projects (still wires Redis + mail) and refuses early, with a
+  fix hint, for a DB-less Magento project (which requires a database).
+  `harbor install`/Magento's install script now refuse with a
+  `magento needs: <missing services>` fix hint if a Magento project is
+  missing `mysql`, `opensearch`, or `rabbitmq`, instead of dying on an unbound
+  variable partway through generating the `setup:install` command.
 - **`harbor destroy` no longer leaks a project's Docker volume when the project
   has no services** (`services: {}`). `render` already deletes a service-less
   project's compose file (stack stopped first, volume kept), but `destroy`'s

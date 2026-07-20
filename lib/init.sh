@@ -174,8 +174,9 @@ cmd_render() {
 
   # A hand-edited manifest that drops a service must not silently detach its
   # data. One gate, one place: services rm (phase 2) routes through here too, so
-  # a user is never asked twice for one action. Read-only up to this point —
-  # `_project_services` resolves legacy list-format `services:` via
+  # a user is never asked twice for one action. No manifest/compose mutation
+  # yet, only the harmless, idempotent var/ports/<name> write from ports_ensure
+  # above — `_project_services` resolves legacy list-format `services:` via
   # `manifest_map_keys` without needing materialization, so nothing on disk
   # changes until the user has agreed to proceed.
   local newlist oldlist=""

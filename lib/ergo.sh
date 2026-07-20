@@ -60,7 +60,8 @@ cmd_ps() {
     php="$(manifest_get "$mf" php "?")"
     if [ -f "$(project_compose_file "$name")" ] && project_compose "$name" ps -q 2>/dev/null | grep -q .; then stack=up; else stack=down; fi
     [ -f "$HARBOR_NGINX_SITES/$name.$HARBOR_TLD.conf" ] && linked=yes || linked=no
-    dbp=""; ports_load "$name" 2>/dev/null && dbp="db:$DB_PORT"
+    dbp="db:-"
+    if ports_load "$name" 2>/dev/null && project_has_service "$name" mysql; then dbp="db:$DB_PORT"; fi
     # green the whole row for a project whose stack is up and running
     color=""; reset=""
     [ "$stack" = up ] && { color="$_c_grn"; reset="$_c_reset"; }

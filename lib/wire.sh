@@ -12,15 +12,19 @@ _env_set() {
 _backup_once() { [ -f "$1" ] && [ ! -f "$1.harbor-bak" ] && cp "$1" "$1.harbor-bak" || true; }
 
 wire_laravel() {
-  local dir="$1" f="$1/.env"
+  local dir="$1" has_db="$2" f="$1/.env"
   [ -f "$f" ] || { [ -f "$dir/.env.example" ] && cp "$dir/.env.example" "$f" || : > "$f"; }
   _backup_once "$f"
-  _env_set "$f" DB_CONNECTION mysql
-  _env_set "$f" DB_HOST "$DB_HOST"
-  _env_set "$f" DB_PORT "$DB_PORT"
-  _env_set "$f" DB_DATABASE "$DB_DATABASE"
-  _env_set "$f" DB_USERNAME "$DB_USERNAME"
-  _env_set "$f" DB_PASSWORD "$DB_PASSWORD"
+  if [ "$has_db" = 1 ]; then
+    _env_set "$f" DB_CONNECTION mysql
+    _env_set "$f" DB_HOST "$DB_HOST"
+    _env_set "$f" DB_PORT "$DB_PORT"
+    _env_set "$f" DB_DATABASE "$DB_DATABASE"
+    _env_set "$f" DB_USERNAME "$DB_USERNAME"
+    _env_set "$f" DB_PASSWORD "$DB_PASSWORD"
+  else
+    step "db      skipped (no database service)"
+  fi
   _env_set "$f" REDIS_HOST "$REDIS_HOST"
   _env_set "$f" REDIS_PORT "$REDIS_PORT"
   _env_set "$f" REDIS_DB "$REDIS_CACHE_DB"
@@ -31,34 +35,48 @@ wire_laravel() {
 }
 
 wire_ci4() {
-  local dir="$1" f="$1/.env"
+  local dir="$1" has_db="$2" f="$1/.env"
   [ -f "$f" ] || { [ -f "$dir/env" ] && cp "$dir/env" "$f" || : > "$f"; }
   _backup_once "$f"
-  _env_set "$f" database.default.hostname "$DB_HOST"
-  _env_set "$f" database.default.port "$DB_PORT"
-  _env_set "$f" database.default.database "$DB_DATABASE"
-  _env_set "$f" database.default.username "$DB_USERNAME"
-  _env_set "$f" database.default.password "$DB_PASSWORD"
+  if [ "$has_db" = 1 ]; then
+    _env_set "$f" database.default.hostname "$DB_HOST"
+    _env_set "$f" database.default.port "$DB_PORT"
+    _env_set "$f" database.default.database "$DB_DATABASE"
+    _env_set "$f" database.default.username "$DB_USERNAME"
+    _env_set "$f" database.default.password "$DB_PASSWORD"
+  else
+    step "db      skipped (no database service)"
+  fi
   ok "wired $f  (backup: .env.harbor-bak)"
 }
 
 wire_symfony() {
-  local f="$1/.env.local"
+  local has_db="$2" f="$1/.env.local"
   [ -f "$f" ] || : > "$f"
   _backup_once "$f"
-  _env_set "$f" DATABASE_URL "\"mysql://$DB_USERNAME:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_DATABASE?serverVersion=8.0\""
+  if [ "$has_db" = 1 ]; then
+    _env_set "$f" DATABASE_URL "\"mysql://$DB_USERNAME:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_DATABASE?serverVersion=8.0\""
+  else
+    step "db      skipped (no database service)"
+  fi
   _env_set "$f" REDIS_URL "\"redis://$REDIS_HOST:$REDIS_PORT/$REDIS_CACHE_DB\""
   _env_set "$f" MAILER_DSN "\"smtp://$MAIL_HOST:$MAIL_PORT\""
   ok "wired $f (committed .env untouched)"
 }
 
 wire_plain() {
-  local out="$1/.harbor/connection.php"
+  local has_db="$2" out="$1/.harbor/connection.php" dbphp
+  if [ "$has_db" = 1 ]; then
+    dbphp="['host'=>'$DB_HOST','port'=>$DB_PORT,'database'=>'$DB_DATABASE','username'=>'$DB_USERNAME','password'=>'$DB_PASSWORD']"
+  else
+    dbphp="null"
+    step "db      skipped (no database service)"
+  fi
   cat > "$out" <<PHP
 <?php
 // Harbor connection info (generated). require() this or copy the values.
 return [
-  'db'    => ['host'=>'$DB_HOST','port'=>$DB_PORT,'database'=>'$DB_DATABASE','username'=>'$DB_USERNAME','password'=>'$DB_PASSWORD'],
+  'db'    => $dbphp,
   'redis' => ['host'=>'$REDIS_HOST','port'=>$REDIS_PORT,'db'=>$REDIS_CACHE_DB,'prefix'=>'$REDIS_PREFIX'],
   'mail'  => ['host'=>'$MAIL_HOST','port'=>$MAIL_PORT],
 ];
@@ -77,11 +95,21 @@ cmd_wire() {
   . "$conn"; set +a
   mf="$(manifest_path "$name")"
   framework="$(manifest_get "$mf" framework "")"; [ -n "$framework" ] || framework="$(link_detect_framework "$dir")"
+  # A project with no mysql service has no DB_* keys in connection.env at all
+  # (Task 6) — every wire_* branch below must skip its DB lines rather than
+  # interpolate an unbound variable. Magento defers DB config to `harbor
+  # install` entirely, so a DB-less Magento project refuses here with a fix
+  # hint instead of failing later, unbound, at lib/magento.sh.
+  local has_db=0
+  if project_has_service "$name" mysql; then has_db=1; fi
+  if [ "$has_db" = 0 ] && [ "$framework" = magento ]; then
+    die "magento requires a database — add mysql to $(manifest_path "$name") services:, then: harbor render $name"
+  fi
   case "$framework" in
-    laravel) wire_laravel "$dir" ;;
-    codeigniter) if [ -f "$dir/spark" ]; then wire_ci4 "$dir"; else wire_plain "$dir"; fi ;;
-    symfony) wire_symfony "$dir" ;;
+    laravel) wire_laravel "$dir" "$has_db" ;;
+    codeigniter) if [ -f "$dir/spark" ]; then wire_ci4 "$dir" "$has_db"; else wire_plain "$dir" "$has_db"; fi ;;
+    symfony) wire_symfony "$dir" "$has_db" ;;
     magento) warn "Magento config is applied by 'harbor install' (setup:install) — not by wire."; cat "$hdir/connection.txt" ;;
-    *) wire_plain "$dir" ;;
+    *) wire_plain "$dir" "$has_db" ;;
   esac
 }

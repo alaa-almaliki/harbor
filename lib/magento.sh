@@ -2,9 +2,25 @@
 # magento.sh — Magento setup:install wiring + local-DX helpers.
 # All bin/magento calls run under the project's pinned PHP via cmd_magento.
 
+# Magento needs all three; connection.env only carries a service's vars when the
+# service is selected, so without this the next line dies on an unbound variable.
+magento_require_services() {
+  local name="$1" svc missing=""
+  for svc in mysql opensearch rabbitmq; do
+    if ! project_has_service "$name" "$svc"; then missing="$missing $svc"; fi
+  done
+  if [ -n "$missing" ]; then
+    err "magento needs:$missing"
+    step "add them to $(manifest_path "$name") services:, then:"
+    step "harbor render $name && harbor up $name"
+    exit 1
+  fi
+}
+
 # generate a transparent, re-runnable setup:install script wired to allocations
 magento_write_install() {
   local name="$1" dir ident ver cli script
+  magento_require_services "$name"
   dir="$(project_dir "$name")"; ident="$(db_ident "$name")"
   ver="$(_project_php_ver "$name")"; cli="$(php_cli_bin "$ver")"
   _db_load "$name"
@@ -35,7 +51,7 @@ EOF
 
 # rewrite base URLs + search host after a DB import (--reconfigure)
 magento_reconfigure() {
-  local name="$1"; _db_load "$name"
+  local name="$1"; magento_require_services "$name"; _db_load "$name"
   local base="https://$name.$HARBOR_TLD/"
   log "magento reconfigure: base URLs + search host"
   cmd_magento "$name" config:set web/unsecure/base_url "$base" >/dev/null 2>&1 || \

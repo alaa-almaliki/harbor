@@ -14,6 +14,11 @@ cmd_install() {
   case "$framework" in
     magento)
       _db_up_check "$name" || die "start the stack first: harbor up $name"
+      # Called again here (magento_write_install also calls it) because
+      # magento_write_install's output is captured by the command substitution
+      # below — its step() fix-hint lines would otherwise be swallowed into
+      # $script and never reach the user, leaving only the err() line visible.
+      magento_require_services "$name"
       local script; script="$(magento_write_install "$name")"
       log "running Magento setup:install (generated: $script)"
       ( cd "$dir" && bash "$script" )
