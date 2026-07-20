@@ -13,12 +13,17 @@ cmd_install() {
   local dir; dir="$(project_dir "$name")"
   case "$framework" in
     magento)
-      _db_up_check "$name" || die "start the stack first: harbor up $name"
-      # Called again here (magento_write_install also calls it) because
-      # magento_write_install's output is captured by the command substitution
-      # below — its step() fix-hint lines would otherwise be swallowed into
-      # $script and never reach the user, leaving only the err() line visible.
+      # magento_require_services runs FIRST — before the mysql-only
+      # _db_up_check — so a service-less project sees the complete missing
+      # list (mysql + opensearch + rabbitmq) in one shot, instead of "no
+      # database service" first and, only after adding mysql, "opensearch,
+      # rabbitmq" second. Called again here (magento_write_install also calls
+      # it) because magento_write_install's output is captured by the command
+      # substitution below — its step() fix-hint lines would otherwise be
+      # swallowed into $script and never reach the user, leaving only the
+      # err() line visible.
       magento_require_services "$name"
+      _db_up_check "$name" || die "start the stack first: harbor up $name"
       local script; script="$(magento_write_install "$name")"
       log "running Magento setup:install (generated: $script)"
       ( cd "$dir" && bash "$script" )

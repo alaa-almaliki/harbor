@@ -73,6 +73,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `test/test_services.sh` that drives `cmd_render` on a legacy-manifest
   fixture, declines via piped stdin, and asserts the manifest file is
   byte-identical (checksum) before and after.
+- **`harbor install` on a service-less Magento project now reports every
+  missing service in one shot.** `cmd_install`'s magento branch used to run
+  the mysql-only `_db_up_check` before `magento_require_services`, so a
+  project with no services at all first heard only "no database service",
+  added `mysql`, re-ran, and only then learned `opensearch`/`rabbitmq` were
+  also missing. `magento_require_services` now runs first. Also added unit
+  tests for `_db_require` (`test/test_db.sh`) and `magento_require_services`
+  (new `test/test_magento.sh`) covering exit status, that the message names
+  *all* missing services (not just the first), and that it reaches stderr —
+  both guards were previously untested pure-logic functions per CLAUDE.md §6.5.
 
 ### Added
 - **`harbor render` now confirms before a manifest edit drops a service whose

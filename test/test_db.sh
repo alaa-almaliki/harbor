@@ -5,7 +5,7 @@
 # whole import pipeline with no error output. No Docker: _db_mysql is stubbed.
 set -uo pipefail
 . "$HARBOR_TEST_DIR/lib.sh"
-harbor_load common db
+harbor_load common manifest services init db
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -112,5 +112,33 @@ chmod +x "$hooks/pre-import.d/30-broken.sh"
 assert_fail "pre-import: failing hook aborts" _run_hooks pre-import demo
 assert_contains "pre-import: failing hook names itself" "hook failed: 30-broken.sh" \
   "$( (_run_hooks pre-import demo) 2>&1 || true )"
+
+# --- _db_require: guard for a service-less project (host-independent) --------
+# _db_require only reads the manifest via project_has_service (no Docker,
+# no compose file, no launchd) — a pure-logic function per CLAUDE.md §6.5.
+mkproj() {  # mkproj <name> <services-line-or-empty>
+  mkdir -p "$tmp/projects/$1/.harbor"
+  { printf 'framework: laravel\nphp: "8.3"\n'
+    if [ -n "${2-}" ]; then printf '%s\n' "$2"; fi
+  } > "$tmp/projects/$1/.harbor/harbor.yml"
+}
+mkproj hasdb 'services: { mysql: "mysql:8.0" }'
+mkproj nodb  'services: {}'
+
+assert_ok   "_db_require: passes when mysql service present" _db_require hasdb
+assert_fail "_db_require: fails when mysql service absent"   _db_require nodb
+
+# message content
+err_out="$( (_db_require nodb) 2>&1 1>/dev/null )"
+assert_contains "_db_require: error names the project" "no database service for 'nodb'" "$err_out"
+
+# which stream: the error must reach stderr, not stdout
+stdout_out="$( (_db_require nodb) 2>/dev/null )"
+case "$stdout_out" in
+  *"no database service"*) fail "_db_require: error does not leak to stdout" \
+    "no 'no database service' on stdout" "$stdout_out" ;;
+  *) pass "_db_require: error does not leak to stdout" ;;
+esac
+assert_contains "_db_require: error reaches stderr" "no database service for 'nodb'" "$err_out"
 
 report
