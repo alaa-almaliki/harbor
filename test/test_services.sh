@@ -233,6 +233,105 @@ assert_eq "services decline: manifest byte-identical (no bare services: line lef
 assert_fail "services decline: services key is still absent, not present-empty" \
   manifest_has "$mf2" services
 
+# --- cmd_render: propagates a real (non-decline) render failure ---------------
+# Regression test for the "false success under `if !`" review finding.
+# cmd_render is now called as an `if` condition (cmd_services' render-then-
+# restore, right below) — and bash disables `set -e` for a condition's WHOLE
+# call graph (a real, general trap; see CLAUDE.md §3). init_render_compose's
+# "stop the stack before deleting the compose file" branch has a bare
+# `return 1` on a failed `docker compose down`; cmd_render used to call it as
+# a bare statement relying on `set -e` to abort — which never fires under
+# `if !`, so cmd_render fell through to init_write_connection/etc. and printed
+# "ok rendered ..." (return 0) while leaving docker-compose.yml stale and the
+# manifest already pointing at the new (unapplied) service list. Reproduced
+# with a stubbed failing `docker compose ... down`: RC=0, manifest said
+# `services: {  }`, docker-compose.yml still listed mysql.
+#
+# This test can't rely on `set -e` at all — test files run `set -uo pipefail`
+# deliberately (CLAUDE.md §6.5), so a bare failing statement wouldn't abort
+# here either, with or without the bug. It asserts the RETURN VALUE
+# propagates, which is exactly what `init_render_compose ... || return 1`
+# provides regardless of errexit context.
+mkproj renderfail 'services: {}'
+printf 'HARBOR_INDEX=3\nDB_PORT=20060\n' > "$HARBOR_PORTS_DIR/renderfail"
+cat > "$(project_harbor_dir renderfail)/docker-compose.yml" <<'EOF'
+services:
+  mysql:
+    image: mysql:8.0
+volumes:
+  dbdata:
+EOF
+
+# Stub project_compose itself (not docker) to fail — simplest, most direct way
+# to force init_render_compose's `project_compose "$name" down` to fail
+# without emulating `docker compose` argv. Nothing after this point in the
+# file needs the real project_compose.
+project_compose() { return 1; }
+
+export HARBOR_YES=1   # bypass the (unrelated) shrink-confirm prompt
+render2_rc=0
+cmd_render renderfail >/dev/null 2>&1 || render2_rc=$?
+
+assert_eq "render: propagates init_render_compose's down-failure as nonzero" "1" "$render2_rc"
+
+# --- cmd_services: restores the manifest on a NON-decline render failure -----
+# Once cmd_render actually propagates a real failure (the fix above),
+# cmd_services' existing `if ! cmd_render ...` restore must fire for ANY
+# nonzero return — not just a declined confirm gate. Same stubbed
+# project_compose failure as above; this project never sees a decline prompt
+# (HARBOR_YES=1 the whole way), so a passing restore here proves the restore
+# logic is keyed on cmd_render's return code, not on "was it a decline".
+mkproj svcrenderfail 'services: { mysql: "mysql:8.0" }'
+printf 'HARBOR_INDEX=4\nDB_PORT=20080\n' > "$HARBOR_PORTS_DIR/svcrenderfail"
+cat > "$(project_harbor_dir svcrenderfail)/docker-compose.yml" <<'EOF'
+services:
+  mysql:
+    image: mysql:8.0
+volumes:
+  dbdata:
+EOF
+
+mf3="$(manifest_path svcrenderfail)"
+before_sum3="$(shasum "$mf3")"
+
+svc3_out="$tmp/services3.out"
+svc3_rc=0
+cmd_services rm svcrenderfail mysql >"$svc3_out" 2>&1 || svc3_rc=$?
+
+after_sum3="$(shasum "$mf3")"
+
+assert_eq "services: a non-decline render failure returns nonzero" "1" "$svc3_rc"
+assert_eq "services: manifest restored (checksum identical) after a non-decline render failure" \
+  "$before_sum3" "$after_sum3"
+assert_contains "services: reports reverted, not a decline message" \
+  "reverted: svcrenderfail services unchanged" "$(cat "$svc3_out")"
+unset HARBOR_YES
+
+# --- cmd_services: pre-flights ports_ensure BEFORE writing the manifest ------
+# Regression test for the other half of the same finding: a `die` reachable
+# inside cmd_render's call graph (ports_ensure's own die, lib/init.sh) calls
+# `exit`, terminating the process before cmd_services' restore (above) ever
+# runs. Reproduced by deleting a project's var/ports/<name> file before
+# `harbor services add`: the manifest was rewritten to the new service list
+# and the process then died on "ports not allocated", with no restore and no
+# hint that harbor.yml had already changed. cmd_services now runs the same
+# ports_ensure precondition BEFORE the manifest write, so the die happens
+# before any mutation, not after.
+mkproj noports 'services: { mysql: "mysql:8.0" }'
+# deliberately no var/ports/<name> file for 'noports'
+mf4="$(manifest_path noports)"
+before_sum4="$(shasum "$mf4")"
+noports_out="$tmp/noports.out"
+noports_rc=0
+( cmd_services add noports opensearch ) >"$noports_out" 2>&1 || noports_rc=$?
+after_sum4="$(shasum "$mf4")"
+
+assert_eq "services: dies nonzero when ports aren't allocated (preflight)" "1" "$noports_rc"
+assert_contains "services: reports the ports-not-allocated fix hint" \
+  "ports not allocated for noports" "$(cat "$noports_out")"
+assert_eq "services: manifest untouched by the ports-preflight die (no half-applied write)" \
+  "$before_sum4" "$after_sum4"
+
 # --- _ps_db_column: `harbor ps` DB-column decision logic (pure) ---------------
 # Regression test: `harbor ps` used to render `db:-` for BOTH "no mysql
 # service" (intentional) and "has mysql but var/ports/<name> is missing" (a

@@ -136,7 +136,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actual empty list was indistinguishable from `cmd_init`'s two-arg call, the
   picker marked `mysql` as `*default`, and pressing Enter silently added a
   database (the exact inverse of what this argument exists to prevent). Now
-  distinguished by argument count (`[ "$# -lt 3" ]`), not emptiness; `cmd_init`
+  distinguished by argument count (`[ "$#" -lt 3 ]`), not emptiness; `cmd_init`
   still gets the framework default with its two-arg call.
 - **A declined `harbor services` change no longer writes a bare `services:`
   line into a manifest that had no `services:` key at all** (legacy projects
@@ -150,6 +150,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the new `manifest_del_line <file> <key>` helper (`lib/manifest.sh`) — same
   top-level-anchored literal match (`index($0, k) == 1`) as `manifest_set_line`,
   reused rather than reimplemented as a regex.
+- **`harbor services` no longer produces a false "rendered"/false "reverted"
+  outcome when the render underneath it actually fails.** `cmd_services` calls
+  `cmd_render` as an `if !` condition — the first place in the codebase
+  `cmd_render` is invoked as a condition rather than a bare dispatch statement
+  — and bash disables `set -e` for a condition's *entire call graph*, not just
+  the top-level command. `init_render_compose`'s failed-`docker-compose-down`
+  path (a bare `return 1`) relied on `set -e` to abort `cmd_render`; under
+  `if !` that reliance silently no-opped, so `cmd_render` fell through to `ok
+  "rendered ..."` and returned 0 while the manifest and the actual compose
+  file disagreed (reproduced with a stubbed failing `docker compose down`:
+  `RC=0`, manifest said `services: {  }`, `docker-compose.yml` still listed
+  `mysql`). `cmd_render` (`lib/init.sh`) now propagates every call in its body
+  that can meaningfully fail with an explicit `|| return 1`, instead of
+  delegating to errexit. Separately, a `die` reachable inside `cmd_render`'s
+  call graph (`ports_ensure`'s own "ports not allocated") calls `exit`,
+  terminating the process *before* `cmd_services`' restore could run at all —
+  reproduced by deleting a project's `var/ports/<name>` file before `harbor
+  services add`, which left the manifest rewritten with the new service and
+  no restore, with an error message giving no hint the manifest had already
+  changed. `cmd_services` now pre-flights that same `ports_ensure` precondition
+  *before* writing the manifest, so the precondition either fails before any
+  mutation or reliably passes before `cmd_render` re-checks it (idempotent,
+  lock-guarded, cheap to run twice). Also: `harbor services list <name>` now
+  rejects trailing garbage arguments (`usage_die`, matching `add`/`rm`)
+  instead of silently ignoring them.
 
 ### Added
 - **`harbor render` now confirms before a manifest edit drops a service whose

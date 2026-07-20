@@ -169,7 +169,14 @@ cmd_render() {
   local mf; mf="$(manifest_path "$name")"
   [ -f "$mf" ] || die "not initialized: $name → harbor init $name"
   ports_ensure "$name" || die "ports not allocated for $name → harbor init $name"
-  ports_load "$name"
+  # Explicit `||`, not a bare statement relying on `set -e` to abort: cmd_render
+  # is now called as an `if` condition (cmd_services' render-then-restore), and
+  # bash disables errexit for the WHOLE call graph under an if/&&/|| condition
+  # (see CLAUDE.md §3) — a bare failing statement here would be silently
+  # absorbed instead of aborting, and the function would fall through to
+  # `ok "rendered ..."` and return 0. Every call below that can meaningfully
+  # fail is guarded the same way, for the same reason.
+  ports_load "$name" || return 1
   local framework; framework="$(manifest_get "$mf" framework "")"
 
   # A hand-edited manifest that drops a service must not silently detach its
@@ -195,11 +202,16 @@ cmd_render() {
   services_confirm_shrink "$name" "$oldlist" "$newlist" || { warn "aborted — manifest unchanged"; return 1; }
 
   # Only NOW may the manifest be touched — the user has agreed to proceed.
-  _materialize_services "$name"   # upgrade a legacy list-format services: in place
-  init_render_compose "$name" "$framework"
-  init_write_connection "$name"
-  init_write_agent_skills "$name"    # seed existing projects too (non-clobbering)
-  init_write_import_samples "$name"  # ditto: import-rules + hook samples
+  _materialize_services "$name"   # upgrade a legacy list-format services: in place; never fails
+  # `|| return 1` on every call below that can fail (see the note above
+  # `ports_load`) — this is exactly the line the reviewer's stubbed-`docker`
+  # repro caught: `init_render_compose`'s `project_compose ... down` failure
+  # path ends in a bare `return 1` (lib/init.sh), which needs the same explicit
+  # propagation here or it's swallowed under cmd_services' `if !`.
+  init_render_compose "$name" "$framework" || return 1
+  init_write_connection "$name" || return 1
+  init_write_agent_skills "$name" || return 1    # seed existing projects too (non-clobbering)
+  init_write_import_samples "$name" || return 1  # ditto: import-rules + hook samples
   ok "rendered $name stack: $(_project_services "$name" "$framework") — harbor up $name to apply"
 }
 

@@ -249,6 +249,7 @@ cmd_services() {
 
   case "$sub" in
     list)
+      [ "$#" -eq 0 ] || usage_die services "harbor services list $name"
       printf 'Services for %s  (catalog: %s)\n' "'$name'" "$catalog"
       for svc in $catalog; do
         case " $cur " in
@@ -266,6 +267,19 @@ cmd_services() {
   esac
 
   if [ "$new" = "$cur" ]; then ok "no change: $name services unchanged ($cur)"; return 0; fi
+
+  # Pre-flight the one precondition cmd_render's call graph would `die` on
+  # (ports_ensure — lib/init.sh) BEFORE the manifest is touched below. A `die`
+  # calls `exit`, which terminates the process outright — including the
+  # restore a few lines down — regardless of whether cmd_render otherwise
+  # returns cleanly. Reproduced: delete var/ports/<name>, then `harbor services
+  # add <name> <svc>`; without this preflight the manifest was rewritten to
+  # include the new service and the process died on "ports not allocated"
+  # before ever reaching the restore, leaving the half-applied manifest as the
+  # user's only trace. ports_ensure is a cheap, idempotent, lock-guarded
+  # backfill (CLAUDE.md §1.7) — running it again inside cmd_render right after
+  # this is harmless.
+  ports_ensure "$name" || die "ports not allocated for $name → harbor init $name"
 
   # Write, then render — and RESTORE the manifest if the render's confirm gate is
   # declined. Without the restore, answering "n" would leave the manifest already

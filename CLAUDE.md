@@ -113,6 +113,23 @@ This is the project's defining constraint. Concretely:
   `X="$(case … esac)"` to build a manifest fragment) — a `case` used as a plain
   statement is unaffected. Test any new `$(case …)` with a real `bash
   <path-to-script>` run, not just `shellcheck` (which doesn't catch this).
+- **A function invoked as an `if`/`&&`/`||` condition runs its whole call graph
+  with `set -e` disabled** — not just the top-level command, every callee
+  beneath it, transitively. A callee that relies on a bare failing statement to
+  trigger `set -e`'s abort (rather than an explicit `|| return 1`/`|| die`)
+  will instead silently continue and can report false success. This first bit
+  `cmd_render` (`lib/init.sh`) the first time it was called under a condition
+  (`cmd_services`' `if ! cmd_render "$name"; then …restore…; fi`):
+  `init_render_compose`'s failed-`docker-compose-down` path is a bare
+  `return 1`, and `cmd_render` called it as a bare statement — fine everywhere
+  else `cmd_render` was a plain dispatch statement, but under `if !` the abort
+  never fired, so `cmd_render` fell through to `ok "rendered …"` and returned 0
+  while the manifest and the actual compose file disagreed. **Fix: propagate
+  every callee's failure explicitly** (`callee "$@" || return 1`) in any
+  function that might ever be called as a condition — don't assume a bare
+  statement's `set -e` reliance is safe just because it works today; the
+  function's *caller* determines that, and a caller can change. This is a
+  real platform-level trap, not specific to this one bug, and will recur.
 - Functions over inline blocks; prefix internal helpers with `_`. Keep each `lib/*.sh`
   focused on one area (see `plan.md` layout).
 - **No heavy runtime deps.** No `jq`, no `yq` as hard requirements. Persist state
