@@ -346,11 +346,15 @@ init_write_agent_skills() {
 cmd_init() {
   require_name "${1-}"; local name="$1"; shift || true
   local framework="" phpopt="" msopt="" existing=0
+  local svcopt="" svcopt_set=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --php) phpopt="${2-}"; shift 2 ;;
       --multistore) msopt="${2-}"; shift 2 ;;
       --existing) existing=1; shift ;;
+      --services)
+        [ "$#" -ge 2 ] || usage_die init "--services needs a value (use --services \"\" for none)"
+        svcopt="$2"; svcopt_set=1; shift 2 ;;
       --*) die "unknown option: $1" ;;
       *) framework="$1"; shift ;;
     esac
@@ -377,8 +381,13 @@ cmd_init() {
 
   # manifest — services written as an explicit { svc: "image", ... } map so every
   # version is visible and editable in place
-  local ident svcnames; ident="$(db_ident "$name")"
-  svcnames="$(_init_services "$framework" | tr ',' ' ')"
+  local ident; ident="$(db_ident "$name")"
+  local svcnames
+  if [ "$svcopt_set" = 1 ]; then
+    svcnames="$(services_parse_arg "$svcopt")"
+  else
+    svcnames="$(services_select "$name" "$framework")"
+  fi
   # shellcheck disable=SC2086  # word-split the service names
   FRAMEWORK="$framework" PHP_VER="$phpver" \
   SERVICES_MAP="$(_services_map_body "$name" $svcnames)" \

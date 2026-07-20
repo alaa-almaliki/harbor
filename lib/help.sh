@@ -409,6 +409,7 @@ EOF
 harbor init — allocate ports and write the manifest (no scaffolding)
 
 Usage: harbor init <name> [framework] [--php <ver>] [--existing]
+                    [--services "a,b"]
 
   framework        Auto-DETECTED from the code if omitted (bin/magento -> magento,
                    artisan -> laravel, bin/console -> symfony, spark ->
@@ -416,6 +417,10 @@ Usage: harbor init <name> [framework] [--php <ver>] [--existing]
   --php <ver>      Pin PHP. Default: .php-version, else the global default
   --existing       Advisory only: warns if the dir has no app code yet
   --multistore <m> Accepted but only prints a hint — edit the manifest instead
+  --services "a,b"  Which backing services to run. Omit to be asked (or to get
+                    the framework default when not on a terminal).
+                    --services ""  or  --services none  -> no containers at all.
+                    Catalog: mysql, opensearch, rabbitmq, meilisearch, elasticsearch
 
 Writes projects/<name>/.harbor/harbor.yml (the source of truth), the compose
 file, connection.env, .gitignore, scripts, and the agent skill. Default services:

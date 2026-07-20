@@ -40,4 +40,12 @@ mkproj legacy 'services: [mysql, rabbitmq]'
   assert_eq "resolve: absent key, magento -> magento default" \
     "mysql opensearch rabbitmq" "$(_project_services absent magento)"; }
 
+# --- --services parsing --------------------------------------------------------
+assert_eq "parse: csv"           "mysql opensearch" "$(services_parse_arg 'mysql,opensearch')"
+assert_eq "parse: spaces + csv"  "mysql opensearch" "$(services_parse_arg 'mysql, opensearch')"
+assert_eq "parse: empty = none"  ""                 "$(services_parse_arg '')"
+assert_eq "parse: literal none"  ""                 "$(services_parse_arg 'none')"
+assert_eq "parse: dedupes"       "mysql"            "$(services_parse_arg 'mysql,mysql')"
+assert_fail "parse: rejects unknown" services_parse_arg 'mysql,bogus'
+
 report
