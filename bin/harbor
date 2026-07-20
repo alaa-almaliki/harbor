@@ -151,6 +151,7 @@ main() {
     unlink) cmd_unlink "$@" ;;
     init) cmd_init "$@" ;;
     render) cmd_render "$@" ;;
+    services) cmd_services "$@" ;;
     up) cmd_up "$@" ;;
     down) cmd_down "$@" ;;
     restart) cmd_restart "$@" ;;

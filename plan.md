@@ -229,6 +229,9 @@ harbor new <name> <framework>         # scaffold + init + up + wire + install + 
 harbor init <name> [framework] [--existing] [--multistore domain|path] [--php <ver>]
                                 [--services "a,b"]   # "" or "none" = no containers; omit to be asked
 harbor render <name>                  # regenerate compose+connection from the manifest (services: versions)
+harbor services <name>                 # pick a project's services interactively (current preselected)
+harbor services list|add|rm <name> [svc...]   # inspect/change services after init; add/rm are no-ops
+                                      #   when already/not present; re-renders (no auto `up`); confirm-gated shrink
 harbor link <name>                    # nginx vhost <name>.test (+ *.<name>.test
                                       #   automatically for domain-multistore Magento)
 harbor unlink <name>
@@ -416,6 +419,17 @@ rendered into Harbor's `etc/`; nothing is written into brew dirs):
   the container stops and the volume detaches. Growing the list, or dropping a
   service that was never `up`ed, never prompts. `HARBOR_YES=1` is the only
   bypass (no `--yes` flag).
+- **`harbor services <name> | list|add|rm <name> [svc...]`** changes a
+  project's stack after `init` — a thin layer over the same catalog/validation/
+  picker/render path: bare `<name>` opens the interactive picker with the
+  project's CURRENT services preselected (not the framework default — pressing
+  Enter must mean "keep what I have"); `add`/`rm` a service already/not present
+  is a no-op, not an error. It writes the manifest then calls `harbor render`,
+  which owns the one shrink-confirm gate (not duplicated here) — and if that
+  gate is declined, the manifest write is rolled back so a decline is
+  byte-for-byte a no-op, not half-applied. Re-renders but deliberately does
+  **not** run `harbor up`: rendering is idempotent, restarting containers is
+  not, and a user may be changing several services in a row.
 - **`harbor destroy <name>`**: unlink vhost, `down -v` (drop volumes), flush Redis
   indices, release the port/redis-db allocation, drop the SAN; `--files` also
   deletes the project directory. Confirm-gated.

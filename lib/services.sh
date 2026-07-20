@@ -86,7 +86,8 @@ services_pick_parse() {
 services_select() {
   local name="$1" framework="$2" catalog defaults reply parsed i svc mark
   catalog="$(services_catalog)"
-  defaults="$(_init_services "$framework" | tr -s ', ' ' ')"
+  defaults="${3-}"
+  if [ -z "$defaults" ]; then defaults="$(_init_services "$framework" | tr -s ', ' ' ')"; fi
   if [ ! -t 0 ] || [ "${HARBOR_YES:-0}" = "1" ]; then
     printf '%s' "$defaults"; return 0
   fi
@@ -198,4 +199,78 @@ project_has_service() {
     *" $svc "*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# services_apply <old-list> <add|rm> <svc>... — pure list algebra. Adding a
+# present service and removing an absent one are both no-ops (idempotence).
+services_apply() {
+  local old="$1" op="$2"; shift 2
+  local svc out=""
+  case "$op" in
+    add)
+      out="$old"
+      for svc in "$@"; do
+        case " $out " in *" $svc "*) continue ;; esac
+        if [ -z "$out" ]; then out="$svc"; else out="$out $svc"; fi
+      done ;;
+    rm)
+      for svc in $old; do
+        case " $* " in *" $svc "*) continue ;; esac
+        if [ -z "$out" ]; then out="$svc"; else out="$out $svc"; fi
+      done ;;
+  esac
+  printf '%s' "$out"
+}
+
+# harbor services [list|add|rm] <name> [svc...] — inspect or change a project's
+# backing services. Writes the manifest, then re-renders. Deliberately does NOT
+# run `up`: rendering is idempotent, restarting containers is not, and a user
+# may be making several changes in a row.
+cmd_services() {
+  local sub="${1-}" name svc catalog cur new
+  case "$sub" in
+    list|add|rm) shift ;;
+    "")          usage_die services "harbor services <name> | list|add|rm <name> [svc...]" ;;
+    *)           sub="" ;;   # `harbor services <name>` -> the picker
+  esac
+  require_name "${1-}"; name="$1"; shift || true
+  local mf; mf="$(manifest_path "$name")"
+  [ -f "$mf" ] || die "not initialized: $name → harbor init $name"
+  local framework; framework="$(manifest_get "$mf" framework "")"
+  catalog="$(services_catalog)"
+  cur="$(_project_services "$name" "$framework")"
+
+  case "$sub" in
+    list)
+      printf 'Services for %s  (catalog: %s)\n' "'$name'" "$catalog"
+      for svc in $catalog; do
+        case " $cur " in
+          *" $svc "*) printf '  [x] %-14s %s\n' "$svc" "$(_service_image "$name" "$svc")" ;;
+          *)          printf '  [ ] %s\n' "$svc" ;;
+        esac
+      done
+      return 0 ;;
+    add|rm)
+      [ "$#" -gt 0 ] || usage_die services "harbor services $sub $name <svc>..."
+      services_validate "$@"
+      new="$(services_apply "$cur" "$sub" "$@")" ;;
+    *)
+      new="$(services_select "$name" "$framework" "$cur")" ;;
+  esac
+
+  if [ "$new" = "$cur" ]; then ok "no change: $name services unchanged ($cur)"; return 0; fi
+
+  # Write, then render — and RESTORE the manifest if the render's confirm gate is
+  # declined. Without the restore, answering "n" would leave the manifest already
+  # rewritten while nothing else was applied: the exact "decline still mutates
+  # state" defect fixed in Task 7, reintroduced one layer up. Capture the raw
+  # line rather than rebuilding it, so a decline is byte-for-byte a no-op.
+  local prev; prev="$(manifest_get "$mf" services "")"
+  # shellcheck disable=SC2086  # word-split the resolved service list
+  manifest_set_line "$mf" services "{ $(_services_map_body "$name" $new) }"
+  if ! cmd_render "$name"; then       # carries the shrink-confirm gate from Task 7
+    manifest_set_line "$mf" services "$prev"
+    warn "reverted: $name services unchanged"
+    return 1
+  fi
 }

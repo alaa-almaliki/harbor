@@ -219,4 +219,12 @@ assert_eq "ps db column: mysql + ports allocated -> db:<port>" \
 assert_eq "ps db column: mysql + NO ports file -> db:? (needs attention)" \
   "db:?" "$(_ps_db_column psdb_broken)"
 
+# --- services add/rm list algebra (pure) ---------------------------------------
+assert_eq "apply: add new"        "mysql opensearch" "$(services_apply "mysql" add opensearch)"
+assert_eq "apply: add existing"   "mysql"            "$(services_apply "mysql" add mysql)"
+assert_eq "apply: rm present"     "mysql"            "$(services_apply "mysql opensearch" rm opensearch)"
+assert_eq "apply: rm absent"      "mysql"            "$(services_apply "mysql" rm rabbitmq)"
+assert_eq "apply: rm last"        ""                 "$(services_apply "mysql" rm mysql)"
+assert_eq "apply: add two"        "mysql a b"        "$(services_apply "mysql" add a b)"
+
 report

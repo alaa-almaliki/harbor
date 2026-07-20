@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authoritative whenever PRESENT — including an explicit empty map — and only
   an ABSENT key falls back to the framework default, so manifests written
   before this feature keep working unchanged.
+- **`harbor services` — change a project's backing services after `init`.**
+  `harbor services <name>` opens the same interactive picker as `init`, with
+  the project's CURRENT services preselected (not the framework default —
+  pressing Enter means "keep what I have"). `harbor services list <name>`
+  shows what's on/off with resolved images; `harbor services add|rm <name>
+  <svc>...` changes the list directly — adding a service already present, or
+  removing one that isn't, is a no-op, not an error. Writes the manifest and
+  re-renders, but deliberately does **not** run `harbor up` (rendering is
+  idempotent, restarting containers isn't). Routes through `harbor render`'s
+  existing confirm gate before dropping a service whose data volume still
+  exists — asked once, not duplicated — and rolls the manifest write back if
+  that prompt is declined, so a decline is byte-for-byte a no-op.
+  `HARBOR_YES=1` is the only bypass (no `--yes` flag).
 
 ### Changed
 - **Lifecycle commands no-op instead of erroring on a service-less project.**

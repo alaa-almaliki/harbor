@@ -475,6 +475,32 @@ See also: harbor up · harbor init --help · harbor destroy --help
 EOF
   ;;
 
+  services) cat <<'EOF'
+harbor services — inspect or change a project's backing services  [confirms]
+
+Usage: harbor services <name>              pick interactively (current preselected)
+       harbor services list <name>
+       harbor services add  <name> <svc>...
+       harbor services rm   <name> <svc>...
+
+Catalog: mysql · opensearch · rabbitmq · meilisearch · elasticsearch
+
+Adding a service you already have, or removing one you don't, is a no-op.
+Changes are written to the manifest and re-rendered; run `harbor up <name>`
+afterwards to apply them to running containers.
+
+Removing a service whose data volume exists CONFIRMS first. Your data is not
+deleted — the volume is kept and re-adding the service reattaches it intact.
+Only `harbor destroy <name>` drops volumes. HARBOR_YES=1 skips the prompt
+(there is no --yes flag).
+
+Example:
+  harbor services add shop opensearch && harbor up shop
+
+See also: harbor render · harbor init --help · harbor destroy
+EOF
+  ;;
+
   link) cat <<'EOF'
 harbor link — serve the project at https://<name>.test
 

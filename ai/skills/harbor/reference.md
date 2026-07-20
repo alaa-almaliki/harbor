@@ -40,6 +40,7 @@ brackets); name-less it errors with `project name required`.
 | `harbor down <name>` | Stop it (keeps MySQL volume; flushes its Redis indices). |
 | `harbor restart <name>` | Restart the stack. |
 | `harbor render <name>` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:`). **Confirms** before dropping a service whose data volume still exists (data kept; `HARBOR_YES=1` skips). |
+| `harbor services <name>` \| `list\|add\|rm <name> [svc...]` | Inspect/change a project's services after init. Bare `<name>` is the picker (current selection preselected); `add`/`rm` are no-ops when already/not present. Writes the manifest + re-renders (does NOT run `up`) — same confirm gate as `render` when a service with data would be dropped. |
 | `harbor destroy <name> [--files]` | Remove stack + volumes + vhost + ports (confirm-gated; `--files` also deletes the code). |
 | `harbor link <name>` | Create/refresh the `https://<name>.test` vhost (adds cert SAN, reloads nginx). |
 | `harbor unlink <name>` | Remove the vhost. |
@@ -125,10 +126,12 @@ remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }
 Each entry in `services:` is `<name>: "<image:tag>"` — one compose fragment per
 service, version explicit. Bundled: `mysql`, `opensearch`, `elasticsearch`,
 `rabbitmq`, `meilisearch`. A plain project defaults to just `mysql`; Magento to
-`mysql + opensearch + rabbitmq`. To change a version, edit the value; to add a
-service, add a line; then `harbor render <name> && harbor up <name>` — `render`
-**confirms** before dropping a service whose data volume still exists (data is
-kept, not deleted; `HARBOR_YES=1` skips the prompt, there is no `--yes` flag).
+`mysql + opensearch + rabbitmq`. To change a version, edit the value; to add or
+remove a service, use `harbor services add|rm <name> <svc>...` (or hand-edit
+the value/line and run `harbor render <name>`), then `harbor up <name>` —
+either path **confirms** before dropping a service whose data volume still
+exists (data is kept, not deleted; `HARBOR_YES=1` skips the prompt, there is
+no `--yes` flag).
 
 **`services: {}` means no containers — no database at all.** This is a valid,
 supported state (chosen at `harbor init` time via its interactive picker or
@@ -137,9 +140,9 @@ no `mysql` service: `harbor up`/`down`/`restart`/`logs` are no-ops (not
 errors); `harbor db …`/`harbor mysql` refuse with a fix hint; `harbor doctor`
 doesn't require `pdo_mysql`; a Magento project's `install`/`wire` refuse up
 front, naming every missing service (Magento needs all three of `mysql`,
-`opensearch`, `rabbitmq`); `harbor ps` shows `db:-`. Add a database later by
-adding `mysql: "mysql:8.0"` to `services:` and running `harbor render <name> &&
-harbor up <name>`. If a project instead HAS a `mysql` service but its ports
+`opensearch`, `rabbitmq`); `harbor ps` shows `db:-`. Add a database later with
+`harbor services add <name> mysql && harbor up <name>` (or hand-edit
+`services:` and `harbor render <name> && harbor up <name>`). If a project instead HAS a `mysql` service but its ports
 were never allocated (missing `var/ports/<name>`), `harbor ps` shows `db:?`
 — that means "needs attention" (e.g. `harbor up <name>`), not "no database".
 
