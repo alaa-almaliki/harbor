@@ -60,7 +60,9 @@ Works with **plain PHP, Magento, Laravel, Symfony, and CodeIgniter** side by sid
 | **Docker — per project** | `harbor up`/`down` on demand | MySQL 8, OpenSearch + RabbitMQ (Magento) |
 
 - Every site is reachable at `https://<name>.test` with a trusted certificate.
-- Each project gets its own MySQL container on an automatically allocated port.
+- Each project that uses a database gets its own MySQL container on an
+  automatically allocated port (a project can also run with no services at all —
+  see [Optional backing services](#optional-backing-services)).
 - Redis and Mailpit are shared; each project gets isolated Redis DB indices and a
   key prefix, and its Redis data is flushed when you bring the project down.
 
@@ -520,8 +522,8 @@ at the prompt) means **no containers whatsoever** — the manifest gets an empty
 project: `harbor up`/`down`/`restart <name>`/`logs <name>` are no-ops (not
 errors); `harbor db …`/`harbor mysql` refuse with a fix hint instead of
 running; `harbor doctor <name>` doesn't require `pdo_mysql`; Magento `install`/
-`wire` refuse up front, naming every missing service, since Magento requires a
-database; `harbor ps` shows `db:-`. Add a database later with
+`wire` refuse up front, naming every missing required service, since Magento
+requires `mysql` + `opensearch` (RabbitMQ is optional); `harbor ps` shows `db:-`. Add a database later with
 `harbor services add <name> mysql && harbor up <name>` (or edit `services:` by
 hand and run `harbor render <name> && harbor up <name>` — see below); either
 way, render will ask before dropping anything that already has data. (If a project
