@@ -128,27 +128,57 @@ _service_volume() {
   printf 'harbor-%s_%s' "$name" "$vol"
 }
 
+# _services_at_risk <name> <old> <new> — pure risk assessment for
+# services_confirm_shrink, split out as a testability seam (CLAUDE.md §6.5):
+# it returns the "svc:vol" pairs at risk without touching stdin/confirm, so
+# tests can assert the determination without stubbing an interactive prompt.
+#
+# Three-way outcome per dropped service's volume:
+#   1. `docker volume inspect` succeeds        -> volume exists    -> at risk
+#   2. it fails AND the error clearly means the volume is absent   -> not at risk
+#   3. it fails for any other reason (unreachable daemon, permission
+#      error, wrong DOCKER_HOST/context, transient fault, ...)     -> unknown,
+#      assume at risk
+# Docker doesn't give a distinct exit code for "no such volume" vs. other
+# failures, so outcome 2 is decided by matching the error text
+# case-insensitively and defensively: if it doesn't clearly say the volume is
+# absent, fall into outcome 3. When in doubt, prompt — a spurious prompt is a
+# mild annoyance, a skipped one silently loses someone's database access.
+_services_at_risk() {
+  local name="$1" old="$2" new="$3" svc vol err atrisk="" dockerup=1
+  # If we can't reach Docker at all we can't tell whether data exists. Assume
+  # it does and prompt anyway: skipping the prompt because the daemon happens
+  # to be down turns a safety gate into a coin flip, and "no prompt appeared"
+  # is exactly how a user concludes nothing was at stake.
+  docker info >/dev/null 2>&1 || dockerup=0
+  for svc in $(services_dropped "$old" "$new"); do
+    vol="$(_service_volume "$name" "$svc")"
+    [ -n "$vol" ] || continue
+    if [ "$dockerup" = 0 ]; then
+      atrisk="$atrisk $svc:$vol"
+      continue
+    fi
+    if err="$(docker volume inspect "$vol" 2>&1 >/dev/null)"; then
+      atrisk="$atrisk $svc:$vol"
+    else
+      case "$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')" in
+        *"no such volume"*) ;;                 # confirmed absent — not at risk
+        *) atrisk="$atrisk $svc:$vol" ;;       # unknown failure — assume at risk
+      esac
+    fi
+  done
+  printf '%s' "$atrisk"
+}
+
 # services_confirm_shrink <name> <old> <new> — confirm before dropping a service
 # whose data volume still exists. Removing a service does NOT delete data: the
 # named volume is left in place and re-adding the service reattaches it intact;
 # only `harbor destroy` drops volumes. Say so — an alarmist prompt for a
 # reversible action trains people to ignore the prompts that aren't.
 services_confirm_shrink() {
-  local name="$1" old="$2" new="$3" svc vol atrisk="" dockerup=1
-  # If we can't reach Docker we can't tell whether data exists. Assume it does
-  # and prompt anyway: skipping the prompt because the daemon happens to be down
-  # turns a safety gate into a coin flip, and "no prompt appeared" is exactly how
-  # a user concludes nothing was at stake.
-  docker info >/dev/null 2>&1 || dockerup=0
-  for svc in $(services_dropped "$old" "$new"); do
-    vol="$(_service_volume "$name" "$svc")"
-    [ -n "$vol" ] || continue
-    if [ "$dockerup" = 0 ] || docker volume inspect "$vol" >/dev/null 2>&1; then
-      atrisk="$atrisk $svc:$vol"
-    fi
-  done
+  local name="$1" old="$2" new="$3" atrisk pair
+  atrisk="$(_services_at_risk "$name" "$old" "$new")"
   [ -n "$atrisk" ] || return 0
-  local pair
   for pair in $atrisk; do
     warn "removing ${pair%%:*} from '$name' stops its container and unmounts its data"
     step "the volume ${pair#*:} is KEPT — re-adding ${pair%%:*} reattaches it intact"

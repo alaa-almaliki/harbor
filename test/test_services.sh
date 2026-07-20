@@ -88,6 +88,58 @@ assert_eq "dropped: one"         "opensearch" "$(services_dropped "mysql opensea
 assert_eq "dropped: all"         "mysql"     "$(services_dropped "mysql" "")"
 assert_eq "dropped: growth only" ""          "$(services_dropped "mysql" "mysql opensearch")"
 
+# --- _services_at_risk: three-way docker-volume-inspect outcome (pure) --------
+# services_confirm_shrink's whole job is deciding whether to prompt before a
+# service (and its data) is dropped. `_services_at_risk` is the extracted,
+# stdin-free risk assessment (a testability seam per CLAUDE.md §6.5) — assert
+# the determination directly instead of driving the interactive confirm().
+#
+# One `docker` stub, mode-selected via $_DOCKER_STUB, reused for the rest of
+# this file (including the cmd_render decline test below) rather than
+# redefined per-scenario — shellcheck's SC2329 flags an earlier `docker()`
+# definition as "never invoked" once it's shadowed by a later redefinition in
+# the same file, since it can't trace the call happening inside the sourced
+# _services_at_risk. A single definition sidesteps that false positive.
+docker() {
+  case "$_DOCKER_STUB" in
+    # `docker info` (and everything else) fails: daemon entirely unreachable.
+    down) return 1 ;;
+  esac
+  case "$1" in
+    info) return 0 ;;
+    volume)
+      case "$_DOCKER_STUB" in
+        # 2. `inspect` fails with the real "no such volume" wording Docker
+        # uses on this machine (verified: `docker volume inspect
+        # definitely-not-a-real-volume-xyz` -> "Error response from daemon:
+        # get definitely-not-a-real-volume-xyz: no such volume") -> genuinely
+        # absent -> NOT at risk.
+        absent) printf 'Error response from daemon: get %s: no such volume\n' "$3" >&2; return 1 ;;
+        # 3. `inspect` fails for some other reason (permission error, wrong
+        # DOCKER_HOST/context, transient daemon fault, ...) -> unknown ->
+        # assume at risk. This is the assertion that pins the fix: the old
+        # code treated ANY inspect failure as "volume absent" and silently
+        # skipped the prompt.
+        other) printf 'permission denied\n' >&2; return 1 ;;
+        # 1. `inspect` succeeds -> volume exists -> at risk.
+        *) return 0 ;;
+      esac
+      ;;
+  esac
+}
+
+_DOCKER_STUB=ok
+out="$(_services_at_risk atriskproj mysql "")"
+assert_contains "at_risk: inspect succeeds -> reported at risk" "mysql:" "$out"
+
+_DOCKER_STUB=absent
+out="$(_services_at_risk atriskproj mysql "")"
+assert_eq "at_risk: inspect fails with 'no such volume' -> NOT at risk" "" "$out"
+
+_DOCKER_STUB=other
+out="$(_services_at_risk atriskproj mysql "")"
+assert_contains "at_risk: inspect fails with unrelated error -> assumed at risk" "mysql:" "$out"
+
 # --- cmd_render: declining the confirm gate must not touch the manifest -------
 # Regression test: _materialize_services (which rewrites a legacy list-format
 # `services:` into the explicit map form, and strips db.image) used to run
@@ -121,11 +173,12 @@ EOF
 mf="$(manifest_path shrink)"
 before_sum="$(shasum "$mf")"
 
-# Stub `docker` so `docker info` fails deterministically — no real Docker calls,
-# no dependence on whether Docker happens to be running on this machine. This
-# forces services_confirm_shrink to assume data is at risk and prompt, without
-# ever reaching `docker volume inspect`.
-docker() { return 1; }
+# Switch the shared `docker` stub (defined above) to "down" so `docker info`
+# fails deterministically — no real Docker calls, no dependence on whether
+# Docker happens to be running on this machine. This forces
+# services_confirm_shrink to assume data is at risk and prompt, without ever
+# reaching `docker volume inspect`.
+_DOCKER_STUB=down
 
 # confirm() reads stdin via `read -r -p`; a piped 'n' declines without a TTY.
 # HARBOR_YES=1 FORCES yes, so it must stay unset here — the whole point of this

@@ -31,6 +31,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again. `render` now keeps the compose file and returns nonzero on a failed
   `down`, with a message naming the retry path (`harbor down <name>`, then
   re-render); the file is only removed once `down` actually succeeds.
+- **`harbor render`'s shrink-confirm gate no longer fail-opens on a
+  `docker volume inspect` error that isn't "no such volume."** `services_confirm_shrink`
+  (`lib/services.sh`) used to treat any `docker volume inspect` failure —
+  including permission errors, a transient daemon/storage-driver fault, or a
+  misconfigured `DOCKER_HOST`/context pointing at a different daemon — as proof
+  the volume didn't exist, and silently skipped the confirmation prompt. Now the
+  outcome is three-way: `inspect` succeeding means at risk; `inspect` failing
+  with wording that clearly means the volume is absent (`no such volume`,
+  matched case-insensitively) means not at risk; any other failure is unknown
+  and treated as at risk, same as an unreachable daemon. When in doubt, prompt.
+  Extracted the risk assessment into a new pure helper, `_services_at_risk <name>
+  <old> <new>`, so the three outcomes are covered by unit tests
+  (`test/test_services.sh`) with a stubbed `docker` — no real Docker calls.
 - **Declining `harbor render`'s shrink-confirm gate no longer mutates the
   manifest.** `cmd_render` (`lib/init.sh`) ran `_materialize_services` — which
   migrates a legacy list-format `services:` into the explicit map form and
