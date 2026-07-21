@@ -4,7 +4,7 @@ name: harbor-sandbox
 
 services:
   mysql:
-    image: {{MYSQL_IMAGE}}
+    image: {{MYSQL_IMAGE}}{{MYSQL_PLATFORM}}
     restart: unless-stopped
     command: {{DB_COMMAND}}
     environment:

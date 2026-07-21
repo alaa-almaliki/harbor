@@ -21,6 +21,7 @@ sandbox_render() {
   mkdir -p "$HARBOR_DOCKER"
   local image; image="$(_sandbox_image)"
   MYSQL_IMAGE="$image" \
+  MYSQL_PLATFORM="$(service_platform_line mysql)" \
   DB_COMMAND="$(_db_command "$image" "$(config_get MYSQL_BUFFER_POOL 256M)")" \
   MYSQL_ROOT_PASS="$(_sandbox_root)" \
   MYSQL_PORT="$(_sandbox_port)" \

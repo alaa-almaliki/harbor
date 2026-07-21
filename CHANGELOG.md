@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Rendered compose files now pin `platform:` to the host architecture**, so
+  Docker pulls a native image instead of silently reusing a cached foreign-arch
+  one. A stale amd64 image kept running under emulation on Apple Silicon —
+  correct but far slower (most visibly on database imports), with no symptom
+  beyond a one-line warning at `up`. Applies to every per-project service and to
+  both singleton stacks (shared mailpit/redis, db sandbox). Override per service
+  with `<SVC>_PLATFORM` or globally with `DOCKER_PLATFORM` in
+  `~/.config/harbor/config`; set either to `none` to disable the pin for an image
+  that has no host-arch build (`mysql:5.7` and other legacy tags are amd64-only,
+  and emulation is better than a pull that fails outright). Run
+  `harbor render <name> && harbor up <name>` to apply. No host-footprint change.
+
 ### Fixed
 - **Path multi-store served the homepage for every non-homepage URL, on every
   store.** The `REQUEST_URI` override was built from `$uri`, but `try_files

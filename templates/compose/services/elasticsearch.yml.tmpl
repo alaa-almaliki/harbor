@@ -1,5 +1,5 @@
   elasticsearch:
-    image: {{ELASTICSEARCH_IMAGE}}
+    image: {{ELASTICSEARCH_IMAGE}}{{ELASTICSEARCH_PLATFORM}}
     restart: unless-stopped
     environment:
       - discovery.type=single-node

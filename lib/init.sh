@@ -181,19 +181,24 @@ init_render_compose() {
   pool="$(config_get MYSQL_BUFFER_POOL 256M)"
   NAME="$name" \
   DB_IMAGE="$image" \
+  DB_PLATFORM="$(service_platform_line mysql)" \
   DB_COMMAND="$(_db_command "$image" "$pool")" \
   DB_NAME="$ident" DB_USER="$ident" DB_PASS="$ident" \
   DB_ROOT_PASS="$(config_get MYSQL_ROOT_PASSWORD root)" \
   DB_PORT="$DB_PORT" \
   OPENSEARCH_IMAGE="$(_service_image "$name" opensearch)" \
+  OPENSEARCH_PLATFORM="$(service_platform_line opensearch)" \
   OS_HEAP="$(config_get OPENSEARCH_HEAP 512m)" \
   OPENSEARCH_PORT="$OPENSEARCH_PORT" \
   ELASTICSEARCH_IMAGE="$(_service_image "$name" elasticsearch)" \
+  ELASTICSEARCH_PLATFORM="$(service_platform_line elasticsearch)" \
   ELASTIC_PORT="$ELASTIC_PORT" \
   ES_HEAP="$(config_get ELASTICSEARCH_HEAP 512m)" \
   RABBITMQ_IMAGE="$(_service_image "$name" rabbitmq)" \
+  RABBITMQ_PLATFORM="$(service_platform_line rabbitmq)" \
   RABBITMQ_PORT="$RABBITMQ_PORT" RABBITMQ_UI_PORT="$RABBITMQ_UI_PORT" \
   MEILISEARCH_IMAGE="$(_service_image "$name" meilisearch)" \
+  MEILISEARCH_PLATFORM="$(service_platform_line meilisearch)" \
   MEILI_PORT="$MEILI_PORT" \
   MEILI_MASTER_KEY="$(config_get MEILI_MASTER_KEY harbor-local-meili-master)" \
   MEILI_MEMORY="$(config_get MEILI_INDEXING_MEMORY 512Mb)" \

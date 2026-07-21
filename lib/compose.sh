@@ -10,6 +10,8 @@ require_docker() { docker info >/dev/null 2>&1 || die "docker daemon not running
 
 shared_render() {
   mkdir -p "$HARBOR_DOCKER"
+  MAILPIT_PLATFORM="$(service_platform_line mailpit)" \
+  REDIS_PLATFORM="$(service_platform_line redis)" \
   render "$HARBOR_TEMPLATES/compose/shared.yml.tmpl" "$HARBOR_SHARED_COMPOSE"
 }
 

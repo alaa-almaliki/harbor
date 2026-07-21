@@ -580,6 +580,24 @@ A machine-wide default for a fresh project's pin comes from `~/.config/harbor/co
 (`OPENSEARCH_IMAGE`, `ELASTICSEARCH_IMAGE`, `RABBITMQ_IMAGE`, `MEILISEARCH_IMAGE`,
 `MYSQL_IMAGE` — uppercased service name + `_IMAGE`).
 
+**Image architecture.** Every rendered service pins `platform:` to the host's
+architecture, so Docker pulls a native image rather than silently reusing a
+cached foreign-arch one — an amd64 database on Apple Silicon runs under
+emulation, which works but is markedly slower, and the only hint is a one-line
+warning at `up`. Override it in `~/.config/harbor/config` when an image has no
+build for your architecture (`mysql:5.7` and many legacy tags are amd64-only):
+
+```bash
+MYSQL_PLATFORM=linux/amd64   # one service; the rest of the stack stays native
+DOCKER_PLATFORM=linux/amd64  # every service, every stack
+MYSQL_PLATFORM=none          # no pin at all — let Docker choose (emulation)
+```
+
+Prefer `none` (or the matching `linux/amd64`) over leaving a pin Docker can't
+satisfy: an unpinned image falls back to emulation, whereas an impossible pin
+fails the pull outright. If you've been running an emulated image, re-pull it
+once — `docker pull --platform linux/arm64 <image>` — then `harbor up <name>`.
+
 **MariaDB** isn't a separate service — it's a MySQL-compatible image swap on the
 `mysql` entry, so `harbor mysql`/`db import`/wiring keep working:
 
@@ -595,7 +613,8 @@ Meilisearch's host + key land in `.harbor/connection.txt` (Laravel Scout:
 
 **Adding another service** (e.g. Postgres, Valkey): drop a
 `templates/compose/services/<svc>.yml.tmpl` (loopback bind, healthcheck, RAM cap,
-`{{<SVC>_IMAGE}}` for the version) and, if it has a named volume,
+`{{<SVC>_IMAGE}}` for the version and `{{<SVC>_PLATFORM}}` appended to the same
+`image:` line for the arch pin) and, if it has a named volume,
 `templates/compose/volumes/<svc>.yml.tmpl`; add a `_service_image_default` case,
 claim the next free port offset in `lib/ports.sh` (`_ports_write`), and add its
 host/port to `connection.env`. Then `services: { <svc>: "…" }` picks it up.

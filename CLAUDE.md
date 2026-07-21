@@ -343,7 +343,14 @@ and **[SemVer](https://semver.org)**.
   `{ svc: "image" }` map, so `services.<svc>` is the pin (→ config `<SVC>_IMAGE`
   → default). Users opt in by adding a `services:` entry; `harbor render <name>`
   regenerates the stack (and migrates legacy list-format manifests). Bind
-  `127.0.0.1`, add a healthcheck, add RAM caps. (MySQL-compatible engines like
+  `127.0.0.1`, add a healthcheck, add RAM caps. **Append `{{<SVC>_PLATFORM}}` to
+  the `image:` line** and feed it `service_platform_line <svc>` from the renderer
+  — Docker silently reuses a cached foreign-arch image, so without a pin a stale
+  amd64 image keeps running under emulation on Apple Silicon (correct, far
+  slower, and the only symptom is a one-line warning at `up`). The helper emits
+  its own leading newline so an unpinned service renders no stray blank line;
+  that's why it's appended to `image:` rather than given its own template line.
+  Every compose renderer must do this — per-project *and* both singletons. (MySQL-compatible engines like
   **MariaDB** are not a new service — they're a `services.mysql: "mariadb:…"`
   image swap; keep the compose service named `mysql` so `harbor mysql`/`db` keep
   working, and make engine-specific server flags conditional in `_db_command`.)
@@ -387,7 +394,21 @@ test). Run it with `harbor test` or `./test/run.sh` (filter: `harbor test manife
 - **Scope is pure logic only** — parsing, allocation, validation, templating,
   serialized-replace. Tests **never touch the host**: no Docker, launchd, nginx,
   certs, or the sandbox. Use throwaway `mktemp -d` dirs and override globals
-  (`HARBOR_PORTS_DIR`, `HARBOR_CONFIG`, …) inside a subshell; clean up on `EXIT`.
+  (`HARBOR_PORTS_DIR`, `HARBOR_CONFIG`, …); clean up on `EXIT`.
+- **Never put an assertion inside a `( … )` subshell.** `PASS`/`FAIL` are plain
+  variables, so a subshell's increments never reach `report` — the file tallies
+  only its top-level assertions and `run.sh` **exits 0 even when an assertion
+  inside the subshell failed**, which is worse than no test at all. Scope a
+  global with a **per-call env prefix** instead
+  (`"$(HARBOR_CONFIG="$cfg" config_get PORT)"`, `test_common.sh`), or assign it
+  at top level between assertions. When a case genuinely needs a child shell
+  (checking a function's exit status under `set -e`), wrap it in a helper that
+  *returns* a status and assert on that with `assert_ok`/`assert_fail` — never
+  assert inside the child.
+- **Set `HARBOR_CONFIG` *after* sourcing the lib, never as an env prefix on a
+  `bash -c`.** `lib/common.sh` assigns it unconditionally, so a prefix is
+  overwritten at source time and the test silently exercises the default config
+  instead of the fixture — it still passes, while testing nothing it claims to.
 - **When you add or change a pure-logic function** (`lib/manifest.sh`,
   `lib/ports.sh`, `lib/common.sh` helpers, `lib/search-replace.php`'s `rr()`), add
   or adjust its test in the same commit. Keep `test/` shellcheck-clean.

@@ -1,5 +1,5 @@
   opensearch:
-    image: {{OPENSEARCH_IMAGE}}
+    image: {{OPENSEARCH_IMAGE}}{{OPENSEARCH_PLATFORM}}
     restart: unless-stopped
     environment:
       - discovery.type=single-node

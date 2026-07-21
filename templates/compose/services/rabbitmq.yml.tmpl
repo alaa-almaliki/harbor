@@ -1,5 +1,5 @@
   rabbitmq:
-    image: {{RABBITMQ_IMAGE}}
+    image: {{RABBITMQ_IMAGE}}{{RABBITMQ_PLATFORM}}
     restart: unless-stopped
     ports:
       - "127.0.0.1:{{RABBITMQ_PORT}}:5672"

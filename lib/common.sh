@@ -276,6 +276,52 @@ xdebug_dflags() {
   printf '%s' "$dflags"
 }
 
+# --- Docker platform ---------------------------------------------------------
+# The host's Docker platform string. Docker happily runs a foreign-arch image
+# under emulation, so a cached amd64 image keeps being reused on Apple Silicon
+# long after an arm64 build exists upstream — correct, but far slower (most
+# visibly on database imports), and the only symptom is a one-line warning at
+# `up`. Pinning `platform:` in the rendered compose makes the pull explicit.
+# An unrecognised arch yields "" (no pin) rather than a guess.
+host_platform() {
+  case "$(uname -m)" in
+    arm64|aarch64) printf 'linux/arm64' ;;
+    x86_64|amd64)  printf 'linux/amd64' ;;
+    *)             printf '' ;;
+  esac
+}
+
+# resolve a service's compose `platform:` value. Lives here, not beside
+# _service_image in init.sh, because it reads no manifest (it's host + config
+# only) and all three compose renderers need it — per-project (init.sh), the
+# shared stack (compose.sh) and the db sandbox (sandbox.sh).
+#
+# Precedence: config `<SVC>_PLATFORM` -> config `DOCKER_PLATFORM` -> host arch.
+# Setting either to `none` disables the pin, which is the escape hatch for an
+# image with no host-arch build (`mysql:5.7` is amd64-only, as are plenty of
+# legacy tags): unpinned, Docker falls back to emulation, which is slow but
+# works — whereas a pin it can't satisfy fails the pull outright.
+service_platform() {
+  local svc="$1" v ckey
+  ckey="$(printf '%s_PLATFORM' "$svc" | tr '[:lower:]' '[:upper:]')"
+  v="$(config_get "$ckey" "")"
+  [ -z "$v" ] && v="$(config_get DOCKER_PLATFORM "")"
+  [ -z "$v" ] && v="$(host_platform)"
+  [ "$v" = none ] && v=""
+  printf '%s' "$v"
+}
+
+# the rendered compose line for a service's platform pin, or empty when
+# unpinned. Emits its OWN leading newline and is appended to the `image:` line
+# in the templates (`image: {{X_IMAGE}}{{X_PLATFORM}}`) so an unpinned service
+# renders no stray blank line inside its block. Returns 0 either way — it is
+# called as a bare statement in the renderers' env prefixes, where a nonzero
+# return would abort the whole render under set -e (CLAUDE.md §3).
+service_platform_line() {
+  local p; p="$(service_platform "$1")"
+  if [ -n "$p" ]; then printf '\n    platform: %s' "$p"; fi
+}
+
 # --- Global config (KEY=VALUE) ----------------------------------------------
 # config_get <KEY> [default]
 config_get() {

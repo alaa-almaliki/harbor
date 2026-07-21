@@ -95,6 +95,12 @@ defaults: `DEFAULT_PHP`, `LOCALE`/`CURRENCY`/`TIMEZONE`, `ADMIN_USER`/
 `ADMIN_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `OPENSEARCH_HEAP`, `MYSQL_IMAGE`, etc.
 Created with sane values on first `harbor setup`.
 
+Rendered compose pins each service's `platform:` to the host architecture, so a
+cached foreign-arch image is never silently reused (an emulated amd64 database on
+Apple Silicon is correct but much slower, and warns only once at `up`). Override
+with `<SVC>_PLATFORM` or `DOCKER_PLATFORM`; `none` disables the pin for images
+with no host-arch build, where emulation beats a pull that cannot resolve.
+
 **Per-project manifest** — `projects/<name>/.harbor/harbor.yml` is the single
 source of truth for a project's topology and is **committable** (teammates clone
 + `harbor up` → identical stack):

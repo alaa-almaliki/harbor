@@ -151,6 +151,14 @@ either path **confirms** before dropping a service whose data volume still
 exists (data is kept, not deleted; `HARBOR_YES=1` skips the prompt, there is
 no `--yes` flag).
 
+Every rendered service pins `platform:` to the host architecture, so Docker
+pulls a native image instead of reusing a cached foreign-arch one (an emulated
+amd64 database is correct but much slower). If a pinned image has no build for
+your architecture the pull fails — set `<SVC>_PLATFORM` (e.g.
+`MYSQL_PLATFORM=linux/amd64`, or `none` to drop the pin and let Docker emulate)
+or the stack-wide `DOCKER_PLATFORM` in `~/.config/harbor/config`, then
+`harbor render <name>`.
+
 **`services: {}` means no containers — no database at all.** (A bare
 `services:` with no value means the same. But *deleting* the whole `services:`
 line is different: an absent key falls back to the framework default and may

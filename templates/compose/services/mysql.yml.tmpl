@@ -1,6 +1,6 @@
   # Primary database (MySQL or MariaDB via services.mysql). DB_COMMAND is engine-aware.
   mysql:
-    image: {{DB_IMAGE}}
+    image: {{DB_IMAGE}}{{DB_PLATFORM}}
     restart: unless-stopped
     command: {{DB_COMMAND}}
     environment:

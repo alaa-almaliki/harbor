@@ -3,7 +3,7 @@ name: harbor-shared
 
 services:
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:latest{{MAILPIT_PLATFORM}}
     restart: unless-stopped
     ports:
       - "127.0.0.1:1025:1025"   # SMTP
@@ -12,7 +12,7 @@ services:
       MP_MAX_MESSAGES: "5000"
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine{{REDIS_PLATFORM}}
     restart: unless-stopped
     # persistence OFF (pure cache); 256 logical DBs for per-project indices
     command: ["redis-server", "--save", "", "--appendonly", "no", "--databases", "256"]
