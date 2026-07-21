@@ -1070,14 +1070,57 @@ EOF
   store) cat <<'EOF'
 harbor store — Magento multi-store routing
 
-Usage: harbor store add <name> <code> --domain <host> | --path <seg>
+Usage: harbor store add <name> <code> --domain <host> | --path <seg> [--website|--store]
        harbor store list <name>
        harbor store rm <name> <code>
 
   --domain <host>   Route by hostname  -> <code>.<name>.test
   --path <seg>      Route by URL path  -> <name>.test/<seg>
+                    Use --path / for the prefix-less default store.
+  --website         <code> is a WEBSITE code   (MAGE_RUN_TYPE=website)
+  --store           <code> is a STORE VIEW code (MAGE_RUN_TYPE=store) — default
 
 The mode flag must come straight after <code>; one of the two is required.
+--website/--store may follow it.
+
+A project routes by websites OR by store views — never both, exactly as it uses
+one mode. The manifest key IS the scope, so the two never disagree:
+
+  multistore: { mode: path, websites: { main: /, de: /de, fr: /fr } }
+  multistore: { mode: path, stores:   { default: /, de_de: /de } }
+
+Setting both keys is rejected on render, not silently merged. Like the mode, the
+scope is locked once set; edit the manifest's `multistore:` to switch.
+
+Route by WEBSITE when the app's base URLs are set at website scope (the usual
+Magento multi-website layout); by STORE VIEW when they're set per store view.
+Getting this wrong resolves the wrong scope, or none at all.
+
+In path mode the prefix belongs to Harbor, not Magento, so it does NOT have to
+equal the code it maps to — `--path germany` can serve website code `de`. nginx
+picks the scope from $request_uri, strips the prefix, and hands Magento a normal
+path.
+Segments are [a-z0-9_-] and may not collide with a Magento path (static, media,
+setup, admin, rest, graphql, index.php, …).
+
+Three Magento settings this mode REQUIRES. Harbor does not write them for you,
+because the scope may not exist when the entry is registered:
+  * web/url/use_store = 0 — at 1 Magento prepends the store code on top of
+    Harbor's prefix, giving /<seg>/<code>/…
+  * web/url/redirect_to_base = 0 — REQUIRED, not optional. nginx strips the
+    prefix, so Magento sees path "/" while the base URL is "/<seg>/", decides
+    you are on the wrong URL, and 301s to /<seg>/ — which nginx strips again.
+    Infinite redirect loop until this is 0.
+  * each prefixed scope's base URL must carry the prefix, so Magento emits it:
+      harbor magento <name> config:set --scope=<websites|stores> --scope-code=<code> \
+          web/secure/base_url https://<name>.test/<seg>/
+`harbor store add` prints that last command for you.
+
+NOTE: this mode serves everything from the single pub/index.php. If the app
+ships Magento's native per-website bootstraps
+(pub/<seg>/index.php setting MAGE_RUN_TYPE=website), Harbor's rewrite bypasses
+them — they become dead code. That native layout needs no map and no rewrite,
+and does not need redirect_to_base off; Harbor does not currently render it.
 
 A project uses ONE mode — domain or path — and it's locked once set: adding a
 store in the other mode fails. Note the lock persists even after removing every
@@ -1087,8 +1130,10 @@ Store codes allow [a-zA-Z0-9_] only — no hyphens (unlike project names). Addin
 or removing re-links the vhost (sudo: nginx reload). Re-adding an existing code
 replaces it.
 
-Example:
-  harbor store add shop uk --domain uk.shop.test
+Examples:
+  harbor store add shop de --domain de.shop.test
+  harbor store add shop main --path / --website     # prefix-less default
+  harbor store add shop de --path de --website      # shop.test/de
 
 See also: harbor link --help
 EOF

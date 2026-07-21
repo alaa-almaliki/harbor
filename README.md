@@ -812,10 +812,44 @@ above.
 | Command | Description |
 |---------|-------------|
 | `harbor store add <name> <code> --domain <host>` | Subdomain store (`store.<name>.test`). |
-| `harbor store add <name> <code> --path <seg>` | Path store (`<name>.test/<seg>`). |
+| `harbor store add <name> <code> --path <seg>` | Path store (`<name>.test/<seg>`). Use `--path /` for the prefix-less default store. |
+| `harbor store add … --website` \| `--store` | Route by **website** code (`MAGE_RUN_TYPE=website`) or **store view** code (default). |
 | `harbor store list\|rm <name> …` | Manage store routing. |
 
 A project uses **one** multi-store mode (domain *or* path), set in the manifest.
+
+A project also routes by **one** scope — website codes *or* store view codes,
+never both. The manifest key is the scope, and setting both is rejected on
+render rather than silently merged:
+
+```yaml
+multistore: { mode: path, websites: { main: /, de: /de, fr: /fr } }   # MAGE_RUN_TYPE=website
+multistore: { mode: path, stores:   { default: /, de_de: /de } }      # MAGE_RUN_TYPE=store
+```
+
+Route by website when the app's base URLs are set at website scope (the usual
+Magento multi-website layout), by store view when they're per store view.
+
+In **path** mode the prefix is Harbor's, not Magento's — it does not have to equal
+the code, so website `de` can serve at `/germany` if you prefer.
+
+nginx picks the scope from `$request_uri`, strips the prefix, and hands Magento a
+normal path.
+
+Two Magento settings this **requires**:
+
+| Setting | Value | Why |
+|---|---|---|
+| `web/url/use_store` | `0` | At `1` Magento prepends the store code on top of Harbor's prefix → `/<seg>/<code>/` |
+| `web/url/redirect_to_base` | `0` | nginx strips the prefix, so Magento sees `/` while the base URL is `/<seg>/`, decides you're on the wrong URL and 301s to `/<seg>/` — which nginx strips again. **Infinite redirect loop** until this is `0` |
+
+Then point each prefixed scope at its prefix so Magento *emits* it —
+`harbor store add` prints the exact command:
+
+```
+harbor magento <name> config:set --scope=<websites|stores> --scope-code=<code> \
+    web/secure/base_url https://<name>.test/<seg>/
+```
 
 ### Shared services & TLS
 

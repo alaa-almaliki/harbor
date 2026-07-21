@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Path multi-store served the homepage for every non-homepage URL, on every
+  store.** The `REQUEST_URI` override was built from `$uri`, but `try_files
+  $uri $uri/ /index.php`'s fallback is an internal redirect that reassigns
+  `$uri` to `/index.php`, and `fastcgi_param` is evaluated after it — so Magento
+  received `REQUEST_URI=/index.php` for every request and rendered the homepage
+  with a 200, on unprefixed URLs as well as prefixed ones. `REQUEST_URI` is now
+  built from `$harbor_request_uri`, a new `map` that strips the prefix from
+  `$request_uri` — the one URI variable nginx never rewrites. Pinned by
+  `test/test_store.sh`, which also asserts the override is never derived from
+  `$uri` again.
+- **Magento path multi-store now actually routes — `harbor store add --path`
+  used to write the manifest and render no nginx at all.** Both vhost-emitting
+  helpers returned early unless `multistore.mode` was `domain`, so a project
+  with `mode: path` got a vhost with no trace of its prefixes: every prefixed
+  URL fell through to `index.php`, Magento tried to route the prefix as a
+  controller, and returned a bare 404 with nothing in any log. Path mode now
+  renders three coordinated pieces, all keyed on `$request_uri` (never `$uri`,
+  which both the rewrite and `try_files` change): a `map` selecting
+  `MAGE_RUN_CODE`, a prefix-stripping `rewrite` at server scope, and a
+  `REQUEST_URI` override taken from a second, prefix-stripping `map`. The
+  override is the part that matters — Magento derives its path-info from
+  `REQUEST_URI`, so without it the prefix reappears and the 404 persists.
+
+### Added
+- **Multi-store routing by website code as well as store view code.** The
+  manifest gains a `multistore.websites:` map alongside `stores:`; entries in it
+  render `MAGE_RUN_TYPE=website`, entries in `stores:` render
+  `MAGE_RUN_TYPE=store`. Pick with `harbor store add … --website` / `--store`;
+  store view stays the default, so manifests written before this keep their
+  meaning. A project uses **one** scope, exactly as it uses one mode — setting
+  both keys is rejected on render with a fix hint rather than silently merged,
+  and the scope is locked once set (edit the manifest to switch). Route by
+  website when the app's base URLs are set at website scope — the usual Magento
+  multi-website layout — and by store view when they're per store view.
+  `MAGE_RUN_TYPE` is emitted **singular** (`website`/`store`, matching
+  `ScopeInterface::SCOPE_WEBSITE`); the plural `websites` seen in some
+  hand-written Magento vhosts is the config-scope constant, not a run type.
+- **A path store's prefix no longer has to equal its store code.** Harbor owns
+  the prefix, so `multistore: { mode: path, stores: { default: /, de_de: de } }`
+  serves store view `de_de` at `/de`. An entry whose value is `/` is the
+  prefix-less default and becomes the `map` default. Path values are validated
+  ([a-z0-9_-]) and rejected when they would shadow a Magento path (`static`,
+  `media`, `setup`, `admin`, `rest`, `graphql`, `index.php`, …), which would
+  otherwise rewrite every asset on the site into a store prefix.
+
+### Changed
+- **Path multi-store requires `web/url/redirect_to_base=0`.** Because nginx
+  strips the prefix before Magento sees it, Magento finds itself at path `/`
+  while the store's base URL is `/<seg>/`, concludes the URL is wrong, and 301s
+  to `/<seg>/` — which nginx strips again, looping forever. Documented in `harbor
+  store --help` and the README; Harbor does not write it for you. Note this is
+  a *global* setting, so Magento stops auto-correcting to the base URL for all
+  requests — harmless locally, but it travels with a database dump.
+- **Path multi-store routes by store view and bypasses native per-website
+  bootstraps.** Magento's own multi-website layout (`pub/<seg>/index.php`
+  setting `MAGE_RUN_TYPE=website`) needs no map, no rewrite and no
+  `redirect_to_base` change, because the prefix stays in `REQUEST_URI` and
+  matches the base URL. Harbor's rewrite sends those requests to the root
+  `pub/index.php` instead, so such bootstraps become dead code. Harbor does not
+  currently render the native layout — noted in `harbor store --help`.
+- **`harbor store add --path` no longer sets `web/url/use_store=1`.** It was
+  wrong for Harbor's prefix scheme — Magento would prepend the store code on
+  top of the prefix (`/<seg>/<code>/…`). The command now prints the
+  `config:set … web/secure/base_url https://<name>.test/<seg>/` needed to make
+  Magento emit the prefix, rather than writing Magento config itself: the store
+  view may not exist when the store is registered.
+
 ### Added
 - **Optional backing services — a project can now run with no database at
   all.** `harbor init` asks which backing services a project needs: an

@@ -96,8 +96,26 @@ standard `:3306`, stop any other local MySQL first.
 | Command | What it does |
 |---|---|
 | `harbor store add <name> <code> --domain <host>` | Subdomain store (`store.<name>.test`). |
-| `harbor store add <name> <code> --path <seg>` | Path store (`<name>.test/<seg>`). |
+| `harbor store add <name> <code> --path <seg>` | Path store (`<name>.test/<seg>`); `--path /` for the prefix-less default store. |
 | `harbor store list\|rm <name> …` | Manage store routing. A project uses one mode (domain *or* path). |
+
+Routing is by website code (`--website`, `MAGE_RUN_TYPE=website`) **or** store
+view code (default) — one scope per project, never both. The manifest key is the
+scope, and setting both is rejected on render:
+
+```yaml
+multistore: { mode: path, websites: { main: /, de: /de, fr: /fr } }
+multistore: { mode: path, stores:   { default: /, de_de: /de } }
+```
+
+Route by **website** when the app's base URLs are set at website scope (the usual
+Magento multi-website layout), by store view when they're per store view.
+
+In path mode the prefix is Harbor's and need not match the code.
+Keep `web/url/use_store` at **0**, set `web/url/redirect_to_base` to **0**
+(nginx strips the prefix, so Magento otherwise 301s into an infinite loop), and set each prefixed scope's
+`web/secure/base_url` to `https://<name>.test/<seg>/` so Magento emits the
+prefix — `harbor store add` prints the command.
 
 ---
 
