@@ -66,7 +66,7 @@ This is the project's defining constraint. Concretely:
   helper:** `xdebug_dflags <ver>` (`lib/common.sh`) is the *only* place the flags
   are built, and both `lib/fpm-exec.sh` and `cli_php_pathdir` call it — never
   hand-roll the flag string in either (that's exactly how the CLI silently lost
-  `client_host` and CLI debugging broke while web worked). Xdebug
+  `client_host` and CLI debugging broke while web worked).
   **The one sanctioned exception to both-surfaces is the trigger itself**
   (`xdebug_cli_trigger`): the CLI shim exports `XDEBUG_TRIGGER=1` while the
   toggle is on, the web surface does not. It is not an oversight to fix — out on
@@ -383,11 +383,16 @@ and **[SemVer](https://semver.org)**.
   `harbor init magento` would be ambiguous between a name and a framework), and
   bare `harbor restart` already means "restart Harbor itself". `harbor logs
   clear` likewise defaults to every log, not the current project.
-  A **reporting** command that still has a sensible platform-wide answer
-  (`harbor describe php` → the global default PHP) wants the same *precedence*
-  but not the `die`: call `cwd_project` directly and treat its nonzero as "no
-  project". Don't reach for `resolve_project` and then try to catch its `die` —
-  it's `resolve_project`'s job to be fatal.
+  A command with **no positionals of its own** (`harbor describe`) should go
+  one step further: an argument naming no project is a typo, so check
+  `[ -d "$(project_dir "$1")" ]` up front and `die "no such project '<x>'"`
+  rather than letting `resolve_project` report the vaguer "not inside one".
+  Commands that DO take their own positionals must NOT do this — leaving a
+  non-project argument alone is exactly what makes `harbor db backup reporting`
+  dump the `reporting` database. If a *reporting* command has a sensible
+  platform-wide answer with no project at all, call `cwd_project` directly and
+  treat its nonzero as "no project"; don't reach for `resolve_project` and try
+  to catch its `die` — being fatal is `resolve_project`'s job.
 - **Never let `-h`/`--help` reach a command as data.** `help_intercept` answers it
   wherever Harbor is still parsing; a command must never treat it as a value. This
   isn't cosmetic — it once made `harbor logs nginx --help` hang on `tail -F` and

@@ -30,18 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Xdebug toggle and the manifest's `php_ini` apply, and it runs in **your** cwd
   rather than the project root (use `harbor run php …` for that). `--help`/`-h`
   stay Harbor's; php's own long help is `harbor php -help`.
-- **`harbor describe php [<name>]`** — report the PHP a project *actually* runs,
-  and prove it. Prints the pinned version **and which of the three sources set
-  it** (manifest `php:` → `.php-version` → global default), the CLI/FPM binary
-  paths, the loaded `php.ini` + scan dir + scanned files, effective ini values,
-  the manifest `php_ini` keys and both surfaces they reach, the FPM pool
-  conf/socket/launchd unit/log and the site's vhost, and the full Xdebug picture
-  (toggle, `.so`, whether brew already auto-loads it, mode, client, exact `-d`
-  flags). Runtime values are probed **through the same CLI shim `harbor run`/
-  `composer`/`magento` exec**, so they're what your code gets rather than brew's
-  defaults. Read-only. `<name>` is optional inside a project; outside one it
-  falls back to the global default. It also calls out the common trap that your
-  terminal's brew-linked `php` is a different version from the project's.
+- **`harbor describe [<name>]`** — everything Harbor knows about one project, in
+  one read-only report: dir/manifest/framework/docroot, the URL **and whether
+  it's actually linked**; the PHP version **and which of the three sources pinned
+  it** (manifest `php:` → `.php-version` → global default) with its ini, shim and
+  FPM pool; the Xdebug picture; every service's **resolved image**, published
+  port, running state and data volume, plus the shared Redis indices and Mailpit;
+  the database DSN and credentials; multi-store mode/scope and every route; and
+  extras (node, containerized tools, import hooks, scripts, remote). It reports
+  *effective* values rather than echoing the manifest — the PHP is probed through
+  the same shim `harbor run` uses, and each image is resolved at its real
+  precedence. Sections with nothing to say are omitted, and an unreachable Docker
+  degrades the service states instead of the whole report. `<name>` is optional
+  inside a project.
 - **`<name>` is now optional for every project command when you're inside a
   project** — anywhere under `projects/<name>/`, or in a `harbor shell`. This
   used to work only for the passthrough/console commands (`run`, `composer`,
@@ -85,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   versioned kegs directly. Now: re-running for the version that's already linked
   doesn't unlink at all, the formula is resolved up front (the newest PHP ships as
   the *unversioned* `php` formula), and every failure path re-links what was there
-  and says so. `harbor describe php` also reports `brew-linked: none` when nothing
+  and says so. `harbor describe` also reports `brew-linked: none` when nothing
   is linked.
 - **Path multi-store served the homepage for every non-homepage URL, on every
   store.** The `REQUEST_URI` override was built from `$uri`, but `try_files

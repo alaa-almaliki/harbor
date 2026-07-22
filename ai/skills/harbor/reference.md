@@ -57,6 +57,7 @@ spell the project out when a database, store code or tool shares its name.
 | `harbor link [<name>]` | Create/refresh the `https://<name>.test` vhost (adds cert SAN, reloads nginx). |
 | `harbor unlink [<name>]` | Remove the vhost. |
 | `harbor open [<name>]` | Open the site in the browser. |
+| `harbor describe [<name>]` | **Read this first when something looks wrong.** One read-only report: framework/docroot, URL + whether it's actually linked, the effective PHP (and which of the three sources pinned it) with its ini/shim/pool, Xdebug, every service's resolved image + port + running state + volume, the DB credentials, multi-store routing, and extras (node, tools, hooks, scripts, remote). Effective values, not a manifest echo. |
 | `harbor wire [<name>] [--print]` | Inject DB/Redis/mail into the app config (surgical, never clobbers). Skips the DB lines for a project with no `mysql` service (still wires Redis/mail); a DB-less Magento project refuses instead, since Magento requires a database. |
 
 ### Databases
@@ -95,7 +96,6 @@ standard `:3306`, stop any other local MySQL first.
 | `harbor php <script\|flag> …` | Anything that isn't a bare `X.Y`, `sync` or `use` goes to PHP itself, under **this project's** PHP (not the terminal's): `harbor php -v` (which version am I on?), `harbor php -m` (its extensions), `harbor php index.php cron/queue process` (run a script). Runs in your cwd, not the project root. |
 | `harbor php use <ver>` | Switch the brew-linked CLI `php` (terminal/IDE/global composer). Independent of per-project pinning. |
 | `harbor xdebug on\|off\|status` | Toggle Xdebug across pools **and** the project CLI (port 9003). While on, the CLI shim exports `XDEBUG_TRIGGER=1` for you — no prefix needed on `harbor run`/`php`/`magento`. The browser still sends its own trigger. `XDEBUG_CLI_TRIGGER=0` in `~/.config/harbor/config` opts out. |
-| `harbor describe php [<name>]` | **The whole PHP picture for this project**, read-only: pinned version *and which source pinned it* (manifest `php:` → `.php-version` → global default), binary paths, loaded `php.ini` + scan dir, effective ini values, manifest `php_ini`, the FPM pool/socket/vhost, and Xdebug (toggle, `.so`, mode, client, exact `-d` flags). Probed through the same shim `harbor run` uses, so it reports what your code gets. |
 
 ### Logs & health
 | Command | What it does |

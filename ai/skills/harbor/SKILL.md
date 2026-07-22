@@ -247,12 +247,13 @@ project-specific commands instead of ad-hoc shell snippets.
   `harbor run php artisan queue:work` (or a `.harbor/scripts/` wrapper).
 - **A page 500s?** `harbor logs php` + the app log. Wrong PHP version symptom?
   `harbor run php -v`. Extension missing? `harbor doctor <name>`.
-- **Anything PHP-config shaped — "which php?", "is my `memory_limit` applied?",
-  "why isn't Xdebug breaking?" — start with `harbor describe php`.** One
-  read-only command prints the pinned version *and which of the three sources
-  pinned it*, the binary paths, the loaded `php.ini`, the effective ini values as
-  Harbor actually applies them, and the full Xdebug state. Don't guess from
-  `php -i` in a terminal — that's the brew-linked PHP, not this project's.
+- **"Which php? Is my `memory_limit` applied? What port is MySQL on? Is this
+  site even linked?" — `harbor describe` answers all of it.** One read-only
+  command prints the effective PHP (and which of the three sources pinned it),
+  the loaded `php.ini` and ini values as Harbor really applies them, Xdebug,
+  every service's resolved image/port/state, the DB credentials, multi-store
+  routing and the extras. Don't guess from `php -i` in a terminal — that's the
+  brew-linked PHP, not this project's.
 - **Don't commit** generated/runtime files — `.harbor/connection.env`,
   `compose.env`, `docker-compose.yml`, `.harbor/bin/` are gitignored. The manifest,
   `import-rules`, `hooks/`, and `scripts/` are committable.

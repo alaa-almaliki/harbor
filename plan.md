@@ -268,7 +268,7 @@ harbor db sandbox create|drop|list|backup|restore|console|up|down|destroy|status
 harbor media pull [<name>]                 # rsync remote media/storage
 harbor mysql|redis|shell [<name>]     # open a console into the project's services
 harbor open [<name>]                  # open https://<name>.test in the browser
-harbor describe php [<name>]          # the PHP this project really runs: paths, ini, xdebug
+harbor describe [<name>]              # one project, everything: php, services, db, routing
 harbor ps | list                      # status of all projects / running stacks
 harbor mail up|down                   # shared stack (mailpit + redis)
 harbor secure [host...]               # (re)issue wildcard cert / add SANs
@@ -302,11 +302,12 @@ ambiguous between a name and a framework); bare `harbor restart` already means
 "restart Harbor itself". `harbor logs clear` likewise keeps its own default
 (every log), so a bare `clear` is not a project.
 
-`harbor describe php` resolves the same way but must not `die` at step (3): with
-no project it reports the **global default** PHP, which is a real answer to "what
-would a new site get?". So it calls `cwd_project` directly and treats a failure
-as "no project", rather than going through `resolve_project`. Any future
-`describe` topic that is meaningful platform-wide should do the same.
+`harbor describe` adds one refinement: it has no positionals of its own, so an
+argument naming no project is a typo rather than the command's own data, and it
+says `no such project '<x>'` before `resolve_project` can report the more generic
+"not inside one". Commands that DO take their own positionals must not do this —
+leaving a non-project argument alone is exactly what makes `harbor db backup
+reporting` dump the `reporting` database.
 
 ## Setup (`harbor setup`)
 

@@ -30,7 +30,6 @@ _harbor() {
     db) COMPREPLY=(\$(compgen -W "create drop backup import pull sandbox" -- "\$cur")); return ;;
     sandbox) COMPREPLY=(\$(compgen -W "create drop list backup restore console up down destroy status" -- "\$cur")); return ;;
     store) COMPREPLY=(\$(compgen -W "add list rm" -- "\$cur")); return ;;
-    describe) COMPREPLY=(\$(compgen -W "php" -- "\$cur")); return ;;
     services) COMPREPLY=(\$(compgen -W "list add rm \$(ls \"$HARBOR_PROJECTS\" 2>/dev/null)" -- "\$cur")); return ;;
     help) COMPREPLY=(\$(compgen -W "$(help_topics | tr '\n' ' ')" -- "\$cur")); return ;;
   esac
@@ -57,7 +56,6 @@ _harbor() {
     db) compadd create drop backup import pull sandbox; return ;;
     sandbox) compadd create drop list backup restore console up down destroy status; return ;;
     store) compadd add list rm; return ;;
-    describe) compadd php; return ;;
     services) compadd list add rm \$(ls "$HARBOR_PROJECTS" 2>/dev/null); return ;;
     help) compadd $(help_topics | tr '\n' ' '); return ;;
   esac

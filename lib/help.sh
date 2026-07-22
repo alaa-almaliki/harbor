@@ -264,7 +264,7 @@ Examples:
   harbor php 8.3            # new projects default to 8.3
   harbor php use 8.3        # my terminal's `php` becomes 8.3 (hash -r after)
 
-See also: harbor describe php (the full picture: paths, ini, xdebug) ·
+See also: harbor describe (the whole project: php, services, db, routing) ·
 harbor xdebug --help · harbor link <name> (re-point a site's pool)
 EOF
   ;;
@@ -734,29 +734,37 @@ EOF
   ;;
 
   describe) cat <<'EOF'
-harbor describe — what this project's runtime ACTUALLY resolves to. Read-only.
+harbor describe — everything Harbor knows about one project. Read-only.
 
-Usage: harbor describe php [<name>]
-       ( <name> optional inside a project dir or a `harbor shell`;
-         outside a project it falls back to the global default PHP )
+Usage: harbor describe [<name>]        (no flags)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
-  php    Binary paths, the pinned version and WHERE the pin came from, loaded
-         php.ini + scan dir, effective ini values, manifest php_ini, the FPM
-         pool/socket/vhost, and the full Xdebug picture.
+Sections, in order:
+  Project      dir, manifest, framework (and whether it's pinned or detected),
+               docroot, URL + whether it's actually LINKED, extra domains, vhost
+  PHP          the pinned version AND which of the three sources pinned it
+               (manifest `php:` -> .php-version -> global default), cli + shim
+               paths, loaded php.ini, effective ini values, manifest php_ini,
+               the FPM pool/socket/launchd unit
+  Xdebug       toggle, cli trigger mode, .so, whether brew auto-loads it, the
+               exact -d flags
+  Services     each service's resolved IMAGE, published 127.0.0.1 port, running
+               state and data volume; plus the shared Redis indices and Mailpit
+  Database     dsn, db/user/pass, connection.env, backup dir
+  Multi-store  mode, scope and every code -> domain/path entry (Magento only)
+  Extras       node, containerized tools, import hooks, scripts, remote
 
-Answers the questions `harbor php` can't: a version is pinned by the manifest
-`php:`, else a `.php-version`, else the global default — this prints which one
-won. Runtime values are probed through the same CLI shim `harbor run`/`composer`/
-`magento` exec, so what you see is what your code gets, not brew's defaults.
-
-Your terminal's `php` is a SEPARATE thing (the brew-linked one). When they differ
-that's called out — `harbor php use <ver>` moves the terminal to match.
+Reports EFFECTIVE values, not what the manifest says: the PHP is probed through
+the same shim `harbor run` uses, and each image is resolved at its real
+precedence (manifest -> config -> built-in). Sections with nothing to say are
+omitted. Docker being unreachable degrades the service states, not the report.
 
 Examples:
-  harbor describe php              # inside a project dir
-  harbor describe php shop         # from anywhere
+  harbor describe            # inside a project dir
+  harbor describe shop       # from anywhere
 
-See also: harbor php --help · harbor xdebug --help · harbor doctor <name>
+See also: harbor ps (all projects, one line each) · harbor doctor <name> ·
+harbor status
 EOF
   ;;
 

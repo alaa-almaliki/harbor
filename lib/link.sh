@@ -37,7 +37,7 @@ link_docroot() {
 
 # A project's PHP version AND where it came from, as "<ver>|<source>". The one
 # place the precedence lives — link_php is a thin wrapper so the version a site
-# is rendered with and the version `harbor describe php` reports can never drift.
+# is rendered with and the version `harbor describe` reports can never drift.
 link_php_source() {
   local name="$1" dir="$2" mf v
   mf="$(manifest_path "$name")"
@@ -56,7 +56,7 @@ link_php() {
 }
 
 # The PHP for the CURRENT context, as "<ver>|<source>": the named project, else
-# the project the cwd is in, else the global default. `harbor describe php` and
+# the project the cwd is in, else the global default. `harbor describe` and
 # `harbor php <php-flag>` both answer "which php am I on?" and must never
 # disagree, so both come through here. Not being in a project is not an error —
 # the global default is a real answer ("what would a new site get?").

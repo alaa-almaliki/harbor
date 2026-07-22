@@ -112,7 +112,7 @@ Projects:                   ( <name> is optional inside a project dir /
   link | unlink | wire [<name>]
   up | down | destroy | logs [<name>] | restart <name> | logs clear [target]
   open [<name>]             Open https://<name>.test
-  describe php [<name>]     Which PHP this project really runs: paths, ini, xdebug
+  describe [<name>]         Full report: php, services, ports, db, routing, extras
 
 Running code & tooling:
   run | artisan | console | spark | magento | composer | node | npm [<name>] ...
