@@ -77,6 +77,8 @@ fi
 . "$HARBOR_ROOT/lib/store.sh"
 # shellcheck source=lib/ergo.sh
 . "$HARBOR_ROOT/lib/ergo.sh"
+# shellcheck source=lib/describe.sh
+. "$HARBOR_ROOT/lib/describe.sh"
 # shellcheck source=lib/new.sh
 . "$HARBOR_ROOT/lib/new.sh"
 # shellcheck source=lib/update.sh
@@ -110,6 +112,7 @@ Projects:                   ( <name> is optional inside a project dir /
   link | unlink | wire [<name>]
   up | down | destroy | logs [<name>] | restart <name> | logs clear [target]
   open [<name>]             Open https://<name>.test
+  describe php [<name>]     Which PHP this project really runs: paths, ini, xdebug
 
 Running code & tooling:
   run | artisan | console | spark | magento | composer | node | npm [<name>] ...
@@ -175,6 +178,7 @@ main() {
     media) cmd_media "$@" ;;
     new) cmd_new "$@" ;;
     open) cmd_open "$@" ;;
+    describe) cmd_describe "$@" ;;
     status) cmd_status "$@" ;;
     ps|list) cmd_ps "$@" ;;
     mysql) cmd_mysql "$@" ;;

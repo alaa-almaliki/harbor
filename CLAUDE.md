@@ -191,6 +191,18 @@ This is the project's defining constraint. Concretely:
   There is **no `--yes` flag** except on `harbor update` — don't document one, and
   if you add a flag, add it to the command's help topic in the same commit.
 - `db import`/`db pull` take an **auto-backup first** (`--no-backup` to skip).
+- **A host mutation with no atomic swap must restore what it replaced when it
+  fails, and must not start at all when it's a no-op.** `php_use` is the case
+  that proves it: brew has no "relink as", so the old formula is unlinked before
+  the new one can claim the symlinks, and a failure in that window left the host
+  with **no `php` at all** — a broken terminal, IDE and global composer, from a
+  command meant only to switch versions. Harbor couldn't even notice, because it
+  runs the versioned kegs directly and never reads the linked one. So: check for
+  the no-op first (`want = current` → return, don't unlink), resolve the
+  replacement *before* removing the original (the newest PHP ships as the
+  *unversioned* `php` formula, so `php@<newest>` may not link), and re-link the
+  original on every failure path — saying which state you left behind. Applies to
+  anything that removes-then-installs outside Harbor's repo.
 - Config injection (`wire`) is **allowlist-only, idempotent, with a
   `.harbor-bak`** (written once, not refreshed on re-wire) —
   never blanket-rewrite an app's `.env`. Symfony → `.env.local` only; Magento →
@@ -350,6 +362,11 @@ and **[SemVer](https://semver.org)**.
   `harbor init magento` would be ambiguous between a name and a framework), and
   bare `harbor restart` already means "restart Harbor itself". `harbor logs
   clear` likewise defaults to every log, not the current project.
+  A **reporting** command that still has a sensible platform-wide answer
+  (`harbor describe php` → the global default PHP) wants the same *precedence*
+  but not the `die`: call `cwd_project` directly and treat its nonzero as "no
+  project". Don't reach for `resolve_project` and then try to catch its `die` —
+  it's `resolve_project`'s job to be fatal.
 - **Never let `-h`/`--help` reach a command as data.** `help_intercept` answers it
   wherever Harbor is still parsing; a command must never treat it as a value. This
   isn't cosmetic — it once made `harbor logs nginx --help` hang on `tail -F` and

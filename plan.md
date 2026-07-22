@@ -229,6 +229,7 @@ against anything actually listening before reuse (fail-fast hint if occupied).
 harbor doctor [--required]            # host requirements report (report-only)
 harbor setup                          # one-time host prep (gated by doctor)
 harbor php [<ver>]                     # show pool status / set default version
+harbor php <script|flag>...            # run THIS project's php (-v, -m, index.php args…)
 harbor php sync                        # re-create pools after brew install/uninstall php@x
 harbor xdebug on|off|status
 harbor new <name> <framework>         # scaffold + init + up + wire + install + link + open
@@ -267,6 +268,7 @@ harbor db sandbox create|drop|list|backup|restore|console|up|down|destroy|status
 harbor media pull [<name>]                 # rsync remote media/storage
 harbor mysql|redis|shell [<name>]     # open a console into the project's services
 harbor open [<name>]                  # open https://<name>.test in the browser
+harbor describe php [<name>]          # the PHP this project really runs: paths, ini, xdebug
 harbor ps | list                      # status of all projects / running stacks
 harbor mail up|down                   # shared stack (mailpit + redis)
 harbor secure [host...]               # (re)issue wildcard cert / add SANs
@@ -299,6 +301,12 @@ directory, so there is nothing to infer (and `harbor init magento` would be
 ambiguous between a name and a framework); bare `harbor restart` already means
 "restart Harbor itself". `harbor logs clear` likewise keeps its own default
 (every log), so a bare `clear` is not a project.
+
+`harbor describe php` resolves the same way but must not `die` at step (3): with
+no project it reports the **global default** PHP, which is a real answer to "what
+would a new site get?". So it calls `cwd_project` directly and treats a failure
+as "no project", rather than going through `resolve_project`. Any future
+`describe` topic that is meaningful platform-wide should do the same.
 
 ## Setup (`harbor setup`)
 

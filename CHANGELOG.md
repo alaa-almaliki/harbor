@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`harbor php <script|flag>…` runs this project's PHP.** Anything that isn't a
+  bare `X.Y` version, `sync` or `use` is now passed to PHP itself, so
+  `harbor php -v`, `harbor php -m` and `harbor php index.php cron/queue process`
+  all work. They used to die with `unsupported version '-v'` /
+  `unsupported version 'index.php'` — a dead end, since neither a flag nor a
+  script name can be a version. It runs the cwd project's pinned PHP (the global
+  default outside a project) through the same shim `harbor run` uses, so the
+  Xdebug toggle and the manifest's `php_ini` apply, and it runs in **your** cwd
+  rather than the project root (use `harbor run php …` for that). `--help`/`-h`
+  stay Harbor's; php's own long help is `harbor php -help`.
+- **`harbor describe php [<name>]`** — report the PHP a project *actually* runs,
+  and prove it. Prints the pinned version **and which of the three sources set
+  it** (manifest `php:` → `.php-version` → global default), the CLI/FPM binary
+  paths, the loaded `php.ini` + scan dir + scanned files, effective ini values,
+  the manifest `php_ini` keys and both surfaces they reach, the FPM pool
+  conf/socket/launchd unit/log and the site's vhost, and the full Xdebug picture
+  (toggle, `.so`, whether brew already auto-loads it, mode, client, exact `-d`
+  flags). Runtime values are probed **through the same CLI shim `harbor run`/
+  `composer`/`magento` exec**, so they're what your code gets rather than brew's
+  defaults. Read-only. `<name>` is optional inside a project; outside one it
+  falls back to the global default. It also calls out the common trap that your
+  terminal's brew-linked `php` is a different version from the project's.
 - **`<name>` is now optional for every project command when you're inside a
   project** — anywhere under `projects/<name>/`, or in a `harbor shell`. This
   used to work only for the passthrough/console commands (`run`, `composer`,
@@ -34,6 +56,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `harbor render <name> && harbor up <name>` to apply. No host-footprint change.
 
 ### Fixed
+- **`harbor php use <ver>` could leave the host with no `php` at all.** brew has
+  no atomic "relink as", so the old formula is unlinked before the new one can
+  claim the symlinks — and a failure in that window left `$(brew --prefix)/bin/php`
+  missing, breaking the plain terminal, the IDE and global composer from a command
+  meant only to switch versions. Harbor never noticed, because it runs the
+  versioned kegs directly. Now: re-running for the version that's already linked
+  doesn't unlink at all, the formula is resolved up front (the newest PHP ships as
+  the *unversioned* `php` formula), and every failure path re-links what was there
+  and says so. `harbor describe php` also reports `brew-linked: none` when nothing
+  is linked.
 - **Path multi-store served the homepage for every non-homepage URL, on every
   store.** The `REQUEST_URI` override was built from `$uri`, but `try_files
   $uri $uri/ /index.php`'s fallback is an internal redirect that reassigns

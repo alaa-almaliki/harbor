@@ -1,11 +1,16 @@
 # Harbor reference (for this project)
 
 Full command surface and config schema. `SKILL.md` covers the daily workflow;
-this is the lookup table. **Only the passthrough/console commands** — `run`,
-`artisan`, `console`, `spark`, `magento`, `composer`, `node`, `npm`, `mysql`,
-`redis`, `shell` — **infer the project from your cwd** (shown as `[<name>]`,
-optional). **Every other command needs an explicit `<name>`** (shown without
-brackets); name-less it errors with `project name required`.
+this is the lookup table. **Nearly every command infers the project from your
+cwd** — anywhere under `projects/<name>/`, or in a `harbor shell` — so `<name>`
+is shown as `[<name>]`, optional. The exceptions, shown without brackets, are
+`new` and `init` (they *create* the project) and a project `restart` (bare
+`harbor restart` restarts Harbor itself).
+
+A leading argument counts as the project **only when a project by that name
+exists**; otherwise it stays the command's own first argument. So
+`harbor db backup reporting` inside a project dumps the `reporting` database —
+spell the project out when a database, store code or tool shares its name.
 
 ---
 
@@ -21,10 +26,10 @@ brackets); name-less it errors with `project name required`.
 | `harbor magento [<name>] …` | Magento `bin/magento` (+ local-DX helpers). |
 | `harbor composer [<name>] …` | Composer under the pinned PHP. |
 | `harbor node\|npm [<name>] …` | Node/npm via nvm + `.nvmrc`. |
-| `harbor tool <name> <tool> …` | Run a containerized CLI tool once. |
-| `harbor tools sync <name>` | (Re)generate tool shims from the manifest. |
-| `harbor install <name>` | Framework installer (Laravel migrate, Magento `setup:install`, …). Magento refuses up front, naming every missing required service, if it lacks `mysql` or `opensearch` (RabbitMQ is optional). |
-| `harbor seed <name>` | Framework seeders / migrations. |
+| `harbor tool [<name>] <tool> …` | Run a containerized CLI tool once. |
+| `harbor tools sync [<name>]` | (Re)generate tool shims from the manifest. |
+| `harbor install [<name>]` | Framework installer (Laravel migrate, Magento `setup:install`, …). Magento refuses up front, naming every missing required service, if it lacks `mysql` or `opensearch` (RabbitMQ is optional). |
+| `harbor seed [<name>]` | Framework seeders / migrations. |
 
 ### Consoles
 | Command | What it does |
@@ -87,13 +92,15 @@ standard `:3306`, stop any other local MySQL first.
 | Command | What it does |
 |---|---|
 | `harbor php [<ver>]` | Show pool status / set the default version for new sites. |
+| `harbor php <script\|flag> …` | Anything that isn't a bare `X.Y`, `sync` or `use` goes to PHP itself, under **this project's** PHP (not the terminal's): `harbor php -v` (which version am I on?), `harbor php -m` (its extensions), `harbor php index.php cron/queue process` (run a script). Runs in your cwd, not the project root. |
 | `harbor php use <ver>` | Switch the brew-linked CLI `php` (terminal/IDE/global composer). Independent of per-project pinning. |
 | `harbor xdebug on\|off\|status` | Toggle Xdebug across pools (trigger-based, port 9003). |
+| `harbor describe php [<name>]` | **The whole PHP picture for this project**, read-only: pinned version *and which source pinned it* (manifest `php:` → `.php-version` → global default), binary paths, loaded `php.ini` + scan dir, effective ini values, manifest `php_ini`, the FPM pool/socket/vhost, and Xdebug (toggle, `.so`, mode, client, exact `-d` flags). Probed through the same shim `harbor run` uses, so it reports what your code gets. |
 
 ### Logs & health
 | Command | What it does |
 |---|---|
-| `harbor logs <name> [service] [-f]` | Tail a project's container logs (name required). |
+| `harbor logs [<name>] [service] [-f]` | Tail a project's container logs. |
 | `harbor logs nginx\|php\|dnsmasq [-f]` | Tail Harbor's platform-service logs (name-less). |
 | `harbor logs clear [all\|nginx\|php\|dnsmasq\|<name>]` | Truncate log files in place. |
 | `harbor doctor [<name>]` | Host requirements (+ a project's PHP extensions). Report-only. |
@@ -102,9 +109,9 @@ standard `:3306`, stop any other local MySQL first.
 ### Multi-store (Magento)
 | Command | What it does |
 |---|---|
-| `harbor store add <name> <code> --domain <host>` | Subdomain store (`store.<name>.test`). |
-| `harbor store add <name> <code> --path <seg>` | Path store (`<name>.test/<seg>`); `--path /` for the prefix-less default store. |
-| `harbor store list\|rm <name> …` | Manage store routing. A project uses one mode (domain *or* path). |
+| `harbor store add [<name>] <code> --domain <host>` | Subdomain store (`store.<name>.test`). |
+| `harbor store add [<name>] <code> --path <seg>` | Path store (`<name>.test/<seg>`); `--path /` for the prefix-less default store. |
+| `harbor store list\|rm [<name>] …` | Manage store routing. A project uses one mode (domain *or* path). |
 
 Routing is by website code (`--website`, `MAGE_RUN_TYPE=website`) **or** store
 view code (default) — one scope per project, never both. The manifest key is the

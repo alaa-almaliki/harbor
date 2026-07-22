@@ -763,8 +763,9 @@ above.
 | Command | Description |
 |---------|-------------|
 | `harbor php [<ver>]` | Show pool status / set the default version for new sites. |
+| `harbor php <script\|flag>...` | Anything that isn't a bare `X.Y` version, `sync` or `use` goes to PHP itself, run as **this project's** PHP (cwd project, else the global default) through the same shim `harbor run` uses — so `harbor php -v`, `harbor php -m` and `harbor php index.php cron/queue process` all work, xdebug toggle and manifest `php_ini` included. Runs in your cwd, not the project root (`harbor run php …` for that). `--help` stays Harbor's; php's own long help is `harbor php -help`. |
 | `harbor php sync` | Re-create pools after `brew install`/uninstall of a `php@x`. |
-| `harbor php use <ver>` | Switch the **brew-linked** CLI `php` (plain terminal / IDE / global composer): unlinks the current version, links `<ver>`. Independent of Harbor's per-project pinning — `harbor run`/nginx still use each project's own version. |
+| `harbor php use <ver>` | Switch the **brew-linked** CLI `php` (plain terminal / IDE / global composer): unlinks the current version, links `<ver>`. Independent of Harbor's per-project pinning — `harbor run`/nginx still use each project's own version. Re-running it for the version already linked is a no-op, and if the link fails the previous one is restored — brew can't relink atomically, and a half-done switch would leave you with no `php` at all. |
 | `harbor xdebug on\|off\|status` | Toggle Xdebug across pools. |
 
 ### Projects
@@ -781,6 +782,7 @@ above.
 | `harbor up\|down [<name>]` \| `restart <name>` | Start/stop/restart the project's Docker stack (`down` flushes its Redis). Bare `harbor restart` restarts Harbor itself. No-ops (not errors) for a project with no services. |
 | `harbor destroy [<name>] [--files]` | Remove a project: drop containers + volumes (DB gone), unlink vhost, release ports, flush Redis (confirm-gated). `--files` **also deletes the project directory** (your code); it must come right after `<name>`. See [Remove a project](#remove-a-project--uninstall-harbor). |
 | `harbor open [<name>]` | Open the site in your browser. |
+| `harbor describe php [<name>]` | Report the PHP this project actually runs: pinned version **and which source pinned it**, CLI/FPM binary paths, loaded `php.ini` + scan dir, effective ini values, manifest `php_ini`, the FPM pool/socket/vhost, and the full Xdebug picture. Read-only; probed through the same shim `harbor run` uses. Outside a project it reports the global default. |
 | `harbor logs [<name>] [service] [-f]` | Tail project/service logs. |
 | `harbor logs nginx\|php\|dnsmasq [-f]` | Tail Harbor's own platform-service logs. |
 | `harbor logs clear [all\|nginx\|php\|dnsmasq\|<name>]` | Truncate Harbor's log files in place (default `all`; `<name>` clears that site's nginx logs). Safe while daemons run — keeps the inode. nginx logs are user-owned, so no sudo is needed. |

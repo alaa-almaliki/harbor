@@ -46,4 +46,72 @@ assert_contains "no php_ini: under set -e does not kill the caller" \
 assert_ok "missing manifest: returns 0" link_php_value_block "$tmp/nope.yml"
 assert_eq "missing manifest: emits nothing" "" "$(link_php_value_block "$tmp/nope.yml")"
 
+# --- link_php_source: which version, and WHY ---------------------------------
+# One precedence chain feeds two consumers — the vhost that gets rendered
+# (link_php) and the answer `harbor describe php` prints. Assert both here so a
+# change to one can't silently disagree with the other.
+# Globals are overridden AFTER the load, never as an env prefix: common.sh
+# assigns them unconditionally at source time (CLAUDE.md §6.5).
+HARBOR_PROJECTS="$tmp/projects"
+HARBOR_DEFAULT_PHP_FILE="$tmp/default-php"
+echo 8.1 > "$HARBOR_DEFAULT_PHP_FILE"
+
+_mkproj() {  # <name> — project dir + empty manifest, echoes the dir
+  mkdir -p "$HARBOR_PROJECTS/$1/.harbor"
+  printf 'name: %s\n' "$1" > "$HARBOR_PROJECTS/$1/.harbor/harbor.yml"
+  printf '%s' "$HARBOR_PROJECTS/$1"
+}
+
+# 1. manifest `php:` wins outright.
+d="$(_mkproj pinned)"
+printf 'name: pinned\nphp: "8.3"\n' > "$d/.harbor/harbor.yml"
+echo 7.4 > "$d/.php-version"     # present, and must lose
+assert_eq "link_php: manifest php wins" "8.3" "$(link_php pinned "$d")"
+assert_contains "link_php_source: names the manifest" "manifest php:" \
+  "$(link_php_source pinned "$d")"
+
+# 2. no manifest php -> .php-version.
+d="$(_mkproj pvfile)"
+echo 7.4 > "$d/.php-version"
+assert_eq "link_php: .php-version used" "7.4" "$(link_php pvfile "$d")"
+assert_contains "link_php_source: names .php-version" ".php-version" \
+  "$(link_php_source pvfile "$d")"
+
+# 3. neither -> the global default.
+d="$(_mkproj bare)"
+assert_eq "link_php: falls back to default" "8.1" "$(link_php bare "$d")"
+assert_contains "link_php_source: names the global default" "global default" \
+  "$(link_php_source bare "$d")"
+
+# 4. An EMPTY .php-version is not a pin. It reads as a value ("") where the file's
+#    presence reads as a pin — exactly the empty-vs-absent trap of CLAUDE.md §3 —
+#    so it must fall through to the default rather than yield an empty version.
+d="$(_mkproj emptypv)"
+: > "$d/.php-version"
+assert_eq "link_php: empty .php-version -> default" "8.1" "$(link_php emptypv "$d")"
+
+# 5. link_php stays a bare version — no `|source` leaking into rendered configs.
+assert_eq "link_php: emits no source suffix" "8.3" "$(link_php pinned "$(project_dir pinned)")"
+
+# --- current_php_source: "which php am I on?" --------------------------------
+# `harbor php -v` and `harbor describe php` both answer this question and must
+# never disagree, so both go through this one helper. (HARBOR_PROJECT is cleared
+# per call: cwd_project reads it first, and a stray one from a `harbor shell`
+# would silently decide the answer.)
+assert_eq "current_php_source: named project -> its pin" "8.3" \
+  "$(x="$(HARBOR_PROJECT='' current_php_source pinned)"; printf '%s' "${x%%|*}")"
+assert_contains "current_php_source: named project -> its source" "manifest php:" \
+  "$(HARBOR_PROJECT='' current_php_source pinned)"
+
+# No name and a cwd outside any project: the global default, NOT an error. This
+# is what lets `harbor php -v` work from anywhere.
+assert_eq "current_php_source: no project -> global default" "8.1" \
+  "$(x="$(HARBOR_PROJECT='' current_php_source "")"; printf '%s' "${x%%|*}")"
+assert_contains "current_php_source: no project -> says so" "global default" \
+  "$(HARBOR_PROJECT='' current_php_source "")"
+
+# $HARBOR_PROJECT (exported by `harbor shell`) resolves it with no arg at all.
+assert_eq "current_php_source: HARBOR_PROJECT wins with no arg" "7.4" \
+  "$(x="$(HARBOR_PROJECT=pvfile current_php_source "")"; printf '%s' "${x%%|*}")"
+
 report

@@ -35,13 +35,39 @@ link_docroot() {
   if [ -n "$sub" ]; then echo "$dir/$sub"; else echo "$dir"; fi
 }
 
-link_php() {
+# A project's PHP version AND where it came from, as "<ver>|<source>". The one
+# place the precedence lives — link_php is a thin wrapper so the version a site
+# is rendered with and the version `harbor describe php` reports can never drift.
+link_php_source() {
   local name="$1" dir="$2" mf v
   mf="$(manifest_path "$name")"
   v="$(manifest_get "$mf" php "")"
-  [ -z "$v" ] && [ -f "$dir/.php-version" ] && v="$(tr -d ' \n\r' < "$dir/.php-version")"
-  [ -z "$v" ] && v="$(default_php)"
-  echo "$v"
+  [ -n "$v" ] && { printf '%s|manifest php: (%s)\n' "$v" "$mf"; return 0; }
+  if [ -f "$dir/.php-version" ]; then
+    v="$(tr -d ' \n\r' < "$dir/.php-version")"
+    [ -n "$v" ] && { printf '%s|%s\n' "$v" "$dir/.php-version"; return 0; }
+  fi
+  printf '%s|global default (harbor php <ver>)\n' "$(default_php)"
+}
+
+link_php() {
+  local r; r="$(link_php_source "$1" "$2")"
+  echo "${r%%|*}"
+}
+
+# The PHP for the CURRENT context, as "<ver>|<source>": the named project, else
+# the project the cwd is in, else the global default. `harbor describe php` and
+# `harbor php <php-flag>` both answer "which php am I on?" and must never
+# disagree, so both come through here. Not being in a project is not an error —
+# the global default is a real answer ("what would a new site get?").
+current_php_source() {
+  local name="${1-}"
+  [ -n "$name" ] || name="$(cwd_project 2>/dev/null || true)"
+  if [ -n "$name" ]; then
+    link_php_source "$name" "$(project_dir "$name")"
+  else
+    printf '%s|global default (not inside a project)\n' "$(default_php)"
+  fi
 }
 
 link_server_names() {

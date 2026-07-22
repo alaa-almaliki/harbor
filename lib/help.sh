@@ -233,26 +233,39 @@ EOF
   ;;
 
   php) cat <<'EOF'
-harbor php — PHP versions and pools. Three different knobs — see below.
+harbor php — PHP versions and pools. Four different knobs — see below.
 
-Usage: harbor php [<ver>|sync|use <ver>]
+Usage: harbor php [<ver> | sync | use <ver> | <script|flag> ...]
 
   (no args)      Show pool status: default version, xdebug state, per-version pool
-  <ver>          Set the DEFAULT PHP for NEW sites only (existing pins unchanged)
+  <ver>          Set the DEFAULT PHP for NEW sites only (existing pins unchanged).
+                 Only a bare X.Y counts as a version — `1.2.php` is a script.
   sync           Re-create pools after `brew install`/uninstall of a php@x
   use <ver>      Switch the BREW-LINKED cli `php` (plain terminal / IDE / global
                  composer). Independent of Harbor: `harbor run` and nginx always
-                 use each project's own pinned version regardless.
+                 use each project's own pinned version regardless. Restores the
+                 previous link if the switch fails.
+  anything else  Passed to THIS PROJECT's php — the cwd's project, else the
+                 global default — through the same shim `harbor run` uses, so
+                 the xdebug toggle and the manifest's php_ini apply. Scripts,
+                 flags, `-r`: `harbor php -v`, `harbor php -m`,
+                 `harbor php index.php cron/queue process`.
+                 Runs in YOUR cwd, not the project root (use `harbor run php …`
+                 for that). `--help`/`-h` stay Harbor's (this text); php's own
+                 long help is `harbor php -help`.
 
 All installed versions run concurrently as on-demand pools — a project pins its
 version via manifest `php:` or a .php-version file, not via this command.
 
 Examples:
   harbor php                # what's running
+  harbor php -v             # the version THIS project actually runs
+  harbor php index.php x/y  # run a script under the project's PHP
   harbor php 8.3            # new projects default to 8.3
   harbor php use 8.3        # my terminal's `php` becomes 8.3 (hash -r after)
 
-See also: harbor xdebug --help · harbor link <name> (re-point a site's pool)
+See also: harbor describe php (the full picture: paths, ini, xdebug) ·
+harbor xdebug --help · harbor link <name> (re-point a site's pool)
 EOF
   ;;
 
@@ -709,6 +722,33 @@ Prints the URL if it can't open a browser. It does not check that the project is
 linked or running — if the page fails, try `harbor ps` and `harbor link <name>`.
 
 See also: harbor link · harbor ps
+EOF
+  ;;
+
+  describe) cat <<'EOF'
+harbor describe — what this project's runtime ACTUALLY resolves to. Read-only.
+
+Usage: harbor describe php [<name>]
+       ( <name> optional inside a project dir or a `harbor shell`;
+         outside a project it falls back to the global default PHP )
+
+  php    Binary paths, the pinned version and WHERE the pin came from, loaded
+         php.ini + scan dir, effective ini values, manifest php_ini, the FPM
+         pool/socket/vhost, and the full Xdebug picture.
+
+Answers the questions `harbor php` can't: a version is pinned by the manifest
+`php:`, else a `.php-version`, else the global default — this prints which one
+won. Runtime values are probed through the same CLI shim `harbor run`/`composer`/
+`magento` exec, so what you see is what your code gets, not brew's defaults.
+
+Your terminal's `php` is a SEPARATE thing (the brew-linked one). When they differ
+that's called out — `harbor php use <ver>` moves the terminal to match.
+
+Examples:
+  harbor describe php              # inside a project dir
+  harbor describe php shop         # from anywhere
+
+See also: harbor php --help · harbor xdebug --help · harbor doctor <name>
 EOF
   ;;
 
