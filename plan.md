@@ -234,39 +234,39 @@ harbor xdebug on|off|status
 harbor new <name> <framework>         # scaffold + init + up + wire + install + link + open
 harbor init <name> [framework] [--existing] [--multistore domain|path] [--php <ver>]
                                 [--services "a,b"]   # "" or "none" = no containers; omit to be asked
-harbor render <name>                  # regenerate compose+connection from the manifest (services: versions)
-harbor services <name>                 # pick a project's services interactively (current preselected)
-harbor services list|add|rm <name> [svc...]   # inspect/change services after init; add/rm are no-ops
+harbor render [<name>]                # regenerate compose+connection from the manifest (services: versions)
+harbor services [<name>]               # pick a project's services interactively (current preselected)
+harbor services list|add|rm [<name>] [svc...] # inspect/change services after init; add/rm are no-ops
                                       #   when already/not present; re-renders (no auto `up`); confirm-gated shrink
-harbor link <name>                    # nginx vhost <name>.test (+ *.<name>.test
+harbor link [<name>]                  # nginx vhost <name>.test (+ *.<name>.test
                                       #   automatically for domain-multistore Magento)
-harbor unlink <name>
-harbor wire <name> [--print]          # inject config into the app (surgical)
-harbor up|down|restart <name>         # per-project docker stack (down flushes redis)
-harbor restart                        # no name: restart Harbor itself (stop + start)
-harbor destroy <name> [--files]       # remove stack+volumes, vhost, ports, redis (confirm)
-harbor logs <name> [service] [-f]
+harbor unlink [<name>]
+harbor wire [<name>] [--print]        # inject config into the app (surgical)
+harbor up|down [<name>]               # per-project docker stack (down flushes redis)
+harbor restart <name>                 # per-project restart; bare `harbor restart` restarts Harbor
+harbor destroy [<name>] [--files]     # remove stack+volumes, vhost, ports, redis (confirm)
+harbor logs [<name>] [service] [-f]
 harbor logs nginx|php|dnsmasq [-f]    # platform service logs (var/log)
-harbor install <name>                 # framework installer (Magento setup:install, …)
-harbor seed <name>                    # framework seeders / migrations
-harbor run <name> <cmd...>            # run any command under project PHP, in project dir
-harbor artisan|console|spark <name> [args...]   # framework console passthroughs
-harbor magento <name> [args...]       # bin/magento under project PHP (+ DX helpers)
-harbor composer <name> [args...]      # composer under the project's PHP
-harbor node|npm <name> [args...]      # node/npm via nvm + .nvmrc
-harbor tool <name> <tool> [args...]   # run a containerized CLI tool (wkhtmltopdf, …)
-harbor tools sync <name>              # (re)generate tool shims from the manifest
-harbor store add|list|rm <name> ...   # multistore routing
-harbor db create <name> [db] [user] [pass] # defaults: db=project, user=db, pass=db
-harbor db drop   <name> [db]               # destructive (confirm)
-harbor db backup <name> [db] [file]        # -> backups/db/<name>/<ts>.sql.gz
-harbor db import <name> <file> [db]        # decompress→strip-definer→hooks→load→replace
-harbor db pull  <name>                     # ssh mysqldump from remote -> import pipeline
+harbor install [<name>]               # framework installer (Magento setup:install, …)
+harbor seed [<name>]                  # framework seeders / migrations
+harbor run [<name>] <cmd...>          # run any command under project PHP, in project dir
+harbor artisan|console|spark [<name>] [args...] # framework console passthroughs
+harbor magento [<name>] [args...]     # bin/magento under project PHP (+ DX helpers)
+harbor composer [<name>] [args...]    # composer under the project's PHP
+harbor node|npm [<name>] [args...]    # node/npm via nvm + .nvmrc
+harbor tool [<name>] <tool> [args...] # run a containerized CLI tool (wkhtmltopdf, …)
+harbor tools sync [<name>]            # (re)generate tool shims from the manifest
+harbor store add|list|rm [<name>] ... # multistore routing
+harbor db create [<name>] [db] [user] [pass] # defaults: db=project, user=db, pass=db
+harbor db drop   [<name>] [db]             # destructive (confirm)
+harbor db backup [<name>] [db] [file]      # -> backups/db/<name>/<ts>.sql.gz
+harbor db import [<name>] <file> [db]      # decompress→strip-definer→hooks→load→replace
+harbor db pull  [<name>]                   # ssh mysqldump from remote -> import pipeline
 harbor db sandbox create|drop|list|backup|restore|console|up|down|destroy|status
                                            # project-independent scratch MySQL on 127.0.0.1:3306
-harbor media pull <name>                   # rsync remote media/storage
-harbor mysql|redis|shell <name>       # open a console into the project's services
-harbor open <name>                    # open https://<name>.test in the browser
+harbor media pull [<name>]                 # rsync remote media/storage
+harbor mysql|redis|shell [<name>]     # open a console into the project's services
+harbor open [<name>]                  # open https://<name>.test in the browser
 harbor ps | list                      # status of all projects / running stacks
 harbor mail up|down                   # shared stack (mailpit + redis)
 harbor secure [host...]               # (re)issue wildcard cert / add SANs
@@ -276,6 +276,29 @@ harbor test [filter]                  # run Harbor's own unit suite (test/), opt
 harbor update [--check|--stash]       # self-update: ff to origin/main + reseed agent skills
 harbor teardown [--purge]             # remove all Harbor launchd units, resolver, config
 ```
+
+### Resolving `<name>`
+
+Every project command takes its `<name>` through one helper, `resolve_project`
+(`lib/common.sh`), so the rule is identical everywhere:
+
+1. an explicit first argument, **only if a project by that name exists** — it
+   also reports `_RP_SHIFT=1` so the caller drops it from `$@`;
+2. otherwise `$HARBOR_PROJECT` (exported by `harbor shell`), then the
+   `projects/<name>/` directory containing the cwd (real or symlinked);
+3. otherwise `die` with the command's usage.
+
+The existence check in (1) is what lets a command keep its own positional args:
+`harbor db backup reporting` inside a project dumps the `reporting` database
+rather than swallowing `reporting` as a project name and shifting `[db]`/`[file]`
+out of place. It also means a database, store code or tool that happens to share
+a project's name needs the project spelled out.
+
+Three commands deliberately opt out. `new` and `init` **create** the project
+directory, so there is nothing to infer (and `harbor init magento` would be
+ambiguous between a name and a framework); bare `harbor restart` already means
+"restart Harbor itself". `harbor logs clear` likewise keeps its own default
+(every log), so a bare `clear` is not a project.
 
 ## Setup (`harbor setup`)
 

@@ -300,7 +300,7 @@ _link_build() {
 }
 
 cmd_link() {
-  require_name "${1-}"; local name="$1"
+  resolve_project "${1-}" "harbor link [<name>]"; local name="$_RP_NAME"
   local mf; mf="$(manifest_path "$name")"
   _link_build "$name" >/dev/null
   # exact SANs (+ one-level wildcard for magento domain stores)
@@ -316,7 +316,7 @@ cmd_link() {
 }
 
 cmd_unlink() {
-  require_name "${1-}"; local name="$1"
+  resolve_project "${1-}" "harbor unlink [<name>]"; local name="$_RP_NAME"
   local out="$HARBOR_NGINX_SITES/$name.$HARBOR_TLD.conf"
   [ -f "$out" ] || { warn "no vhost for $name"; return 0; }
   rm -f "$out"

@@ -441,6 +441,10 @@ magento -> mysql + opensearch + rabbitmq; everything else -> mysql.
 
 Flags and the framework may appear in any order. No sudo, no confirm.
 
+<name> is REQUIRED — unlike the commands that act on an existing project, init
+creates the directory, so it cannot be inferred from your cwd (and `harbor init
+magento` would be ambiguous between a name and a framework).
+
 Examples:
   harbor init shop                        # detect framework from the code
   harbor init legacy --php 7.4 --existing
@@ -452,7 +456,8 @@ EOF
   render) cat <<'EOF'
 harbor render — regenerate compose + connection.env from the manifest  [confirms]
 
-Usage: harbor render <name>        (no flags)
+Usage: harbor render [<name>]        (no flags)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
 Run after editing the manifest's `services:` (versions, or adding/removing a
 service). Regenerating does NOT apply anything — follow with `harbor up <name>`.
@@ -478,10 +483,11 @@ EOF
   services) cat <<'EOF'
 harbor services — inspect or change a project's backing services  [confirms]
 
-Usage: harbor services <name>              pick interactively (current preselected)
-       harbor services list <name>
-       harbor services add  <name> <svc>...
-       harbor services rm   <name> <svc>...
+Usage: harbor services [<name>]              pick interactively (current preselected)
+       harbor services list [<name>]
+       harbor services add  [<name>] <svc>...
+       harbor services rm   [<name>] <svc>...
+       ( <name> optional inside a project dir or a `harbor shell` )
 
 Catalog: mysql · opensearch · rabbitmq · meilisearch · elasticsearch
 
@@ -504,7 +510,8 @@ EOF
   link) cat <<'EOF'
 harbor link — serve the project at https://<name>.test
 
-Usage: harbor link <name>        (no flags)
+Usage: harbor link [<name>]        (no flags)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
 Renders the vhost, adds the site's exact cert SAN, re-issues the shared cert, and
 reloads nginx. Re-run it after changing the project's PHP version to re-point the
@@ -526,7 +533,8 @@ EOF
   unlink) cat <<'EOF'
 harbor unlink — remove the project's vhost
 
-Usage: harbor unlink <name>        (no flags)
+Usage: harbor unlink [<name>]        (no flags)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
 Removes the vhost, drops <name>.test (and *.<name>.test) from the cert SANs,
 re-issues the cert, and reloads nginx. The stack keeps running — use
@@ -543,10 +551,11 @@ EOF
   wire) cat <<'EOF'
 harbor wire — inject DB/Redis/mail config into the app, surgically
 
-Usage: harbor wire <name> [--print]
+Usage: harbor wire [<name>] [--print]
+       ( <name> optional inside a project dir or a `harbor shell` )
 
   --print   Print the connection details and write nothing. Must come right
-            after <name>.
+            after <name> (or first, when <name> is omitted).
 
 Allowlist-only and idempotent: it replaces or appends individual keys and never
 blanket-rewrites your config. Backs the file up ONCE to <file>.harbor-bak — a
@@ -577,7 +586,8 @@ EOF
   up) cat <<'EOF'
 harbor up — start the project's Docker stack
 
-Usage: harbor up <name>        (no flags)
+Usage: harbor up [<name>]        (no flags)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
 Starts the containers and waits up to 180s for healthchecks (a timeout only
 warns). Needs the Docker daemon.
@@ -595,7 +605,8 @@ EOF
   down) cat <<'EOF'
 harbor down — stop the project's Docker stack (data kept)
 
-Usage: harbor down <name>        (no flags)
+Usage: harbor down [<name>]        (no flags)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
 Note: this also FLUSHES the project's Redis indices (cache/page/session/spare) —
 a stopped project shouldn't leave stale cache behind for the next one. If you
@@ -622,8 +633,9 @@ pools, dnsmasq and nginx go down and come back up. nginx is a LaunchDaemon, so
 that path asks for sudo. Running project stacks are left alone — they sit on
 20000+ ports.
 
-With a name it restarts only that project's containers. Unlike `down`, it does
-NOT flush Redis. It does not re-render compose either — after editing the
+With a name it restarts only that project's containers. It does NOT infer the
+project from your cwd — bare `harbor restart` already means the platform. Unlike
+`down`, it does NOT flush Redis. It does not re-render compose either — after editing the
 manifest run `harbor render <name> && harbor up <name>`. No-op (not an error)
 for a project with `services: {}` — there's nothing to restart.
 
@@ -634,10 +646,12 @@ EOF
   destroy) cat <<'EOF'
 harbor destroy — remove a project's stack, volumes, ports and vhost  [confirms]
 
-Usage: harbor destroy <name> [--files]
+Usage: harbor destroy [<name>] [--files]
+       ( <name> optional inside a project dir or a `harbor shell` )
 
   --files   ALSO delete the project directory itself (your code). Must come
-            right after <name>. The prompt does not mention this — be sure.
+            right after <name> (or first, when <name> is omitted). The prompt
+            does not mention this — be sure.
 
 Drops containers AND volumes (the database is gone), unlinks the vhost, and
 releases the port block — a later re-init may get different ports.
@@ -656,9 +670,11 @@ EOF
   logs) cat <<'EOF'
 harbor logs — tail project, platform, or site logs
 
-Usage: harbor logs <name> [service] [-f]
+Usage: harbor logs [<name>] [service] [-f]
        harbor logs nginx|php|dnsmasq [-f]
        harbor logs clear [all|nginx|php|dnsmasq|<name>]
+       ( <name> optional inside a project dir or a `harbor shell`; `clear`
+         still needs one — bare `clear` means every log )
 
   <name> [args]   docker compose logs --tail=200; extra args pass through, so
                   `-f` and service names work as usual
@@ -686,7 +702,8 @@ EOF
   open) cat <<'EOF'
 harbor open — open https://<name>.test in your browser
 
-Usage: harbor open <name>        (no flags)
+Usage: harbor open [<name>]        (no flags)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
 Prints the URL if it can't open a browser. It does not check that the project is
 linked or running — if the page fails, try `harbor ps` and `harbor link <name>`.
@@ -698,7 +715,8 @@ EOF
   install) cat <<'EOF'
 harbor install — run the framework's installer/migrations
 
-Usage: harbor install <name>        (no flags; <name> is required)
+Usage: harbor install [<name>]        (no flags)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
   magento      setup:install wired to Harbor's ports/credentials, then a local-DX
                pass (developer mode, 2FA off, reindex, cache flush)
@@ -721,7 +739,8 @@ EOF
   seed) cat <<'EOF'
 harbor seed — run the framework's seeders
 
-Usage: harbor seed <name>        (no flags; <name> is required)
+Usage: harbor seed [<name>]        (no flags)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
   laravel      artisan db:seed --force
   symfony      doctrine:fixtures:load --no-interaction
@@ -912,7 +931,8 @@ EOF
   tool) cat <<'EOF'
 harbor tool — run a containerized CLI tool against the project
 
-Usage: harbor tool <name> <tool> [args...]        (<name> is REQUIRED)
+Usage: harbor tool [<name>] <tool> [args...]
+       ( <name> optional inside a project dir or a `harbor shell` )
 
 Runs the tool in a throwaway container so nothing is installed on your host. The
 shim is regenerated on every run, so you never need `tools sync` first.
@@ -922,7 +942,9 @@ Built-in catalog: wkhtmltopdf, ghostscript (gs), pandoc, ffmpeg, soffice
   tools: { wkhtmltopdf: { image: "surnet/alpine-wkhtmltopdf:...", bin: wkhtmltopdf } }
 
 Gotchas:
-  • <name> is required — this one does NOT infer the project from your cwd.
+  • The tool name is matched first: `harbor tool gs …` inside a project runs
+    gs there. An existing project name in that slot wins, so a tool sharing a
+    project's name needs the project spelled out: `harbor tool shop shop …`.
   • Only the project dir and $TMPDIR are visible to the tool, mounted at their
     real paths (so absolute paths work). Relative args resolve from the PROJECT
     ROOT, not your cwd.
@@ -938,7 +960,8 @@ EOF
   tools) cat <<'EOF'
 harbor tools — (re)generate the project's tool shims
 
-Usage: harbor tools sync <name>        (`sync` is the only subcommand; <name> REQUIRED)
+Usage: harbor tools sync [<name>]        (`sync` is the only subcommand)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
 Writes a shim per manifest `tools:` entry into <project>/.harbor/bin/, which is
 on PATH for run/shell/artisan/etc. That's how an app finds `wkhtmltopdf` with
@@ -965,14 +988,19 @@ EOF
   db) cat <<'EOF'
 harbor db — per-project MySQL databases
 
-Usage: harbor db <sub> <name> [args]        (<name> is required for every sub)
+Usage: harbor db <sub> [<name>] [args]
+       ( <name> optional inside a project dir or a `harbor shell` )
 
-  create <name> [db] [user] [pass]   Create DB + user (each defaults to <name>)
-  drop <name> [db]                   Drop the database             [confirms]
-  backup <name> [db] [file]          Dump to backups/db/<name>/<db>-<ts>.sql.gz
-  import <name> <file> [db]          Import a dump (auto-backup first)
-  pull <name> [import flags]         mysqldump over ssh, straight into import
+  create [<name>] [db] [user] [pass] Create DB + user (each defaults to <name>)
+  drop [<name>] [db]                 Drop the database             [confirms]
+  backup [<name>] [db] [file]        Dump to backups/db/<name>/<db>-<ts>.sql.gz
+  import [<name>] <file> [db]        Import a dump (auto-backup first)
+  pull [<name>] [import flags]       mysqldump over ssh, straight into import
   sandbox <sub>                      Scratch MySQL, no project — see below
+
+The leading <name> is only taken as the project when it names one that exists,
+so `harbor db backup reporting` inside a project dumps the `reporting` database.
+A database sharing a project's name needs the project spelled out.
 
 import flags (also accepted by `pull`):
   --no-backup        Skip the automatic pre-import backup
@@ -1008,7 +1036,7 @@ Recurring rules/fixups live in the project, seeded as inert samples by init:
 
 Examples:
   harbor db backup shop
-  harbor db import shop dump.sql.gz --replace https://prod.com=https://shop.test
+  harbor db import dump.sql.gz --replace https://prod.com=https://shop.test
   harbor db pull shop --reconfigure
 
 See also: harbor db sandbox --help · harbor mysql --help · harbor media --help
@@ -1049,7 +1077,8 @@ EOF
   media) cat <<'EOF'
 harbor media — sync remote media/storage down to the project
 
-Usage: harbor media pull <name>        (`pull` is the only subcommand)
+Usage: harbor media pull [<name>]        (`pull` is the only subcommand)
+       ( <name> optional inside a project dir or a `harbor shell` )
 
 Destination by framework: magento -> pub/media, laravel -> storage/app,
 otherwise -> media/. Caches are excluded.
@@ -1070,9 +1099,10 @@ EOF
   store) cat <<'EOF'
 harbor store — Magento multi-store routing
 
-Usage: harbor store add <name> <code> --domain <host> | --path <seg> [--website|--store]
-       harbor store list <name>
-       harbor store rm <name> <code>
+Usage: harbor store add [<name>] <code> --domain <host> | --path <seg> [--website|--store]
+       harbor store list [<name>]
+       harbor store rm [<name>] <code>
+       ( <name> optional inside a project dir or a `harbor shell` )
 
   --domain <host>   Route by hostname  -> <code>.<name>.test
   --path <seg>      Route by URL path  -> <name>.test/<seg>

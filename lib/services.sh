@@ -252,10 +252,10 @@ cmd_services() {
   local sub="${1-}" name svc catalog cur new
   case "$sub" in
     list|add|rm) shift ;;
-    "")          usage_die services "harbor services <name> | list|add|rm <name> [svc...]" ;;
-    *)           sub="" ;;   # `harbor services <name>` -> the picker
+    *)           sub="" ;;   # `harbor services [<name>]` -> the picker
   esac
-  require_name "${1-}"; name="$1"; shift || true
+  resolve_project "${1-}" "harbor services [<name>] | list|add|rm [<name>] [svc...]"
+  [ "$_RP_SHIFT" = 1 ] && shift; name="$_RP_NAME"
   local mf; mf="$(manifest_path "$name")"
   [ -f "$mf" ] || die "not initialized: $name → harbor init $name"
   local framework; framework="$(manifest_get "$mf" framework "")"

@@ -209,7 +209,7 @@ init_render_compose() {
 # connection.env) from the manifest, WITHOUT touching the manifest itself. Run
 # after editing `services:`, then `harbor up <name>` to apply.
 cmd_render() {
-  require_name "${1-}"; local name="$1"
+  resolve_project "${1-}" "harbor render [<name>]"; local name="$_RP_NAME"
   local mf; mf="$(manifest_path "$name")"
   [ -f "$mf" ] || die "not initialized: $name → harbor init $name"
   ports_ensure "$name" || die "ports not allocated for $name → harbor init $name"

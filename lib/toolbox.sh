@@ -85,8 +85,9 @@ EOF
 }
 
 cmd_tools() {
-  [ "${1-}" = "sync" ] || usage_die tools "harbor tools sync <name>"
-  shift; require_name "${1-}"; local name="$1" mf t n=0
+  [ "${1-}" = "sync" ] || usage_die tools "harbor tools sync [<name>]"
+  shift; resolve_project "${1-}" "harbor tools sync [<name>]"
+  local name="$_RP_NAME" mf t n=0
   mf="$(manifest_path "$name")"
   for t in $(tools_declared "$mf"); do
     tool_write_shim "$name" "$t" >/dev/null; step "shim: $t"; n=$((n + 1))
@@ -95,9 +96,10 @@ cmd_tools() {
 }
 
 cmd_tool() {
-  require_name "${1-}"; local name="$1" tool="${2-}"
-  [ -n "$tool" ] || usage_die tool "harbor tool <name> <tool> [args...]"
-  shift 2
+  resolve_project "${1-}" "harbor tool [<name>] <tool> [args...]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME" tool="${1-}"
+  [ -n "$tool" ] || usage_die tool "harbor tool [<name>] <tool> [args...]"
+  shift
   docker info >/dev/null 2>&1 || die "docker daemon not running"
   local dir shim; dir="$(project_dir "$name")"
   shim="$(tool_write_shim "$name" "$tool")"

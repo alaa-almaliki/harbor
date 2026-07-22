@@ -130,7 +130,7 @@ redis_flush_project() {
 }
 
 cmd_up() {
-  require_name "${1-}"; local name="$1"
+  resolve_project "${1-}" "harbor up [<name>]"; local name="$_RP_NAME"
   # Lifecycle commands run in bulk across every project degrade to a no-op;
   # commands that are a direct request for a specific missing thing refuse
   # (see `harbor db`/`harbor mysql`, Task 8). `up` is bulk-run material (e.g.
@@ -147,7 +147,7 @@ cmd_up() {
 }
 
 cmd_down() {
-  require_name "${1-}"; local name="$1"
+  resolve_project "${1-}" "harbor down [<name>]"; local name="$_RP_NAME"
   # See cmd_up: bulk lifecycle commands no-op on a service-less project rather
   # than refusing.
   if ! project_has_stack "$name"; then
@@ -214,7 +214,8 @@ _destroy_project_volumes() {
 }
 
 cmd_destroy() {
-  require_name "${1-}"; local name="$1"; shift || true
+  resolve_project "${1-}" "harbor destroy [<name>] [--files]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
   local files=0; [ "${1-}" = "--files" ] && files=1
   confirm "Destroy '$name' (drop containers + volumes + ports + vhost)?" || { warn "aborted"; return 1; }
   redis_flush_project "$name"
@@ -269,7 +270,8 @@ cmd_logs() {
     nginx)   shift; tail -n 200 ${1:+-F} "$HARBOR_LOG_DIR"/nginx-*.log 2>/dev/null || warn "no nginx logs yet" ;;
     php)     shift; tail -n 200 ${1:+-F} "$HARBOR_LOG_DIR"/php-*.log 2>/dev/null || warn "no php logs yet" ;;
     dnsmasq) shift; tail -n 200 ${1:+-F} "$HARBOR_LOG_DIR"/dnsmasq.log 2>/dev/null || warn "no dnsmasq log yet" ;;
-    *) require_name "${1-}"; local name="$1"; shift || true
+    *) resolve_project "${1-}" "harbor logs [<name>] | nginx|php|dnsmasq | clear [target]"
+       [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
        # See cmd_up: bulk lifecycle commands no-op on a service-less project
        # rather than refusing.
        if ! project_has_stack "$name"; then

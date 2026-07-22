@@ -9,7 +9,8 @@ _install_framework() {
 }
 
 cmd_install() {
-  require_name "${1-}"; local name="$1"; local framework; framework="$(_install_framework "$name")"
+  resolve_project "${1-}" "harbor install [<name>]"; local name="$_RP_NAME"
+  local framework; framework="$(_install_framework "$name")"
   local dir; dir="$(project_dir "$name")"
   case "$framework" in
     magento)
@@ -46,7 +47,8 @@ cmd_install() {
 }
 
 cmd_seed() {
-  require_name "${1-}"; local name="$1"; local framework; framework="$(_install_framework "$name")"
+  resolve_project "${1-}" "harbor seed [<name>]"; local name="$_RP_NAME"
+  local framework; framework="$(_install_framework "$name")"
   local dir; dir="$(project_dir "$name")"
   case "$framework" in
     laravel) cmd_run "$name" php artisan db:seed --force ;;

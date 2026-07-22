@@ -324,6 +324,32 @@ and **[SemVer](https://semver.org)**.
   keyed `<cmd>-<sub>` is reached by `harbor <cmd> <sub> --help` with no wiring. If
   the command execs another tool and forwards argv, add it to `help_passthrough`
   so its `--help` reaches that tool.
+- **A command that acts on an existing project takes its name through
+  `resolve_project`, never `require_name`.** `require_name` only validates
+  `$1`; `resolve_project` (`lib/common.sh`) adds the cwd/`$HARBOR_PROJECT`
+  fallback that makes `<name>` optional inside a project, and it is the *only*
+  place that rule lives — a second implementation is how `harbor db backup`
+  ended up erroring `project name required` inside the very project it was
+  standing in, years after `harbor mysql` learned better. The idiom is fixed:
+
+      resolve_project "${1-}" "harbor <cmd> [<name>] …"
+      [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
+
+  **`_RP_SHIFT` is not optional bookkeeping.** An explicit name is consumed
+  (`_RP_SHIFT=1`) and an inferred one is not, so a command with its own
+  positional args must shift on the flag and then read them from `$1`, `$2` —
+  *not* `$2`, `$3` as it did when the name was mandatory. Forget the shift and
+  every later argument silently lands one slot off (`harbor db backup <db>`
+  would dump nothing and write the wrong filename). Conversely, resolution keys
+  on the project **existing**, which is what keeps a non-project first argument
+  as the command's own: `harbor db backup reporting` dumps the `reporting`
+  database. A db/store/tool sharing a project's name must be spelled out; say so
+  in the help topic where it's plausible.
+  Three commands deliberately opt out, and should stay that way: `new` and
+  `init` **create** the project directory (nothing to infer, and
+  `harbor init magento` would be ambiguous between a name and a framework), and
+  bare `harbor restart` already means "restart Harbor itself". `harbor logs
+  clear` likewise defaults to every log, not the current project.
 - **Never let `-h`/`--help` reach a command as data.** `help_intercept` answers it
   wherever Harbor is still parsing; a command must never treat it as a value. This
   isn't cosmetic — it once made `harbor logs nginx --help` hang on `tail -F` and

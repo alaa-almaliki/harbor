@@ -101,33 +101,39 @@ strip_definers() {
   LC_ALL=C sed -i '' -E "$_DEFINER_SED" "$1"
 }
 
-# harbor db create <name> [db] [user] [pass]
+# harbor db create [<name>] [db] [user] [pass]
 db_create() {
-  require_name "${1-}"; local name="$1"; _db_load "$name"; _db_up_check "$name"
+  resolve_project "${1-}" "harbor db create [<name>] [db] [user] [pass]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
+  _db_load "$name"; _db_up_check "$name"
   local db user pass ident; ident="$(db_ident "$name")"
-  db="${2:-$ident}"; user="${3:-$db}"; pass="${4:-$db}"
+  db="${1:-$ident}"; user="${2:-$db}"; pass="${3:-$db}"
   db="$(db_ident "$db")"; user="$(db_ident "$user")"   # db_ident validates -> injection-safe
   log "creating database '$db' + user '$user'"
   sql_create_db_user "$db" "$user" "$pass" | _db_mysql "$name"
   ok "db '$db' ready (user '$user')"
 }
 
-# harbor db drop <name> [db]
+# harbor db drop [<name>] [db]
 db_drop() {
-  require_name "${1-}"; local name="$1"; _db_load "$name"; _db_up_check "$name"
-  local db; db="$(db_ident "${2:-$(db_ident "$name")}")"
+  resolve_project "${1-}" "harbor db drop [<name>] [db]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
+  _db_load "$name"; _db_up_check "$name"
+  local db; db="$(db_ident "${1:-$(db_ident "$name")}")"
   confirm "DROP DATABASE \`$db\` on '$name'? This is destructive." || { warn "aborted"; return 1; }
   _db_mysql "$name" -e "DROP DATABASE IF EXISTS \`$db\`;"
   ok "dropped database '$db'"
 }
 
-# harbor db backup <name> [db] [file]
+# harbor db backup [<name>] [db] [file]
 db_backup() {
-  require_name "${1-}"; local name="$1"; _db_load "$name"; _db_up_check "$name"
-  local db file dir ts; db="$(db_ident "${2:-$(db_ident "$name")}")"
+  resolve_project "${1-}" "harbor db backup [<name>] [db] [file]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
+  _db_load "$name"; _db_up_check "$name"
+  local db file dir ts; db="$(db_ident "${1:-$(db_ident "$name")}")"
   dir="$HARBOR_BACKUPS/$name"; mkdir -p "$dir"
   ts="$(date +%Y%m%d-%H%M%S)"
-  file="${3:-$dir/$db-$ts.sql.gz}"
+  file="${2:-$dir/$db-$ts.sql.gz}"
   log "dumping '$db' -> $file"
   _db_mysqldump "$name" --single-transaction --routines --triggers --no-tablespaces "$db" | gzip > "$file"
   ok "backup: $file"
@@ -185,9 +191,10 @@ _run_hooks() {
   done
 }
 
-# harbor db import <name> <file> [db] [--no-backup --keep-definers --no-hooks --no-rules --stream-replace --reconfigure --force --replace OLD=NEW]
+# harbor db import [<name>] <file> [db] [--no-backup --keep-definers --no-hooks --no-rules --stream-replace --reconfigure --force --replace OLD=NEW]
 db_import() {
-  require_name "${1-}"; local name="$1"; shift
+  resolve_project "${1-}" "harbor db import [<name>] <file> [db]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
   local t0=$SECONDS truncated=0
   local file="" db="" nobackup=0 keepdef=0 nohooks=0 norules=0 streamrep=0 reconf=0 force=0
   local -a replaces=()
@@ -210,7 +217,7 @@ db_import() {
       *) if [ -z "$file" ]; then file="$1"; else db="$1"; fi; shift ;;
     esac
   done
-  [ -n "$file" ] && [ -f "$file" ] || usage_die db "harbor db import <name> <file> [db]"
+  [ -n "$file" ] && [ -f "$file" ] || usage_die db "harbor db import [<name>] <file> [db]"
   _db_load "$name"; _db_up_check "$name"
   db="$(db_ident "${db:-$(db_ident "$name")}")"
   export HARBOR_IMPORT_DB="$db"
@@ -378,6 +385,6 @@ cmd_db() {
     backup) db_backup "$@" ;;
     import) db_import "$@" ;;
     pull)   db_pull "$@" ;;
-    *) usage_die db "harbor db create|drop|backup|import|pull <name> ...  |  harbor db sandbox <sub>" ;;
+    *) usage_die db "harbor db create|drop|backup|import|pull [<name>] ...  |  harbor db sandbox <sub>" ;;
   esac
 }

@@ -34,28 +34,35 @@ brackets); name-less it errors with `project name required`.
 | `harbor shell [<name>]` | Shell in the project dir with its PHP/Node on PATH. |
 
 ### Project stack lifecycle
+> `<name>` is optional for every command below — inside `projects/<name>/` (any
+> depth) or a `harbor shell`, Harbor resolves it from the cwd. `restart` is the
+> exception: bare `harbor restart` restarts Harbor itself, so a project restart
+> always names the project. A leading argument counts as the project only when a
+> project by that name exists, so `harbor db backup reporting` dumps the
+> `reporting` database rather than shifting the remaining arguments.
+
 | Command | What it does |
 |---|---|
-| `harbor up <name>` | Start the project's Docker stack (waits for health). |
-| `harbor down <name>` | Stop it (keeps MySQL volume; flushes its Redis indices). |
+| `harbor up [<name>]` | Start the project's Docker stack (waits for health). |
+| `harbor down [<name>]` | Stop it (keeps MySQL volume; flushes its Redis indices). |
 | `harbor restart <name>` | Restart the stack. |
-| `harbor render <name>` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:`). **Confirms** before dropping a service whose data volume still exists (data kept; `HARBOR_YES=1` skips). |
-| `harbor services <name>` \| `list\|add\|rm <name> [svc...]` | Inspect/change a project's services after init. Bare `<name>` is the picker (current selection preselected); `add`/`rm` are no-ops when already/not present. Writes the manifest + re-renders (does NOT run `up`) — same confirm gate as `render` when a service with data would be dropped. |
-| `harbor destroy <name> [--files]` | Remove stack + volumes + vhost + ports (confirm-gated; `--files` also deletes the code). |
-| `harbor link <name>` | Create/refresh the `https://<name>.test` vhost (adds cert SAN, reloads nginx). |
-| `harbor unlink <name>` | Remove the vhost. |
-| `harbor open <name>` | Open the site in the browser. |
-| `harbor wire <name> [--print]` | Inject DB/Redis/mail into the app config (surgical, never clobbers). Skips the DB lines for a project with no `mysql` service (still wires Redis/mail); a DB-less Magento project refuses instead, since Magento requires a database. |
+| `harbor render [<name>]` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:`). **Confirms** before dropping a service whose data volume still exists (data kept; `HARBOR_YES=1` skips). |
+| `harbor services [<name>]` \| `list\|add\|rm [<name>] [svc...]` | Inspect/change a project's services after init. Bare `<name>` is the picker (current selection preselected); `add`/`rm` are no-ops when already/not present. Writes the manifest + re-renders (does NOT run `up`) — same confirm gate as `render` when a service with data would be dropped. |
+| `harbor destroy [<name>] [--files]` | Remove stack + volumes + vhost + ports (confirm-gated; `--files` also deletes the code). |
+| `harbor link [<name>]` | Create/refresh the `https://<name>.test` vhost (adds cert SAN, reloads nginx). |
+| `harbor unlink [<name>]` | Remove the vhost. |
+| `harbor open [<name>]` | Open the site in the browser. |
+| `harbor wire [<name>] [--print]` | Inject DB/Redis/mail into the app config (surgical, never clobbers). Skips the DB lines for a project with no `mysql` service (still wires Redis/mail); a DB-less Magento project refuses instead, since Magento requires a database. |
 
 ### Databases
 | Command | What it does |
 |---|---|
-| `harbor db create <name> [db] [user] [pass]` | Create DB + user (defaults: db=project, user=db, pass=db). |
-| `harbor db drop <name> [db]` | Drop a database (confirm-gated). |
-| `harbor db backup <name> [db] [file]` | Dump → `backups/db/<name>/<timestamp>.sql.gz`. |
-| `harbor db import <name> <file> [db]` | Hookable import pipeline (below). `--force` = best-effort (skip rejected statements, load truncated dumps); `--replace OLD=NEW`; `--no-backup`; `--keep-definers`; Magento `--reconfigure`. |
-| `harbor db pull <name>` | Pull a remote dump straight into the import pipeline. |
-| `harbor media pull <name>` | rsync remote media/storage. |
+| `harbor db create [<name>] [db] [user] [pass]` | Create DB + user (defaults: db=project, user=db, pass=db). |
+| `harbor db drop [<name>] [db]` | Drop a database (confirm-gated). |
+| `harbor db backup [<name>] [db] [file]` | Dump → `backups/db/<name>/<timestamp>.sql.gz`. |
+| `harbor db import [<name>] <file> [db]` | Hookable import pipeline (below). `--force` = best-effort (skip rejected statements, load truncated dumps); `--replace OLD=NEW`; `--no-backup`; `--keep-definers`; Magento `--reconfigure`. |
+| `harbor db pull [<name>]` | Pull a remote dump straight into the import pipeline. |
+| `harbor media pull [<name>]` | rsync remote media/storage. |
 | `harbor redis [<name>] [args…]` | `redis-cli` on this project's **cache** index (args pass through — e.g. `harbor redis FLUSHDB`). There is no `redis flush` subcommand; `harbor down <name>` flushes all four indices. |
 
 ### Sandbox — project-independent scratch MySQL (127.0.0.1:3306)

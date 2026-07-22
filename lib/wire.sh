@@ -85,7 +85,8 @@ PHP
 }
 
 cmd_wire() {
-  require_name "${1-}"; local name="$1"; shift || true
+  resolve_project "${1-}" "harbor wire [<name>] [--print]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
   local print=0; [ "${1-}" = "--print" ] && print=1
   local dir hdir conn mf framework
   dir="$(project_dir "$name")"; hdir="$(project_harbor_dir "$name")"; conn="$hdir/connection.env"

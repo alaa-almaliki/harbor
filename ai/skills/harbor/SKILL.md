@@ -36,29 +36,33 @@ is whatever brew last linked — usually the wrong version — and has none of t
 DB/Redis/mail environment. `harbor run php -v` shows the version you actually get.
 
 ### When you can omit `<name>` — and when you can't
-**Only the passthrough/console commands infer the project from your cwd:**
-`run`, `artisan`, `console`, `spark`, `magento`, `composer`, `node`, `npm`,
-`mysql`, `redis`, `shell`. From inside the project dir, drop the name:
+**Nearly every project command infers the project from your cwd** (anywhere under
+`projects/<name>/`, or inside a `harbor shell`). From inside the project dir,
+drop the name:
 
 ```bash
-harbor artisan migrate            # infers the project from cwd (not: harbor artisan <name> …)
+harbor artisan migrate            # passthrough/console commands
 harbor composer install
 harbor mysql -e "SELECT 1;"
+harbor up                         # …and lifecycle/data commands
+harbor logs -f
+harbor db backup
 ```
 
-**Every other command needs an explicit `<name>`** — `up`, `down`, `restart`,
-`render`, `link`, `unlink`, `wire`, `logs <name>`, `db …`, `destroy`,
-`tools sync`, `doctor <name>`. Name-less they error (`project name required`, or
-`invalid project name '--flag'` if a flag lands first):
+**Three commands still require `<name>`:** `new` and `init` (they CREATE the
+project directory, so there is nothing to infer), and `restart` (bare
+`harbor restart` already means "restart Harbor itself"). Name-less, the rest
+error only when you are outside every project:
 
-```bash
-harbor up <name>                  # NOT: harbor up   → err project name required
-harbor logs <name> -f
-harbor db backup <name>
+```
+err  no project given and not inside one → harbor db backup [<name>] [db] [file]
 ```
 
-An explicit valid name always wins, so passing it everywhere is safe. Below, the
-passthrough/console examples omit `<name>`; the rest show it — copy that split.
+An explicit valid name always wins, so passing it everywhere is safe. The one
+thing to watch: a leading argument is taken as the project **only if a project by
+that name exists**, so `harbor db backup reporting` inside a project dumps the
+`reporting` database. Spell the project out when a database, store code or tool
+shares its name.
 
 ---
 
@@ -78,7 +82,7 @@ the project name as their first arg:
 ```bash
 harbor mysql                          # infers project; interactive client into its DB
 harbor mysql -e "SELECT COUNT(*) FROM users;"
-harbor db backup <name>               # -> backups/db/<name>/<timestamp>.sql.gz
+harbor db backup                      # -> backups/db/<name>/<timestamp>.sql.gz
 harbor db import <name> <file> [db]   # hookable pipeline: DEFINER-strip, replace, scrub
 harbor db import <name> <file> --force        # skip server-rejected rows instead of aborting
 harbor db import <name> <file> --replace old.com=<name>.test

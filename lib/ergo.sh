@@ -4,7 +4,7 @@
 _port_listening() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
 cmd_open() {
-  require_name "${1-}"; local name="$1"
+  resolve_project "${1-}" "harbor open [<name>]"; local name="$_RP_NAME"
   open "https://$name.$HARBOR_TLD" 2>/dev/null || echo "https://$name.$HARBOR_TLD"
 }
 

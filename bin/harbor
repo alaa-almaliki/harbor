@@ -102,26 +102,26 @@ Host & lifecycle:
   status | ps | list        Overall status (self-heals) / project table
   php [<ver>|sync] | php use <ver> (switch the brew-linked CLI php) | xdebug on|off|status
 
-Projects:
+Projects:                   ( <name> is optional inside a project dir /
+                              harbor shell — except new, init and restart )
   new <name> <framework>    Scaffold + init + up + wire + install + link + open
   init <name> [fw]          Allocate + write manifest (--existing for adopted code)
-  render <name>             Regenerate compose+connection from the manifest (after editing services: versions)
-  link | unlink | wire <name>
-  up | down | restart | destroy | logs <name> | logs clear [target]
-  open <name>               Open https://<name>.test
+  render [<name>]           Regenerate compose+connection from the manifest (after editing services: versions)
+  link | unlink | wire [<name>]
+  up | down | destroy | logs [<name>] | restart <name> | logs clear [target]
+  open [<name>]             Open https://<name>.test
 
 Running code & tooling:
   run | artisan | console | spark | magento | composer | node | npm [<name>] ...
-                            ( <name> optional inside a project dir / harbor shell )
-  tool <name> <tool> ... | tools sync <name>
-  install | seed <name>
+  tool [<name>] <tool> ... | tools sync [<name>]
+  install | seed [<name>]
 
 Consoles & data:
-  mysql | redis | shell [<name>]   ( <name> optional inside a project )
-  db create|drop|backup|import|pull <name> ... | media pull <name>
+  mysql | redis | shell [<name>]
+  db create|drop|backup|import|pull [<name>] ... | media pull [<name>]
   db sandbox create|drop|list|backup|restore|console|up|down|destroy|status
                             Project-independent scratch MySQL on 127.0.0.1:3306
-  store add|list|rm <name> ...
+  store add|list|rm [<name>] ...
 
 Shared & misc:
   secure [host...] | mail [up|down] | completion bash|zsh | version | help

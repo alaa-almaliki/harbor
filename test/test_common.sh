@@ -80,6 +80,47 @@ else
   fail "resolve_project: explicit name -> selected + shift" "app/1" "mismatch"
 fi
 
+# An arg that is NOT a project must leave _RP_SHIFT=0 so the caller keeps it as
+# its own first positional. Every optional-<name> command depends on this: it is
+# what makes `harbor db backup <db>` inside a project dump <db> rather than
+# swallowing it as the project name (and shifting every later arg out of place).
+if ( HARBOR_PROJECTS="$proj"; HARBOR_PROJECT=app
+     resolve_project somedb >/dev/null 2>&1
+     [ "$_RP_NAME" = "app" ] && [ "$_RP_SHIFT" = "0" ] ); then
+  pass "resolve_project: non-project arg -> inferred name, no shift"
+else
+  fail "resolve_project: non-project arg -> inferred name, no shift" "app/0" "mismatch"
+fi
+
+# No arg at all, inside a project -> inferred from the cwd.
+if ( HARBOR_PROJECTS="$proj"; unset HARBOR_PROJECT; cd "$proj/app"
+     resolve_project "" >/dev/null 2>&1
+     [ "$_RP_NAME" = "app" ] && [ "$_RP_SHIFT" = "0" ] ); then
+  pass "resolve_project: no arg inside a project -> cwd project"
+else
+  fail "resolve_project: no arg inside a project -> cwd project" "app/0" "mismatch"
+fi
+
+# A cwd deeper than the project root still resolves (docroot, module dir, …).
+mkdir -p "$proj/app/pub/media"
+if ( HARBOR_PROJECTS="$proj"; unset HARBOR_PROJECT; cd "$proj/app/pub/media"
+     resolve_project "" >/dev/null 2>&1
+     [ "$_RP_NAME" = "app" ] ); then
+  pass "resolve_project: subdirectory of a project -> cwd project"
+else
+  fail "resolve_project: subdirectory of a project -> cwd project" "app" "mismatch"
+fi
+
+# An explicit project beats the one we're standing in.
+mkdir -p "$proj/other"
+if ( HARBOR_PROJECTS="$proj"; HARBOR_PROJECT=app
+     resolve_project other >/dev/null 2>&1
+     [ "$_RP_NAME" = "other" ] && [ "$_RP_SHIFT" = "1" ] ); then
+  pass "resolve_project: explicit name beats the current project"
+else
+  fail "resolve_project: explicit name beats the current project" "other/1" "mismatch"
+fi
+
 # Unknown name and cwd not under any project -> die (nonzero).
 if ( HARBOR_PROJECTS="$proj/none"; unset HARBOR_PROJECT; cd /
      resolve_project ghost >/dev/null 2>&1 ); then

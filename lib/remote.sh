@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # remote.sh — pull DB / media from a remote host (manifest `remote:` block).
 
-# harbor db pull <name> [--reconfigure ...]  (extra opts pass through to import)
+# harbor db pull [<name>] [--reconfigure ...]  (extra opts pass through to import)
 db_pull() {
-  require_name "${1-}"; local name="$1"; shift || true
+  resolve_project "${1-}" "harbor db pull [<name>] [import opts...]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
   local mf host rdb tmp; mf="$(manifest_path "$name")"
   host="$(manifest_get "$mf" remote.host "")"
   rdb="$(manifest_get "$mf" remote.db "")"
@@ -19,9 +20,10 @@ db_pull() {
   ok "db pull complete for $name"
 }
 
-# harbor media pull <name>
+# harbor media pull [<name>]
 media_pull() {
-  require_name "${1-}"; local name="$1"
+  resolve_project "${1-}" "harbor media pull [<name>]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
   local mf host media dir framework dest
   mf="$(manifest_path "$name")"
   host="$(manifest_get "$mf" remote.host "")"
@@ -41,6 +43,6 @@ media_pull() {
 }
 
 cmd_media() {
-  [ "${1-}" = "pull" ] || usage_die media "harbor media pull <name>"
+  [ "${1-}" = "pull" ] || usage_die media "harbor media pull [<name>]"
   shift; media_pull "$@"
 }

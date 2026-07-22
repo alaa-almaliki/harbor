@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`<name>` is now optional for every project command when you're inside a
+  project** — anywhere under `projects/<name>/`, or in a `harbor shell`. This
+  used to work only for the passthrough/console commands (`run`, `composer`,
+  `magento`, `mysql`, `shell`, …); `harbor db backup` and its neighbours failed
+  with `project name required` even when the cwd made the project obvious. Now
+  covered: `up`, `down`, `destroy`, `render`, `services`, `link`, `unlink`,
+  `wire`, `logs`, `open`, `install`, `seed`, `tool`, `tools sync`,
+  `db create|drop|backup|import|pull`, `media pull`, and `store add|list|rm`.
+  A leading argument is still taken as the project **only when a project by that
+  name exists**, so `harbor db backup reporting` inside a project dumps the
+  `reporting` database instead of shifting the remaining arguments. `new` and
+  `init` keep requiring a name (they create the directory), as does a project
+  `restart` (bare `harbor restart` restarts Harbor itself).
 - **Rendered compose files now pin `platform:` to the host architecture**, so
   Docker pulls a native image instead of silently reusing a cached foreign-arch
   one. A stale amd64 image kept running under emulation on Apple Silicon —

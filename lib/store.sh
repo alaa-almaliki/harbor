@@ -56,8 +56,9 @@ _store_rewrite() {  # <name> <mode> <website pairs> <store pairs>
 }
 
 store_add() {
-  require_name "${1-}"; local name="$1" code="${2-}"; shift 2 2>/dev/null || true
-  [ -n "$code" ] || usage_die store "harbor store add <name> <code> --domain <host> | --path <seg> [--website]"
+  resolve_project "${1-}" "harbor store add [<name>] <code> --domain <host> | --path <seg> [--website]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME" code="${1-}"; shift 2>/dev/null || true
+  [ -n "$code" ] || usage_die store "harbor store add [<name>] <code> --domain <host> | --path <seg> [--website]"
   _valid_store_code "$code"
   local mode="" val="" kind=stores
   case "${1-}" in
@@ -113,7 +114,8 @@ $code=$val"
 }
 
 store_list() {
-  require_name "${1-}"; local name="$1" mf w s; mf="$(manifest_path "$name")"
+  resolve_project "${1-}" "harbor store list [<name>]"; local name="$_RP_NAME"
+  local mf w s; mf="$(manifest_path "$name")"
   printf 'multistore mode: %s\n' "$(manifest_get "$mf" multistore.mode none)"
   w="$(_store_pairs "$name" websites)"
   s="$(_store_pairs "$name" stores)"
@@ -122,8 +124,9 @@ store_list() {
 }
 
 store_rm() {
-  require_name "${1-}"; local name="$1" code="${2-}"
-  [ -n "$code" ] || usage_die store "harbor store rm <name> <code>"
+  resolve_project "${1-}" "harbor store rm [<name>] <code>"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME" code="${1-}"
+  [ -n "$code" ] || usage_die store "harbor store rm [<name>] <code>"
   _valid_store_code "$code"
   local mode wp sp; mode="$(manifest_get "$(manifest_path "$name")" multistore.mode none)"
   wp="$(_store_pairs "$name" websites | grep -v "^$code=" || true)"
@@ -139,6 +142,6 @@ cmd_store() {
     add) store_add "$@" ;;
     list) store_list "$@" ;;
     rm) store_rm "$@" ;;
-    *) usage_die store "harbor store add|list|rm <name> ..." ;;
+    *) usage_die store "harbor store add|list|rm [<name>] ..." ;;
   esac
 }

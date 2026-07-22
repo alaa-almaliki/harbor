@@ -773,17 +773,29 @@ above.
 |---------|-------------|
 | `harbor new <name> <framework>` | Scaffold + init + up + wire + install + link + open. |
 | `harbor init <name> [framework] [--services "a,b"]` | Allocate ports, write manifest (`--existing` for adopted code). `--services` picks the backing services (`""`/`none` = no containers); omit it to be asked interactively, or to get the framework default when not on a terminal. |
-| `harbor render <name>` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:`); materializes a legacy list-format `services:` into the explicit map. **Confirms** before dropping a service whose data volume still exists — data is kept, not deleted (`HARBOR_YES=1` skips). |
-| `harbor services <name>` \| `list\|add\|rm <name> [svc...]` | Inspect or change a project's backing services after init. Bare `<name>` opens the picker (current selection preselected); `add`/`rm` are idempotent no-ops when the service is already/not present. Writes the manifest and re-renders (does **not** run `harbor up`). **Confirms** before dropping a service whose data volume still exists (`HARBOR_YES=1` skips). |
-| `harbor link <name>` | Create the `https://<name>.test` vhost (adds the cert SAN, reloads nginx). A Magento project with `multistore.mode: domain` also gets `*.<name>.test` automatically. |
-| `harbor unlink <name>` | Remove the vhost. |
-| `harbor wire <name> [--print]` | Inject DB/Redis/mail config into the app (surgical, never clobbers). |
-| `harbor up\|down\|restart <name>` | Start/stop/restart the project's Docker stack (`down` flushes its Redis). Bare `harbor restart` restarts Harbor itself. No-ops (not errors) for a project with no services. |
-| `harbor destroy <name> [--files]` | Remove a project: drop containers + volumes (DB gone), unlink vhost, release ports, flush Redis (confirm-gated). `--files` **also deletes the project directory** (your code); it must come right after `<name>`. See [Remove a project](#remove-a-project--uninstall-harbor). |
-| `harbor open <name>` | Open the site in your browser. |
-| `harbor logs <name> [service] [-f]` | Tail project/service logs. |
+| `harbor render [<name>]` | Regenerate `docker-compose.yml` + `connection.env` from the manifest (after editing `services:`); materializes a legacy list-format `services:` into the explicit map. **Confirms** before dropping a service whose data volume still exists — data is kept, not deleted (`HARBOR_YES=1` skips). |
+| `harbor services [<name>]` \| `list\|add\|rm [<name>] [svc...]` | Inspect or change a project's backing services after init. Bare `<name>` opens the picker (current selection preselected); `add`/`rm` are idempotent no-ops when the service is already/not present. Writes the manifest and re-renders (does **not** run `harbor up`). **Confirms** before dropping a service whose data volume still exists (`HARBOR_YES=1` skips). |
+| `harbor link [<name>]` | Create the `https://<name>.test` vhost (adds the cert SAN, reloads nginx). A Magento project with `multistore.mode: domain` also gets `*.<name>.test` automatically. |
+| `harbor unlink [<name>]` | Remove the vhost. |
+| `harbor wire [<name>] [--print]` | Inject DB/Redis/mail config into the app (surgical, never clobbers). |
+| `harbor up\|down [<name>]` \| `restart <name>` | Start/stop/restart the project's Docker stack (`down` flushes its Redis). Bare `harbor restart` restarts Harbor itself. No-ops (not errors) for a project with no services. |
+| `harbor destroy [<name>] [--files]` | Remove a project: drop containers + volumes (DB gone), unlink vhost, release ports, flush Redis (confirm-gated). `--files` **also deletes the project directory** (your code); it must come right after `<name>`. See [Remove a project](#remove-a-project--uninstall-harbor). |
+| `harbor open [<name>]` | Open the site in your browser. |
+| `harbor logs [<name>] [service] [-f]` | Tail project/service logs. |
 | `harbor logs nginx\|php\|dnsmasq [-f]` | Tail Harbor's own platform-service logs. |
 | `harbor logs clear [all\|nginx\|php\|dnsmasq\|<name>]` | Truncate Harbor's log files in place (default `all`; `<name>` clears that site's nginx logs). Safe while daemons run — keeps the inode. nginx logs are user-owned, so no sudo is needed. |
+
+> **`<name>` is optional inside a project.** Anywhere under `projects/<name>/` (or
+> in a `harbor shell`, which exports `HARBOR_PROJECT`), every project command
+> resolves the project from your cwd — `harbor up`, `harbor db backup`,
+> `harbor logs -f`, and the rest. The exceptions are `new` and `init`, which
+> *create* the project directory, and `restart`, whose bare form already means
+> "restart Harbor itself".
+>
+> A leading argument is taken as the project **only when a project by that name
+> exists**; otherwise it stays the command's own first argument. So
+> `harbor db backup reporting` inside a project dumps the `reporting` database —
+> spell the project out when a database, store code or tool shares its name.
 
 ### Running code
 
@@ -794,10 +806,10 @@ above.
 | `harbor magento [<name>] …` | `bin/magento` passthrough (+ local-DX helpers). |
 | `harbor composer [<name>] …` | Composer under the project's PHP version. |
 | `harbor node\|npm [<name>] …` | Node/npm via nvm + `.nvmrc`. |
-| `harbor tool <name> <tool> …` | Run a containerized CLI tool (wkhtmltopdf, …). |
-| `harbor tools sync <name>` | (Re)generate tool shims from the manifest. |
-| `harbor install <name>` | Framework installer (Magento `setup:install`, Laravel migrate, …). |
-| `harbor seed <name>` | Framework seeders / migrations. |
+| `harbor tool [<name>] <tool> …` | Run a containerized CLI tool (wkhtmltopdf, …). |
+| `harbor tools sync [<name>]` | (Re)generate tool shims from the manifest. |
+| `harbor install [<name>]` | Framework installer (Magento `setup:install`, Laravel migrate, …). |
+| `harbor seed [<name>]` | Framework seeders / migrations. |
 
 ### Consoles
 
@@ -807,19 +819,21 @@ above.
 | `harbor redis [<name>]` | redis-cli scoped to the project's DB index. |
 | `harbor shell [<name>]` | Shell in the project dir with its PHP/Node on PATH. |
 
-> For all of the above, `<name>` is optional when you're inside a project (cwd under
-> `projects/<name>/`, or in a `harbor shell`); an explicit existing-project arg wins.
+> `<name>` is optional for **every** project command except `new`, `init` and
+> `restart` — omit it anywhere under `projects/<name>/` or in a `harbor shell`.
+> An explicit arg wins, but only when a project by that name exists, so
+> `harbor db backup reporting` inside a project dumps the `reporting` database.
 
 ### Databases
 
 | Command | Description |
 |---------|-------------|
-| `harbor db create <name> [db] [user] [pass]` | Create DB + user (defaults: db=project, user=db, pass=db). |
-| `harbor db drop <name> [db]` | Drop a database (confirm-gated). |
-| `harbor db backup <name> [db] [file]` | Dump to `backups/db/<name>/<timestamp>.sql.gz`. |
-| `harbor db import <name> <file> [db]` | Hookable import pipeline (see above). `--force` = best-effort: skip server-rejected statements, load truncated dumps. |
-| `harbor db pull <name>` | Pull a remote dump straight into the import pipeline. |
-| `harbor media pull <name>` | rsync remote media/storage. |
+| `harbor db create [<name>] [db] [user] [pass]` | Create DB + user (defaults: db=project, user=db, pass=db). |
+| `harbor db drop [<name>] [db]` | Drop a database (confirm-gated). |
+| `harbor db backup [<name>] [db] [file]` | Dump to `backups/db/<name>/<timestamp>.sql.gz`. |
+| `harbor db import [<name>] <file> [db]` | Hookable import pipeline (see above). `--force` = best-effort: skip server-rejected statements, load truncated dumps. |
+| `harbor db pull [<name>]` | Pull a remote dump straight into the import pipeline. |
+| `harbor media pull [<name>]` | rsync remote media/storage. |
 | `harbor redis [<name>] [args…]` | `redis-cli` on the project's **cache** index; args pass through (e.g. `harbor redis shop FLUSHDB`). `harbor down <name>` flushes all four of its indices. |
 
 > `harbor db …`/`harbor mysql` require a `mysql` service. A project with none
@@ -830,10 +844,10 @@ above.
 
 | Command | Description |
 |---------|-------------|
-| `harbor store add <name> <code> --domain <host>` | Subdomain store (`store.<name>.test`). |
-| `harbor store add <name> <code> --path <seg>` | Path store (`<name>.test/<seg>`). Use `--path /` for the prefix-less default store. |
+| `harbor store add [<name>] <code> --domain <host>` | Subdomain store (`store.<name>.test`). |
+| `harbor store add [<name>] <code> --path <seg>` | Path store (`<name>.test/<seg>`). Use `--path /` for the prefix-less default store. |
 | `harbor store add … --website` \| `--store` | Route by **website** code (`MAGE_RUN_TYPE=website`) or **store view** code (default). |
-| `harbor store list\|rm <name> …` | Manage store routing. |
+| `harbor store list\|rm [<name>] …` | Manage store routing. |
 
 A project uses **one** multi-store mode (domain *or* path), set in the manifest.
 
