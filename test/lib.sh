@@ -15,13 +15,44 @@
 PASS=0
 FAIL=0
 
-pass() { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
+# Two output modes from ONE set of helpers. Standalone (`bash test/test_x.sh`)
+# keeps the readable per-assertion ok/FAIL lines. Under run.sh — which exports
+# HARBOR_TEST_STREAM=1 — they instead emit a compact marker stream the runner
+# renders as pytest-style dots, so a green run is a row of dots per file rather
+# than ~500 lines to scroll past. Markers are prefixed with SOH (\001) so they
+# can never collide with a description or a failure's expected/actual text.
+_SOH="$(printf '\001')"
+_streaming() { [ "${HARBOR_TEST_STREAM:-0}" = 1 ]; }
+
+pass() {
+  PASS=$((PASS + 1))
+  if _streaming; then printf '%sP\n' "$_SOH"; else printf '  ok   %s\n' "$1"; fi
+}
 fail() {
   FAIL=$((FAIL + 1))
-  printf '  FAIL %s\n' "$1"
-  printf '         expected: %s\n' "$2"
-  printf '         actual:   %s\n' "$3"
+  if _streaming; then
+    # <desc> on the marker line; the two detail lines follow verbatim and the
+    # runner attributes every non-marker line to the open failure (so a
+    # multiline expected/actual survives intact).
+    printf '%sF %s\n' "$_SOH" "$1"
+    printf 'expected: %s\n' "$2"
+    printf 'actual:   %s\n' "$3"
+  else
+    printf '  FAIL %s\n' "$1"
+    printf '         expected: %s\n' "$2"
+    printf '         actual:   %s\n' "$3"
+  fi
 }
+
+# skip <reason> — the file opted out (a precondition isn't met). Counts as
+# neither pass nor fail; the runner shows it as SKIP with the reason.
+skip() {
+  if _streaming; then printf '%sS %s\n' "$_SOH" "$1"; else printf '  skip %s\n' "$1"; fi
+}
+
+# skip_all <reason> — skip the whole file: emit the skip, a zero tally, and exit
+# cleanly. The one blessed way to bail a file on an unmet precondition.
+skip_all() { skip "$1"; report; exit 0; }
 
 # assert_eq <desc> <expected> <actual>
 assert_eq() {

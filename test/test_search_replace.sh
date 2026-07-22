@@ -6,11 +6,7 @@ set -uo pipefail
 
 SR="$HARBOR_ROOT/lib/search-replace.php"
 
-if ! command -v php >/dev/null 2>&1; then
-  printf '  skip php not on PATH — skipping search-replace tests\n'
-  report
-  exit 0
-fi
+command -v php >/dev/null 2>&1 || skip_all "php not on PATH"
 
 # rr(<input>) with a single literal rule live.com -> local.test, printed raw.
 rr() {

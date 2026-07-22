@@ -6,8 +6,7 @@ set -uo pipefail
 . "$HARBOR_TEST_DIR/lib.sh"
 harbor_load common manifest init update
 
-skip_all() { printf '  skip %s\n' "$1"; report; exit 0; }
-[ -d "$HARBOR_ROOT/ai/skills/harbor" ] || skip_all "no ai/skills/harbor source — skipping"
+[ -d "$HARBOR_ROOT/ai/skills/harbor" ] || skip_all "no ai/skills/harbor source"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

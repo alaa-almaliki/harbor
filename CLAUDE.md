@@ -457,8 +457,24 @@ installs; it runs on macOS system bash 3.2 like Harbor itself. Layout: `run.sh`
 (discovers `test_*.sh`, runs each in its own process, sums the `__TALLY__` line,
 exits nonzero on any failure) + `lib.sh` (assert helpers: `assert_eq`,
 `assert_ok`/`assert_fail` — which subshell the command so a `die`/`exit` can't
-kill the run — `assert_contains`, and `harbor_load` to source the units under
-test). Run it with `harbor test` or `./test/run.sh` (filter: `harbor test manifest`).
+kill the run — `assert_contains`, `harbor_load` to source the units under test,
+and `skip_all <reason>` to bail a file whose precondition isn't met). Run it with
+`harbor test` or `./test/run.sh` (filter: `harbor test manifest`).
+
+- **Two output modes, one set of helpers.** `run.sh` exports
+  `HARBOR_TEST_STREAM=1`, which makes `pass`/`fail`/`skip` emit a compact
+  SOH-prefixed marker stream that the runner renders as a **two-column grid** —
+  one cell per file, `✓ <n>` all-pass / `✗ <failed>/<total>` otherwise, with
+  every failure expanded in a `FAILURES` block below (counts come from the
+  `__TALLY__` line; the markers carry the failure detail). Run a file
+  *standalone* (`bash test/test_x.sh`) and the same helpers print the readable
+  `ok`/`FAIL` lines instead — and on a terminal a `testing <part>…`
+  spinner runs per file while it executes (silent when redirected) — so keep both branches working when you
+  touch `lib.sh`, and **don't `printf` your own `skip`/pass output** in a test
+  file (call the helpers, or the runner can't parse it). Markers are SOH-prefixed
+  precisely so a description or an expected/actual value can never be mistaken for
+  one; anything a test writes to stdout/stderr that isn't a marker is surfaced,
+  not hidden (dimmed note, or attributed to an open failure).
 
 - **Scope is pure logic only** — parsing, allocation, validation, templating,
   serialized-replace. Tests **never touch the host**: no Docker, launchd, nginx,

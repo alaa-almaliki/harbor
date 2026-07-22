@@ -68,6 +68,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and emulation is better than a pull that fails outright). Run
   `harbor render <name> && harbor up <name>` to apply. No host-footprint change.
 
+### Changed
+- **`harbor test` output is now a compact two-column grid** — one cell per file
+  (`✓ <n>` when all its assertions pass, `✗ <failed>/<total>` when some don't),
+  with every failure expanded in a `FAILURES` block below — instead of ~500 green
+  `ok` lines you had to scroll past to find the summary. Skipped files show
+  `SKIP`, a crashed file shows `✗ CRASH` with its output, stray output is
+  collected under `NOTES`, and — on a terminal — a `testing <part>…` spinner
+  runs while each file executes (previously the run was silent). Colors and the
+  spinner appear only on a terminal; a redirected run stays clean. Running a test
+  file directly (`bash test/test_x.sh`) still prints the full per-assertion
+  `ok`/`FAIL` lines.
+
 ### Fixed
 - **A flaky "Xdebug isn't loaded" probe could double-load the extension.**
   `php -m | grep -q '^xdebug$'` is a scheduling race under `set -o pipefail`:
