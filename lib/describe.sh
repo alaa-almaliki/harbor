@@ -167,9 +167,14 @@ describe_php() {
   state="$(xdebug_state)"
   if [ "$state" = on ]; then _dsc_row "toggle" "${_c_grn}on${_c_reset}  ${_c_dim}(global — harbor xdebug off)${_c_reset}"
   else _dsc_row "toggle" "off  ${_c_dim}(harbor xdebug on)${_c_reset}"; fi
+  if xdebug_cli_trigger; then
+    _dsc_row "cli trigger" "automatic  ${_c_dim}(the shim exports XDEBUG_TRIGGER=1 — no prefix needed)${_c_reset}"
+  else
+    _dsc_row "cli trigger" "manual  ${_c_dim}(prefix runs with XDEBUG_TRIGGER=1)${_c_reset}"
+  fi
   if so="$(xdebug_so_for "$ver")"; then _dsc_row "extension" "$so"
   else _dsc_row "extension" "${_c_ylw}not built for php $ver${_c_reset}  → pecl install xdebug"; fi
-  if "$cli" -m 2>/dev/null | grep -qi '^xdebug$'; then
+  if php_ext_loaded "$cli" xdebug; then
     _dsc_row "auto-loaded" "yes  ${_c_dim}(by brew's ini — Harbor only sets xdebug.mode)${_c_reset}"
   else
     _dsc_row "auto-loaded" "no  ${_c_dim}(Harbor adds -d zend_extension when on)${_c_reset}"
@@ -177,10 +182,12 @@ describe_php() {
   _dsc_row "mode" "$(_dsc_probe_get xdebug.mode)"
   _dsc_row "start" "$(_dsc_probe_get xdebug.start_with_request)"
   _dsc_row "client" "$(_dsc_probe_get xdebug.client_host):$(_dsc_probe_get xdebug.client_port)"
-  dflags="$(xdebug_dflags "$ver")"
+  # xdebug_dflags leads with a space when there's no zend_extension to add.
+  dflags="$(xdebug_dflags "$ver" | sed 's/^ *//')"
   _dsc_row "flags" "${dflags:-(none)}"
   if [ "$state" = on ]; then
-    _dsc_note "trigger it: ?XDEBUG_TRIGGER=1 in the browser, or XDEBUG_TRIGGER=1 harbor magento …"
+    if xdebug_cli_trigger; then _dsc_note "CLI runs are already triggered; in the browser add ?XDEBUG_TRIGGER=1"
+    else _dsc_note "trigger it: ?XDEBUG_TRIGGER=1 in the browser, or XDEBUG_TRIGGER=1 harbor magento …"; fi
   fi
   printf '\n'
 }

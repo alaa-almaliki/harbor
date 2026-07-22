@@ -23,7 +23,7 @@ EOF
 # project's manifest php_ini). Keyed by project so two projects sharing a PHP
 # version but pinning different ini don't clobber each other's shim.
 cli_php_pathdir() {
-  local v="$1" name="${2:-}" real d dflags="" ini=""
+  local v="$1" name="${2:-}" real d dflags="" ini="" trig=""
   d="$HARBOR_RUN/cli/${name:-_}/$v"
   real="$(php_cli_bin "$v")"
   mkdir -p "$d"
@@ -31,10 +31,15 @@ cli_php_pathdir() {
   # mean the same thing for `harbor run`/`magento` as for a web request. The shim is
   # rewritten on every run, so it always reflects the current toggle.
   dflags="$(xdebug_dflags "$v")"
+  # ...and, on the CLI only, the trigger itself: there's no browser extension out
+  # here, so `harbor xdebug on` has to be the whole switch (see xdebug_cli_trigger).
+  # `:-` so an explicit XDEBUG_TRIGGER in the environment still wins.
+  if xdebug_cli_trigger; then trig='export XDEBUG_TRIGGER="${XDEBUG_TRIGGER:-1}"'; fi
   # manifest php_ini last so it wins over Harbor's own defaults if a project pins one.
   [ -n "$name" ] && ini="$(_cli_php_ini_flags "$(manifest_path "$name")")"
   cat > "$d/php" <<EOF
 #!/usr/bin/env bash
+$trig
 exec "$real" $dflags $ini "\$@"
 EOF
   chmod +x "$d/php"

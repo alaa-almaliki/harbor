@@ -236,6 +236,26 @@ xdebug_state() {
   if [ -s "$HARBOR_XDEBUG_STATE" ]; then cat "$HARBOR_XDEBUG_STATE"; else echo "off"; fi
 }
 
+# Does <bin>'s OWN config already load <ext>?
+#
+# Reads all of `php -m` into a variable instead of piping it to `grep -q`. That
+# pipeline is a scheduling race under `set -o pipefail` (which Harbor and every
+# test file set): grep exits at the first match, php then writes into a closed
+# pipe, dies of SIGPIPE (141), and pipefail hands that 141 back as the PIPELINE's
+# status — so a successful match intermittently reads as "not found". It surfaced
+# as a one-in-many flaky test, but the production consequence is worse: a false
+# "xdebug isn't loaded" makes xdebug_dflags add a SECOND `-d zend_extension=…`
+# on top of the one brew's ini already loads. A command substitution consumes the
+# whole stream, so there's no early close and no race.
+php_ext_loaded() {
+  local bin="$1" ext="$2" mods
+  [ -x "$bin" ] || return 1
+  ext="$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')"
+  mods="$("$bin" -m 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr '\n' ' ')"
+  case " $mods " in *" $ext "*) return 0 ;; esac
+  return 1
+}
+
 # Resolve xdebug.so for a PHP version via its extension_dir.
 xdebug_so_for() {
   local ver="$1" bin extdir
@@ -257,7 +277,7 @@ xdebug_so_for() {
 xdebug_dflags() {
   local ver="$1" bin so default_loaded=0 dflags=""
   bin="$(php_cli_bin "$ver")"
-  if [ -x "$bin" ] && "$bin" -m 2>/dev/null | grep -qi '^xdebug$'; then default_loaded=1; fi
+  if php_ext_loaded "$bin" xdebug; then default_loaded=1; fi
   if [ "$(xdebug_state)" = "on" ]; then
     # only add zend_extension when the version's own config doesn't already load
     # xdebug, so it's never double-loaded
@@ -274,6 +294,26 @@ xdebug_dflags() {
     dflags="-d xdebug.mode=off"
   fi
   printf '%s' "$dflags"
+}
+
+# Should the project CLI carry the Xdebug trigger itself?
+#
+# Both surfaces stay `start_with_request=trigger`, but they need the trigger from
+# different places, so this is the ONE place the two deliberately differ (every
+# other xdebug setting must reach both — see xdebug_dflags). On the web there is
+# a browser extension and a `?XDEBUG_TRIGGER=1` to flip per request, and an
+# implicit trigger would open a session for every asset and ajax poll. On the CLI
+# there is no such switch: "I turned Xdebug on" can only mean "debug my
+# commands", and prefixing every single run with XDEBUG_TRIGGER=1 is the step
+# everyone forgets. So the shim exports it while the toggle is on, and stops
+# exporting it the moment it's off.
+#
+# Escape hatches: XDEBUG_CLI_TRIGGER=0 in ~/.config/harbor/config restores the
+# manual behavior globally, and an explicit XDEBUG_TRIGGER in the environment is
+# never overwritten (for setups that pin xdebug.trigger_value).
+xdebug_cli_trigger() {
+  [ "$(xdebug_state)" = on ] || return 1
+  [ "$(config_get XDEBUG_CLI_TRIGGER 1)" != 0 ]
 }
 
 # --- Docker platform ---------------------------------------------------------

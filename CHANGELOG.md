@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`harbor xdebug on` now triggers CLI runs for you.** While the toggle is on,
+  the project's PHP shim exports `XDEBUG_TRIGGER=1`, so `harbor run`, `harbor
+  php`, `harbor magento`, `harbor artisan` and friends are debuggable with no
+  prefix — and stop being so the moment you run `harbor xdebug off`. Prefixing
+  every single command with `XDEBUG_TRIGGER=1` was the step everyone forgets, and
+  out on the CLI there's no browser extension to flip, so "Xdebug on" can only
+  mean "debug my commands". The **web** surface deliberately still needs its own
+  trigger (extension or `?XDEBUG_TRIGGER=1`) — an implicit one there would open a
+  session for every asset request and ajax poll. An explicit `XDEBUG_TRIGGER` in
+  your environment is never overwritten, and `XDEBUG_CLI_TRIGGER=0` in
+  `~/.config/harbor/config` restores the manual behavior. `harbor xdebug status`
+  reports which mode you're in.
 - **`harbor php <script|flag>…` runs this project's PHP.** Anything that isn't a
   bare `X.Y` version, `sync` or `use` is now passed to PHP itself, so
   `harbor php -v`, `harbor php -m` and `harbor php index.php cron/queue process`
@@ -56,6 +68,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `harbor render <name> && harbor up <name>` to apply. No host-footprint change.
 
 ### Fixed
+- **A flaky "Xdebug isn't loaded" probe could double-load the extension.**
+  `php -m | grep -q '^xdebug$'` is a scheduling race under `set -o pipefail`:
+  `grep -q` exits at the first match, PHP's next write lands on a closed pipe and
+  takes SIGPIPE (141), and `pipefail` returns that as the pipeline's status — so
+  a match intermittently read as "not found" (~3 in 400 measured) and Harbor
+  added a second `-d zend_extension=` on top of the one brew's ini already loads.
+  Replaced by `php_ext_loaded`, which reads the whole of `php -m` into a variable.
+  Pinned by a regression test whose fake PHP keeps writing after the match, so the
+  old form fails every time rather than one run in a hundred.
 - **`harbor php use <ver>` could leave the host with no `php` at all.** brew has
   no atomic "relink as", so the old formula is unlinked before the new one can
   claim the symlinks — and a failure in that window left `$(brew --prefix)/bin/php`

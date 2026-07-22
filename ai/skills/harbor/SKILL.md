@@ -146,15 +146,21 @@ Xdebug is **trigger-based** on port 9003 — enabled globally, engaged per-reque
 harbor xdebug on                      # once; layers debug mode onto the pools
 # In your IDE: start listening on 127.0.0.1:9003 (PhpStorm phone icon / VS Code "Listen for Xdebug")
 ```
-- **Web:** send the trigger from the browser (Xdebug helper extension, or
-  `?XDEBUG_TRIGGER=1`).
-- **CLI:** prefix the trigger env var so it reaches PHP:
+- **CLI: nothing to prefix.** While the toggle is on, the project's PHP shim
+  exports `XDEBUG_TRIGGER=1` itself, so these are already debuggable:
   ```bash
-  XDEBUG_TRIGGER=1 harbor artisan queue:work
-  XDEBUG_TRIGGER=1 harbor run php some-script.php
+  harbor artisan queue:work
+  harbor run php some-script.php
+  harbor php index.php cron/queue process
   ```
-`harbor xdebug off` when done (keeps normal CLI runs fast). Profiling isn't wired
-for CLI — only debug/develop modes are enabled.
+  (An explicit `XDEBUG_TRIGGER` still wins; `XDEBUG_CLI_TRIGGER=0` in
+  `~/.config/harbor/config` restores prefix-it-yourself.)
+- **Web:** still send the trigger from the browser (Xdebug helper extension, or
+  `?XDEBUG_TRIGGER=1`) — deliberately manual, so a page load doesn't open a
+  session for every asset and ajax poll.
+
+`harbor xdebug off` when done (keeps normal CLI runs fast — and stops the shim
+exporting the trigger). Profiling isn't wired for CLI — only debug/develop modes.
 
 ---
 

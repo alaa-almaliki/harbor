@@ -225,14 +225,24 @@ cmd_xdebug() {
     on)
       echo on > "$HARBOR_XDEBUG_STATE"
       log "xdebug -> on (reloading pools)"; php_reload_all
-      ok "xdebug on — trigger-based, client 127.0.0.1:9003 (set XDEBUG_TRIGGER / browser ext)"
+      ok "xdebug on — client 127.0.0.1:9003"
+      if xdebug_cli_trigger; then
+        step "CLI: triggered automatically — harbor run/magento/php just debug, no XDEBUG_TRIGGER needed"
+      else
+        step "CLI: XDEBUG_CLI_TRIGGER=0 — prefix runs with XDEBUG_TRIGGER=1 yourself"
+      fi
+      step "web: use the browser extension or add ?XDEBUG_TRIGGER=1"
       ;;
     off)
       echo off > "$HARBOR_XDEBUG_STATE"
       log "xdebug -> off (reloading pools)"; php_reload_all
-      ok "xdebug off"
+      ok "xdebug off — CLI runs stop carrying the trigger too"
       ;;
-    status) printf 'xdebug: %s\n' "$(xdebug_state)" ;;
+    status)
+      printf 'xdebug: %s\n' "$(xdebug_state)"
+      if xdebug_cli_trigger; then printf 'cli trigger: automatic (XDEBUG_TRIGGER exported by the shim)\n'
+      else printf 'cli trigger: manual (prefix with XDEBUG_TRIGGER=1)\n'; fi
+      ;;
     *) usage_die xdebug "harbor xdebug on|off|status" ;;
   esac
 }

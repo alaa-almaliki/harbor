@@ -277,7 +277,7 @@ Then pin it per project (`.php-version` and/or manifest `php: "7.2"`, then
 Old Xdebug won't compile with current clang, so use a prebuilt binary — **not** pecl:
 ```bash
 brew install shivammathur/extensions/xdebug@7.4
-harbor xdebug on            # trigger-based; set XDEBUG_TRIGGER / use a browser ext
+harbor xdebug on            # CLI is triggered for you; web needs a browser ext
 ```
 (No need to edit brew's php.ini — Harbor detects an already-loaded Xdebug and just
 toggles `xdebug.mode`.)
@@ -668,7 +668,7 @@ clean — the same approach works for any CLI dependency.
 ```bash
 harbor xdebug on        # enable for all pools (trigger-based, so cheap)
 harbor xdebug off
-harbor xdebug status
+harbor xdebug status    # state + where the CLI trigger comes from
 ```
 
 Xdebug is layered on at launch (no edits to your Homebrew PHP config). It uses
@@ -676,16 +676,27 @@ Xdebug is layered on at launch (no edits to your Homebrew PHP config). It uses
 client/IDE sends the trigger — that's why leaving it on is cheap.
 
 The toggle covers **both surfaces from the same settings**: web requests (the FPM
-pools) *and* the project CLI (`harbor run`/`composer`/`magento`/`artisan`/…). To
-debug a CLI command, send the trigger with an env var:
+pools) *and* the project CLI (`harbor run`/`composer`/`magento`/`artisan`/…). Both
+connect to `127.0.0.1:9003`. Where the *trigger* comes from is the one thing they
+deliberately do differently:
 
 ```bash
-XDEBUG_TRIGGER=1 harbor magento setup:upgrade    # breakpoints hit in your IDE
-harbor magento setup:upgrade                     # no trigger, no debug session
+harbor xdebug on
+harbor magento setup:upgrade      # already debugged — no XDEBUG_TRIGGER prefix needed
+harbor xdebug off                 # CLI runs stop carrying the trigger, immediately
 ```
 
-For the browser, use a trigger extension (Xdebug helper) or append
-`?XDEBUG_TRIGGER=1`. Both surfaces connect to `127.0.0.1:9003`.
+**CLI: automatic.** While the toggle is on, the project's PHP shim exports
+`XDEBUG_TRIGGER=1` itself, so every `harbor run`/`php`/`magento`/`artisan` is
+debuggable. Out here there's no browser extension to flip, so "Xdebug on" can only
+mean "debug my commands" — and remembering the prefix every single time is the
+step everyone forgets. An explicit `XDEBUG_TRIGGER` in your environment still
+wins, and `XDEBUG_CLI_TRIGGER=0` in `~/.config/harbor/config` restores the
+prefix-it-yourself behavior.
+
+**Web: explicit.** Use a trigger extension (Xdebug helper) or append
+`?XDEBUG_TRIGGER=1`. This one stays manual on purpose: an implicit trigger would
+open a debug session for every asset request and ajax poll on the page.
 
 ---
 
@@ -766,7 +777,7 @@ above.
 | `harbor php <script\|flag>...` | Anything that isn't a bare `X.Y` version, `sync` or `use` goes to PHP itself, run as **this project's** PHP (cwd project, else the global default) through the same shim `harbor run` uses — so `harbor php -v`, `harbor php -m` and `harbor php index.php cron/queue process` all work, xdebug toggle and manifest `php_ini` included. Runs in your cwd, not the project root (`harbor run php …` for that). `--help` stays Harbor's; php's own long help is `harbor php -help`. |
 | `harbor php sync` | Re-create pools after `brew install`/uninstall of a `php@x`. |
 | `harbor php use <ver>` | Switch the **brew-linked** CLI `php` (plain terminal / IDE / global composer): unlinks the current version, links `<ver>`. Independent of Harbor's per-project pinning — `harbor run`/nginx still use each project's own version. Re-running it for the version already linked is a no-op, and if the link fails the previous one is restored — brew can't relink atomically, and a half-done switch would leave you with no `php` at all. |
-| `harbor xdebug on\|off\|status` | Toggle Xdebug across pools. |
+| `harbor xdebug on\|off\|status` | Toggle Xdebug across pools **and** the project CLI. While on, the CLI shim exports `XDEBUG_TRIGGER=1` for you (`XDEBUG_CLI_TRIGGER=0` in the config opts out); the browser still sends its own trigger. |
 
 ### Projects
 

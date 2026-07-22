@@ -67,6 +67,14 @@ This is the project's defining constraint. Concretely:
   are built, and both `lib/fpm-exec.sh` and `cli_php_pathdir` call it — never
   hand-roll the flag string in either (that's exactly how the CLI silently lost
   `client_host` and CLI debugging broke while web worked). Xdebug
+  **The one sanctioned exception to both-surfaces is the trigger itself**
+  (`xdebug_cli_trigger`): the CLI shim exports `XDEBUG_TRIGGER=1` while the
+  toggle is on, the web surface does not. It is not an oversight to fix — out on
+  the CLI there is no browser extension to flip, so "xdebug on" can only mean
+  "debug my commands", whereas an implicit web trigger would open a session for
+  every asset request and ajax poll. `XDEBUG_CLI_TRIGGER=0` opts out; an explicit
+  `XDEBUG_TRIGGER` in the environment is never overwritten. Every *other* xdebug
+  setting still has to reach both surfaces. Xdebug
   is toggled via **`xdebug.mode`** (`off` vs `debug,develop`), NOT by loading the
   extension — the host's brew PHP may already load Xdebug (and default
   `xdebug.mode=develop`). Only add `-d zend_extension=…` when the version doesn't
@@ -161,6 +169,19 @@ This is the project's defining constraint. Concretely:
     that never fired because a probe came back empty loses someone's data.
 - Functions over inline blocks; prefix internal helpers with `_`. Keep each `lib/*.sh`
   focused on one area (see `plan.md` layout).
+- **Never probe a command's output with `… | grep -q` under `pipefail`.** `grep
+  -q` exits at the first match, the writer's next write hits a closed pipe and
+  dies of SIGPIPE (141), and `pipefail` returns that 141 as the *pipeline's*
+  status — so a successful match intermittently reads as a failure, at a rate
+  low enough (~3 in 400 measured) to be dismissed as a fluke. `php -m | grep -qi
+  '^xdebug$'` did exactly this, and a false "xdebug isn't loaded" makes
+  `xdebug_dflags` add a **second** `-d zend_extension=` on top of brew's. Read
+  the whole stream into a variable and match on that (`php_ext_loaded`,
+  `lib/common.sh`) — a command substitution consumes everything, so nothing
+  closes early. When testing such a probe, make the fake writer emit the match
+  first and keep writing after a `sleep`: that turns the race into a guaranteed
+  failure of the wrong implementation instead of a test that passes on a lucky
+  schedule (`test/test_xdebug.sh`).
 - **No heavy runtime deps.** No `jq`, no `yq` as hard requirements. Persist state
   as `KEY=VALUE` files. Parse the YAML manifest with a constrained parser (pure
   awk/bash) or the always-present PHP CLI — never assume `yq`.

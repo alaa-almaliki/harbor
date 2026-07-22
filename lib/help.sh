@@ -276,12 +276,19 @@ Usage: harbor xdebug [on|off|status]        (default: status)
 
   on       Enable across all pools AND the project CLI, then reload pools
   off      Disable (also neutralizes an xdebug your brew php.ini loads)
-  status   Print the current state
+  status   Print the current state, and where the CLI trigger comes from
 
-Trigger-based, so leaving it on is cheap — a session only starts when triggered:
+Trigger-based on both surfaces, so leaving it on is cheap — a session only starts
+when triggered. Where the trigger comes from is the one thing they differ on:
 
-  Web:  browser extension (Xdebug helper), or append ?XDEBUG_TRIGGER=1
-  CLI:  XDEBUG_TRIGGER=1 harbor magento setup:upgrade
+  CLI:  automatic. While on, the project's php shim exports XDEBUG_TRIGGER=1, so
+        `harbor run`/`php`/`magento`/`artisan` just debug. There's no browser
+        extension out here, and remembering the prefix every time is the step
+        everyone forgets. An explicit XDEBUG_TRIGGER in your env still wins;
+        XDEBUG_CLI_TRIGGER=0 in ~/.config/harbor/config restores the manual way.
+  Web:  explicit — browser extension (Xdebug helper), or append ?XDEBUG_TRIGGER=1.
+        Deliberately NOT automatic: it would open a session for every asset
+        request and ajax poll on the page.
 
 Configured at launch via -d flags; brew's php.ini is never edited. Needs xdebug
 built for that PHP version (`pecl install xdebug`; `harbor doctor` shows which
@@ -289,7 +296,8 @@ versions have it).
 
 Examples:
   harbor xdebug on
-  XDEBUG_TRIGGER=1 harbor artisan queue:work
+  harbor artisan queue:work        # debugged — no prefix needed
+  harbor xdebug off                # CLI runs stop carrying the trigger
 
 See also: harbor doctor (which versions have xdebug) · harbor php --help
 EOF
