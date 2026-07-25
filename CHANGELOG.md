@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`harbor db pull`/`media pull` can keep remote details out of git.** Every
+  connection field — `host`, `db`, `user`, `db_host`, `media` — now resolves from
+  an env var, then the gitignored `.harbor/remote.env`, then the manifest
+  `remote:` block, in that order (keys `HARBOR_REMOTE_HOST`, `_DB`, `_USER`,
+  `_DB_HOST`, `_MEDIA`). So the production IP, SSH login and DB username no longer
+  have to sit in the committable manifest — move them to `.harbor/remote.env` and
+  nothing about prod is committed. The manifest keys still work as a shareable
+  fallback, so existing projects are unaffected. `harbor init`/`new` and `harbor
+  render` now **seed** `.harbor/remote.env` as a gitignored, all-commented
+  template listing every key, so it's discoverable — created only when absent and
+  **never overwritten** (it holds secrets), so a re-render can't wipe it. `harbor
+  update` backfills the template into every existing project too (create-if-absent).
 - **`harbor db pull` can supply the remote MySQL password.** When the remote
   can't authenticate `mysqldump` on its own (no `~/.my.cnf`, no socket auth), add
   `user: dbuser` to the manifest `remote:` block and Harbor resolves the

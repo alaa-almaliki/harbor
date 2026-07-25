@@ -255,7 +255,8 @@ _dsc_extras() {
   node="$(manifest_get "$mf" node "")"
   [ -z "$node" ] && [ -f "$dir/.nvmrc" ] && node="$(tr -d ' \n\r' < "$dir/.nvmrc") (.nvmrc)"
   tools="$(tools_declared "$mf" | tr '\n' ' ')"
-  remote="$(manifest_get "$mf" remote.host "")"
+  # Effective value: host may live in the manifest OR the gitignored remote.env.
+  remote="$(_remote_field "$name" HARBOR_REMOTE_HOST host)"
   # Only hook dirs that actually hold an EXECUTABLE file count — a dir full of
   # non-executable `.sample`s is exactly the state that reads as "I have hooks"
   # and silently runs none.
@@ -279,8 +280,8 @@ _dsc_extras() {
   [ -n "$scripts" ] && _dsc_row "scripts" "$scripts  ${_c_dim}(.harbor/scripts — first on PATH for run/shell)${_c_reset}"
   if [ -n "$remote" ]; then
     local rdb ruser src
-    rdb="$(manifest_get "$mf" remote.db "")"
-    ruser="$(manifest_get "$mf" remote.user "")"
+    rdb="$(_remote_field "$name" HARBOR_REMOTE_DB db)"
+    ruser="$(_remote_field "$name" HARBOR_REMOTE_USER user)"
     _dsc_row "remote" "$remote${rdb:+  db: $rdb}  ${_c_dim}(harbor db pull / media pull)${_c_reset}"
     if [ -n "$ruser" ]; then
       local rval="" rdbhost
@@ -290,7 +291,7 @@ _dsc_extras() {
       if [ -n "${HARBOR_REMOTE_DB_PASSWORD:-}" ]; then src="\$HARBOR_REMOTE_DB_PASSWORD"
       elif [ -n "$rval" ]; then src=".harbor/remote.env"
       else src="interactive prompt"; fi
-      rdbhost="$(manifest_get "$mf" remote.db_host "")"; [ -z "$rdbhost" ] && rdbhost="127.0.0.1"
+      rdbhost="$(_remote_field "$name" HARBOR_REMOTE_DB_HOST db_host)"; [ -z "$rdbhost" ] && rdbhost="127.0.0.1"
       _dsc_row "remote db auth" "user $ruser via $rdbhost, password from $src"
     fi
   fi

@@ -246,6 +246,7 @@ cmd_render() {
   init_write_connection "$name" || return 1
   init_write_agent_skills "$name" || return 1    # seed existing projects too (non-clobbering)
   init_write_import_samples "$name" || return 1  # ditto: import-rules + hook samples
+  init_write_remote_env "$name" || return 1      # ditto: gitignored remote.env template
   # $newlist was already resolved above for the confirm gate — reusing it saves
   # re-parsing the manifest just to print it. A service-less project has no
   # stack to list and no `up` to run, so say that instead of a dangling colon.
@@ -451,6 +452,35 @@ EOF
   fi
 }
 
+# Seed .harbor/remote.env — a gitignored, all-commented template of the remote
+# connection keys, so `harbor db pull` details can live here instead of the
+# committable manifest (keeps prod host / login / DB user out of git).
+# CREATE-IF-ABSENT ONLY: this file holds SECRETS, so it must never be overwritten
+# on re-init/render/update. Every line is commented, so a freshly seeded file
+# sets nothing and changes no behavior until the user uncomments a key. Also
+# ensures the .gitignore entry (for existing projects whose ignore predates it).
+init_write_remote_env() {
+  local name="$1" hd; hd="$(project_harbor_dir "$name")"
+  if [ ! -f "$hd/remote.env" ]; then
+    cat > "$hd/remote.env" <<'EOF'
+# Harbor remote-pull settings — GITIGNORED, safe for secrets.
+#
+# Uncomment and fill any of these to drive `harbor db pull` / `harbor media pull`
+# WITHOUT putting production details in the committable manifest (harbor.yml).
+# Each key overrides the matching `remote:` field in the manifest; anything left
+# commented falls back to the manifest, then (for the password) a prompt.
+#
+#HARBOR_REMOTE_HOST=user@prod-host       # ssh target: user@host, or a ~/.ssh/config alias
+#HARBOR_REMOTE_DB=prod_db_name           # database to dump
+#HARBOR_REMOTE_USER=prod_db_user         # MySQL user; omit to use the remote's own ~/.my.cnf / socket auth
+#HARBOR_REMOTE_DB_PASSWORD=              # password for that user; omit to be prompted (never commit a real one)
+#HARBOR_REMOTE_DB_HOST=127.0.0.1         # how to reach MySQL on the remote (default 127.0.0.1 when a user is set; 'localhost' = socket)
+#HARBOR_REMOTE_MEDIA=/var/www/pub/media  # remote path for `harbor media pull`
+EOF
+  fi
+  _ensure_gitignored "$name" "remote.env"
+}
+
 # Seed the project with Harbor's agent skill so any coding agent working in
 # projects/<name>/ knows how to drive Harbor for this app without re-reading the
 # whole tool. Copied from ai/skills/harbor -> <project>/.claude/skills/harbor.
@@ -531,6 +561,7 @@ cmd_init() {
   init_write_gitignore "$name"
   init_write_scripts "$name"
   init_write_import_samples "$name"
+  init_write_remote_env "$name"
   init_write_agent_skills "$name"
 
   # Only mention the db port when mysql is actually part of the stack — a

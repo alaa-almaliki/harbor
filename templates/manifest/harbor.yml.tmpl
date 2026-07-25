@@ -8,3 +8,5 @@ services: { {{SERVICES_MAP}} }
 # Optional: node: "20" · docroot: pub · domains: [x.test] · extensions: [imagick]
 # php_ini: { memory_limit: 2G } · tools: [wkhtmltopdf] · multistore: { mode: domain, stores: {} }
 # import: { strip_definers: true } · remote: { host: user@host, db: name, media: /path }
+# remote:* fields may instead go in the gitignored .harbor/remote.env (keys
+# HARBOR_REMOTE_HOST/_DB/_USER/_DB_HOST/_MEDIA[/_DB_PASSWORD]) to keep prod out of git.

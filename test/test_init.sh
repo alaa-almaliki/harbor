@@ -44,4 +44,19 @@ assert_eq "_harbor_projects: lists manifest dirs only" \
 beta" \
   "$(_harbor_projects | sort)"
 
+# --- init_write_remote_env: seed a gitignored, all-commented template --------
+rehd="$(project_harbor_dir remoteseed)"; mkdir -p "$rehd"
+init_write_remote_env remoteseed 2>/dev/null
+assert_ok "remote.env: seeded when absent" test -f "$rehd/remote.env"
+# every key line is commented, so a fresh file sets nothing and changes no behavior
+assert_eq "remote.env: seeded template is fully inert (no active keys)" \
+  "0" "$(grep -cE '^[^#]*HARBOR_REMOTE' "$rehd/remote.env")"
+assert_ok "remote.env: auto-gitignored" grep -qxF "remote.env" "$rehd/.gitignore"
+
+# CREATE-IF-ABSENT ONLY: it holds secrets, so a re-seed must never overwrite it.
+printf 'HARBOR_REMOTE_DB_PASSWORD=REALSECRET\n' > "$rehd/remote.env"
+init_write_remote_env remoteseed 2>/dev/null
+assert_ok "remote.env: re-seed never clobbers real secrets" \
+  grep -qxF "HARBOR_REMOTE_DB_PASSWORD=REALSECRET" "$rehd/remote.env"
+
 report

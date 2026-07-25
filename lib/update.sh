@@ -17,13 +17,17 @@ _harbor_projects() {
   done
 }
 
-# Force-refresh the agent skill in every project so improvements propagate.
-update_reseed_skills() {
+# Refresh the derived project-side artifacts in every project so improvements
+# propagate: the agent skill is FORCE-reseeded (managed, overwritten in place);
+# remote.env is CREATE-IF-ABSENT (it holds secrets — never overwritten), so this
+# just backfills the gitignored template into projects that predate it.
+update_reseed_projects() {
   local name count=0
   # shellcheck disable=SC2046  # names are validated (no spaces); split on newlines
   for name in $(_harbor_projects); do
     init_write_agent_skills "$name" 1
-    step "refreshed skill → projects/$name/.claude/skills/harbor"
+    init_write_remote_env "$name"
+    step "refreshed skill + remote.env template → projects/$name/.harbor"
     count=$((count + 1))
   done
   [ "$count" -eq 0 ] && step "no projects to reseed"
@@ -69,8 +73,8 @@ cmd_update() {
   if [ "$before" = "$remote_head" ]; then
     ok "already up to date ($HARBOR_VERSION, $(_git rev-parse --short HEAD))"
     if [ "$check" = 0 ]; then
-      log "re-seeding agent skills (in case the skill changed locally)"
-      update_reseed_skills
+      log "re-seeding project artifacts (agent skill + remote.env template)"
+      update_reseed_projects
     fi
     return 0
   fi
@@ -115,8 +119,8 @@ cmd_update() {
   ok "updated $(_git rev-parse --short "$before") → $(_git rev-parse --short "$after")  ($HARBOR_VERSION → $(_update_disk_version))"
 
   # --- re-seed derived project artifacts --------------------------------------
-  log "re-seeding agent skills into projects"
-  update_reseed_skills
+  log "re-seeding project artifacts (agent skill + remote.env template)"
+  update_reseed_projects
 
   # --- targeted follow-ups based on what actually changed ----------------------
   local changed; changed="$(_git diff --name-only "$before" "$after")"

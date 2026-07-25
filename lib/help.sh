@@ -314,7 +314,9 @@ Usage: harbor update [--check] [--stash] [--yes|-y]
 
 Fast-forward only — never a merge commit or a history rewrite. A diverged branch
 aborts and asks you to reconcile. Also force-reseeds the agent skill into every
-project (overwriting the managed files in place).
+project (overwriting the managed files in place) and backfills the gitignored
+.harbor/remote.env template into any project missing it (create-if-absent — an
+existing one with your secrets is never touched).
 
 Afterwards it prints targeted next steps based on what changed (platform
 templates -> `harbor setup`; compose -> `harbor render`/`up`) and runs doctor. It
@@ -457,7 +459,8 @@ Usage: harbor init <name> [framework] [--php <ver>] [--existing]
                     rather than trusting a list here that can drift.
 
 Writes projects/<name>/.harbor/harbor.yml (the source of truth), the compose
-file, connection.env, .gitignore, scripts, and the agent skill. Default services:
+file, connection.env, .gitignore, scripts, the agent skill, and a gitignored,
+all-commented remote.env template (for `harbor db pull`). Default services:
 magento -> mysql + opensearch + rabbitmq; everything else -> mysql.
 
 Flags and the framework may appear in any order. No sudo, no confirm.
@@ -492,7 +495,8 @@ manifest, compose file and containers untouched.
 
 Otherwise safe: it doesn't touch your manifest beyond that, except to
 materialize a legacy list-format `services:` into the explicit map form. Also
-reseeds the project's agent skill (non-clobbering).
+reseeds the project's agent skill and the import/remote.env samples
+(non-clobbering — an existing remote.env with your secrets is never overwritten).
 
 Example:
   harbor render shop && harbor up shop
@@ -1084,15 +1088,18 @@ warns, and a shell hook with a syntax error aborts. `drop` removes the
 database but keeps the MySQL user. Skip a confirm with HARBOR_YES=1 (there is no
 --yes flag). Stack must be up.
 
-`pull` needs manifest `remote: { host: user@host, db: name }` and connects with
-ssh. Remote MySQL auth, in order:
-  - no `user:` in the block  → the remote's own ~/.my.cnf / socket auth (default)
-  - `remote: { ..., user: dbuser }` → Harbor supplies the password. Set it as
-    HARBOR_REMOTE_DB_PASSWORD — either exported in the environment, or as a line
-    in .harbor/remote.env (gitignored); the same name works in both. If neither
-    is set, Harbor prompts. The manifest carries only the username; the password
-    is passed to the remote via MYSQL_PWD set inside the ssh script, so it never
-    appears in any process list — local or remote.
+`pull` needs a remote host + db and connects over ssh. Each connection field —
+host, db, user, db_host, media — resolves from (1) an env var, (2) the gitignored
+.harbor/remote.env, then (3) the manifest `remote:` block, in that order. Put
+them in the manifest to share with the team, or keep prod details OUT of git by
+putting them in .harbor/remote.env instead (keys: HARBOR_REMOTE_HOST, _DB, _USER,
+_DB_HOST, _MEDIA). Remote MySQL auth:
+  - no user set → the remote's own ~/.my.cnf / socket auth (default)
+  - user set    → Harbor supplies the password: HARBOR_REMOTE_DB_PASSWORD,
+    exported or as a line in .harbor/remote.env (same name both places), else a
+    prompt. The password is NEVER read from the manifest, and reaches the remote
+    via MYSQL_PWD set inside the ssh script, so it never appears in any process
+    list — local or remote.
 With a `user:` the dump connects to 127.0.0.1 (the way the app connects), not the
 unix socket: MySQL treats the socket as `@localhost`, which an app user granted
 for `@'127.0.0.1'`/`@'%'` usually can't match (`Access denied … @'localhost'`).
@@ -1104,6 +1111,7 @@ Recurring rules/fixups live in the project, seeded as inert samples by init:
   .harbor/hooks/post-import.d/*.sql    SQL run after every import — pin records
                                        to local values (base URLs, dev passwords)
   .harbor/hooks/pre-import.d/          executables that edit the dump pre-load
+  .harbor/remote.env                   gitignored; HARBOR_REMOTE_* for pull auth
 
 Examples:
   harbor db backup shop

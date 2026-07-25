@@ -67,7 +67,7 @@ spell the project out when a database, store code or tool shares its name.
 | `harbor db drop [<name>] [db]` | Drop a database (confirm-gated). |
 | `harbor db backup [<name>] [db] [file]` | Dump → `backups/db/<name>/<timestamp>.sql.gz`. |
 | `harbor db import [<name>] <file> [db]` | Hookable import pipeline (below). `--force` = best-effort (skip rejected statements, load truncated dumps); `--replace OLD=NEW`; `--no-backup`; `--keep-definers`; Magento `--reconfigure`. |
-| `harbor db pull [<name>]` | Pull a remote dump straight into the import pipeline. Needs `remote: { host, db }`. If the remote can't auth `mysqldump` itself, add `user:` and Harbor supplies the password from `HARBOR_REMOTE_DB_PASSWORD` (same name whether exported or set in the gitignored `.harbor/remote.env`) → prompt — never stored in the manifest. |
+| `harbor db pull [<name>]` | Pull a remote dump straight into the import pipeline. Needs a remote `host`+`db`; each field (`host`/`db`/`user`/`db_host`/`media`) resolves from an env var → gitignored `.harbor/remote.env` (`HARBOR_REMOTE_HOST`/`_DB`/`_USER`/`_DB_HOST`/`_MEDIA`) → manifest `remote:` — so prod details can stay out of git. If the remote can't auth `mysqldump` itself, add `user:` and Harbor supplies the password from `HARBOR_REMOTE_DB_PASSWORD` (env or `remote.env`) → prompt — never in the manifest. |
 | `harbor media pull [<name>]` | rsync remote media/storage. |
 | `harbor redis [<name>] [args…]` | `redis-cli` on this project's **cache** index (args pass through — e.g. `harbor redis FLUSHDB`). There is no `redis flush` subcommand; `harbor down <name>` flushes all four indices. |
 

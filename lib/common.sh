@@ -126,6 +126,23 @@ require_name() {
 project_dir()        { printf '%s' "$HARBOR_PROJECTS/$1"; }
 project_harbor_dir() { printf '%s' "$HARBOR_PROJECTS/$1/.harbor"; }
 
+# _ensure_gitignored <name> <pattern> — make sure the project's .harbor/.gitignore
+# ignores <pattern>, appending it (creating the file if needed) when absent. Used
+# to guarantee a gitignored secret file (e.g. remote.env) can't reach git, incl.
+# in projects that predate the template carrying the line. Idempotent: a no-op
+# once present. grep reads a FILE (no pipe), so it's SIGPIPE-safe.
+_ensure_gitignored() {
+  local gi; gi="$(project_harbor_dir "$1")/.gitignore"
+  if [ -f "$gi" ] && grep -qxF "$2" "$gi"; then return 0; fi
+  # If the file exists but has no trailing newline (e.g. hand-edited), a bare
+  # append would glue onto the last line ("bin/remote.env") — ignoring neither,
+  # and defeating the grep idempotency check. Add the missing newline first. A
+  # non-empty last byte means it isn't a newline ($(...) strips a trailing one).
+  [ -f "$gi" ] && [ -n "$(tail -c1 "$gi")" ] && printf '\n' >> "$gi"
+  printf '%s\n' "$2" >> "$gi"
+  warn "added '$2' to .harbor/.gitignore (keeps local secrets out of git)"
+}
+
 # PATH prefix for running a project's code: <phpdir> <dir> -> project PHP, then
 # committable .harbor/scripts, then generated tool shims, then the host PATH.
 # One source of truth for the "scripts beat shims beat host" precedence.

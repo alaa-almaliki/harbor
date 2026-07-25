@@ -572,8 +572,12 @@ allocator keeps their stacks from colliding. A consumer calls a provider at
 ## Remote data sync (`db pull` / `media pull`)
 
 The real refresh-from-prod workflow that the import hooks/replace exist to serve.
-Remote connection details live in the manifest (`remote:` block — ssh host, db
-name/creds, media paths):
+Remote connection details (`remote:` block — ssh host, db name, user, media path)
+resolve from an env var → the gitignored `.harbor/remote.env` → the manifest, in
+that order, so the production IP / SSH login / DB user can be kept OUT of the
+committable manifest (put them in `.harbor/remote.env` instead; keys
+`HARBOR_REMOTE_HOST`/`_DB`/`_USER`/`_DB_HOST`/`_MEDIA`). The manifest keys remain
+a shareable fallback:
 - **`harbor db pull <name>`** streams `ssh <host> 'mysqldump …'` straight into the
   `db import` pipeline (strip-definers → pre-hooks → load → serialized replace →
   post-hooks/credential scrub → Magento reconfigure) — no intermediate file. With

@@ -248,15 +248,32 @@ This is the project's defining constraint. Concretely:
   going into that remote script are single-quoted with `_shq` so an arbitrary
   password can't break quoting or inject. Any new gitignored secret file must be
   self-protecting in projects that predate its template line — `_ensure_gitignored`
-  appends the ignore entry whenever the file is present (not gated on which
-  password source wins, or the env-var path would leave it un-ignored), fixing a
-  missing trailing newline first so the entry can't glue onto the last line.
+  (`lib/common.sh`) appends the ignore entry whenever the file is present (not
+  gated on which password source wins, or the env-var path would leave it
+  un-ignored), fixing a missing trailing newline first so the entry can't glue
+  onto the last line. **A seeded secrets file is CREATE-IF-ABSENT, never
+  re-rendered** — the inverse of derived config (compose/vhost/connection.env),
+  which is regenerated every `render`. `init_write_remote_env` (`lib/init.sh`,
+  called from both `cmd_init` and `cmd_render`) writes `.harbor/remote.env` as a
+  gitignored, all-commented template only when it doesn't exist, so it's
+  discoverable yet a re-render can never wipe the user's password. Every line is
+  commented, so a freshly seeded file resolves to nothing and changes no behavior.
   **When a secret can come from either an env var or a config file, use the SAME
   name for both surfaces.** Shipping `HARBOR_REMOTE_DB_PASSWORD` (env) but
   `REMOTE_DB_PASSWORD` (file key) bit a user immediately — they put the env-var
   name in the file and were still prompted. `.harbor/remote.env` uses the exact
   same key, `HARBOR_REMOTE_DB_PASSWORD`. Don't make people remember which name
   applies where.
+- **The manifest is committable, so non-secret-but-sensitive infra (prod IP, SSH
+  login, DB username) shouldn't be *forced* into it either.** Every `remote:`
+  connection field resolves env var → gitignored `.harbor/remote.env` → manifest,
+  via one helper `_remote_field <name> <ENVKEY> <subkey>` (`lib/remote.sh`) — so a
+  user can lift the whole `remote:` block out of the committed manifest into
+  `.harbor/remote.env` and commit nothing about prod. The manifest keys stay as a
+  shareable fallback (last in precedence), so this is purely additive. `describe`
+  resolves through the same helper so it reports the *effective* value, not a
+  manifest echo. When you add a remote field, route it through `_remote_field`,
+  not a bare `manifest_get remote.<x>`.
 - **Run a remote command through `ssh host 'bash -s'` (script on stdin), not the
   login shell.** `set -o pipefail` — needed so a failed `mysqldump` isn't masked
   by `gzip`'s exit 0 — isn't valid in dash/csh/tcsh, and a login shell isn't
@@ -389,10 +406,15 @@ and **[SemVer](https://semver.org)**.
   (The repo-level `.claude/skills/harbor-*` skills are for building/adopting Harbor
   — a different audience; keep the two in sync but don't conflate them.)
 - **Self-update** → `harbor update` (`lib/update.sh`) fast-forwards the checkout
-  to `origin/main` (ff-only) and force-reseeds skills. If a change needs a
-  post-update host action, wire the hint into `cmd_update`'s `changed`-path
-  `case` (platform templates → `harbor setup`; compose → `harbor render/up`) —
-  don't make `update` mutate host state itself (no sudo, no launchd reload).
+  to `origin/main` (ff-only) and re-seeds project artifacts via
+  `update_reseed_projects`: the agent skill is force-reseeded (overwritten), and
+  `remote.env` is create-if-absent (backfilled, never overwritten — it holds
+  secrets). A project-side artifact that should reach existing projects goes in
+  that loop; force-reseed only managed files, create-if-absent anything holding
+  user data. If a change needs a post-update host action, wire the hint into
+  `cmd_update`'s `changed`-path `case` (platform templates → `harbor setup`;
+  compose → `harbor render/up`) — don't make `update` mutate host state itself
+  (no sudo, no launchd reload).
 - **New command** → add a dispatch case in `bin/harbor`, implement in the relevant
   `lib/*.sh`, **add a help topic in `lib/help.sh`**, add it to `_HARBOR_CMDS`
   (`lib/completion.sh` — the single list of what commands exist; `help_topics`

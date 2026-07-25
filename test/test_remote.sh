@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # test_remote.sh — remote `db pull` helpers (lib/remote.sh): safe shell-quoting,
-# the argv-safe password transport, password resolution order, and the gitignore
-# guard. Pure logic only: `ssh` is stubbed, so nothing touches a network or host.
+# the argv-safe password transport, remote-field resolution (env → remote.env →
+# manifest), password resolution order, and the gitignore guard. Pure logic only:
+# `ssh` is stubbed, so nothing touches a network or host.
 set -uo pipefail
 . "$HARBOR_TEST_DIR/lib.sh"
-harbor_load common remote
+harbor_load common manifest remote
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 export HARBOR_PROJECTS="$tmp/projects"
@@ -85,6 +86,30 @@ assert_ok "gitignore: line lands on its own row (no-newline file)" grep -qxF "re
 assert_ok "gitignore: prior last line preserved" grep -qxF "bin/" "$gi"
 _ensure_gitignored demo "remote.env" 2>/dev/null
 assert_eq "gitignore: still idempotent after newline fixup" "1" "$(grep -cxF "remote.env" "$gi")"
+
+# --- _remote_field: env var -> .harbor/remote.env -> manifest ----------------
+# This is what lets prod connection details stay OUT of the committable manifest.
+mf="$(manifest_path demo)"
+printf 'framework: laravel\nremote: { host: mf-host, db: mfdb, user: mfuser }\n' > "$mf"
+rm -f "$(project_harbor_dir demo)/remote.env"
+assert_eq "field: host from manifest" "mf-host" "$(_remote_field demo HARBOR_REMOTE_HOST host)"
+assert_eq "field: user from manifest" "mfuser"  "$(_remote_field demo HARBOR_REMOTE_USER user)"
+
+# remote.env (gitignored) overrides the manifest, field by field
+printf 'HARBOR_REMOTE_HOST=env-file-host\n' > "$(project_harbor_dir demo)/remote.env"
+assert_eq "field: remote.env overrides manifest host" "env-file-host" "$(_remote_field demo HARBOR_REMOTE_HOST host)"
+assert_eq "field: db still resolves from manifest"    "mfdb"          "$(_remote_field demo HARBOR_REMOTE_DB db)"
+
+# an exported env var beats both
+export HARBOR_REMOTE_HOST=shell-host
+assert_eq "field: env var beats remote.env + manifest" "shell-host" "$(_remote_field demo HARBOR_REMOTE_HOST host)"
+unset HARBOR_REMOTE_HOST
+
+# with NO remote: block in the manifest, remote.env alone still drives the pull
+printf 'framework: laravel\n' > "$mf"
+assert_eq "field: resolves with no manifest remote block" "env-file-host" "$(_remote_field demo HARBOR_REMOTE_HOST host)"
+assert_eq "field: absent everywhere -> empty"             ""              "$(_remote_field demo HARBOR_REMOTE_DB db)"
+rm -f "$(project_harbor_dir demo)/remote.env"
 
 # --- _remote_db_password: env -> file -> (prompt, not tested here) ------------
 # The prompt branch needs a /dev/tty and is out of scope for the pure suite.

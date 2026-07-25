@@ -357,12 +357,20 @@ services: { mysql: "mysql:8.0", opensearch: "opensearchproject/opensearch:2.19.0
 db:        { name: shop, user: shop, password: shop }   # image lives in services.mysql
 multistore: { mode: domain, stores: { de: de.shop.test, fr: fr.shop.test } }
 import:    { strip_definers: true, rules: import-rules }
-remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }   # + optional user: dbuser (password via env/prompt, never here)
+remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }   # + optional user: dbuser
 ```
 
-Generated/runtime files (`connection.env`, `compose.env`, `docker-compose.yml`)
-are gitignored; the manifest, `import-rules`, `hooks/`, and `scripts/` are
-committable, so a teammate can clone the repo and `harbor up` to reproduce the
+The `remote:` block is committable, but since the manifest is shared you may not
+want your production IP / SSH login / DB user in git. Every `remote:` field
+(`host`, `db`, `user`, `db_host`, `media`) also resolves from the **gitignored**
+`.harbor/remote.env` (keys `HARBOR_REMOTE_HOST`, `_DB`, `_USER`, `_DB_HOST`,
+`_MEDIA`, `_DB_PASSWORD`) or an env var, which win over the manifest — so you can
+drop the `remote:` block entirely and keep every prod detail out of git. The DB
+password is never read from the manifest regardless.
+
+Generated/runtime files (`connection.env`, `compose.env`, `docker-compose.yml`,
+`remote.env`) are gitignored; the manifest, `import-rules`, `hooks/`, and
+`scripts/` are committable, so a teammate can clone the repo and `harbor up` to reproduce the
 same stack.
 
 **Per-project scripts** — drop executables in `projects/<name>/.harbor/scripts/`
