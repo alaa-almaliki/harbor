@@ -1081,8 +1081,23 @@ after the cut would be silently missing. Rules and hooks are validated up
 front, before the backup/load: a malformed rule (missing `=>`, invalid `re:`
 regex) aborts, a hook that would be skipped (not executable, misplaced *.sql)
 warns, and a shell hook with a syntax error aborts. `drop` removes the
-database but keeps the MySQL user. `pull` needs manifest `remote: { host, db }`.
-Skip a confirm with HARBOR_YES=1 (there is no --yes flag). Stack must be up.
+database but keeps the MySQL user. Skip a confirm with HARBOR_YES=1 (there is no
+--yes flag). Stack must be up.
+
+`pull` needs manifest `remote: { host: user@host, db: name }` and connects with
+ssh. Remote MySQL auth, in order:
+  - no `user:` in the block  → the remote's own ~/.my.cnf / socket auth (default)
+  - `remote: { ..., user: dbuser }` → Harbor supplies the password. Set it as
+    HARBOR_REMOTE_DB_PASSWORD — either exported in the environment, or as a line
+    in .harbor/remote.env (gitignored); the same name works in both. If neither
+    is set, Harbor prompts. The manifest carries only the username; the password
+    is passed to the remote via MYSQL_PWD set inside the ssh script, so it never
+    appears in any process list — local or remote.
+With a `user:` the dump connects to 127.0.0.1 (the way the app connects), not the
+unix socket: MySQL treats the socket as `@localhost`, which an app user granted
+for `@'127.0.0.1'`/`@'%'` usually can't match (`Access denied … @'localhost'`).
+Override the connection host with `remote: { ..., db_host: localhost }` (forces
+the socket back) or any other host.
 
 Recurring rules/fixups live in the project, seeded as inert samples by init:
   .harbor/import-rules                 old => new, applied on every import

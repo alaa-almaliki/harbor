@@ -112,6 +112,14 @@ This is the project's defining constraint. Concretely:
   `KEY=VALUE` files; serialize with the mkdir-based `harbor_with_lock`. Manifest
   **nesting must use flow style** (`{…}`/`[…]`) — the parser doesn't do block
   sequences/maps.
+- **A `mktemp` template's `XXXXXX` must be the LAST characters** — BSD `mktemp`
+  (macOS) only substitutes *trailing* X's, so `harbor-pull.XXXXXX.sql.gz` is
+  never randomized: it's taken literally, and the second run dies with
+  `mkstemp failed … File exists`. GNU `mktemp` substitutes it anyway, so this
+  passes every Linux test and only bites on the target platform. When you need a
+  suffix, create with a trailing-X template and **rename** afterward
+  (`tmp="$(mktemp …XXXXXX)"; mv "$tmp" "$tmp.sql.gz"; tmp="$tmp.sql.gz"`) — as
+  `db_pull` (`lib/remote.sh`) does, because `db_import` decompresses by extension.
 - **A `case` inside `$(...)` needs a leading `(` on every pattern** —
   `*" mysql "*)` inside a command substitution is a hard syntax error on this
   bash 3.2 (`command substitution: … syntax error near unexpected token
@@ -228,6 +236,48 @@ This is the project's defining constraint. Concretely:
   `.harbor-bak`** (written once, not refreshed on re-wire) —
   never blanket-rewrite an app's `.env`. Symfony → `.env.local` only; Magento →
   its own CLI, never hand-edit `env.php`.
+- **A secret must never reach a process's argv, and the manifest must never
+  hold one.** `ps` is world-readable, so a password on any command line
+  (`mysqldump -pXXX`, and just as bad the wrapping `bash -c "…-pXXX…"` that `ssh
+  host "cmd"` spawns) leaks to every user on both ends. `db pull`'s remote-auth
+  path (`lib/remote.sh`) is the pattern to copy: the manifest carries only the
+  **username** (`remote.user`); the password is resolved at run time
+  (`HARBOR_REMOTE_DB_PASSWORD` → gitignored `.harbor/remote.env` → interactive
+  prompt) and handed to the remote via **`MYSQL_PWD` exported *inside* the script
+  fed to `ssh host 'bash -s'` on stdin** — never interpolated into argv. Values
+  going into that remote script are single-quoted with `_shq` so an arbitrary
+  password can't break quoting or inject. Any new gitignored secret file must be
+  self-protecting in projects that predate its template line — `_ensure_gitignored`
+  appends the ignore entry whenever the file is present (not gated on which
+  password source wins, or the env-var path would leave it un-ignored), fixing a
+  missing trailing newline first so the entry can't glue onto the last line.
+  **When a secret can come from either an env var or a config file, use the SAME
+  name for both surfaces.** Shipping `HARBOR_REMOTE_DB_PASSWORD` (env) but
+  `REMOTE_DB_PASSWORD` (file key) bit a user immediately — they put the env-var
+  name in the file and were still prompted. `.harbor/remote.env` uses the exact
+  same key, `HARBOR_REMOTE_DB_PASSWORD`. Don't make people remember which name
+  applies where.
+- **Run a remote command through `ssh host 'bash -s'` (script on stdin), not the
+  login shell.** `set -o pipefail` — needed so a failed `mysqldump` isn't masked
+  by `gzip`'s exit 0 — isn't valid in dash/csh/tcsh, and a login shell isn't
+  guaranteed to be bash; delivering the script on stdin also keeps secrets out of
+  argv. Apply it to BOTH the authed and the defer-to-remote-auth branches, not
+  just the one carrying a password (that split was a shipped regression).
+- **A remote `mysqldump` with no `-h` connects over the unix socket, which MySQL
+  matches as `@localhost`.** App DB users are almost always granted for
+  `@'127.0.0.1'`/`@'%'` (TCP), so a socket dump is denied — `Access denied …
+  @'localhost'` (using password: YES) — despite correct credentials. When Harbor
+  supplies the auth (`remote.user` set), default the dump to `-h 127.0.0.1` (how
+  the app connects), overridable via `remote.db_host` (`localhost` forces the
+  socket back). `localhost` and `127.0.0.1` are different accounts to MySQL; never
+  treat them as interchangeable.
+- **Prompt on `/dev/tty`, and gate on actually opening it, not `[ -r /dev/tty ]`.**
+  Reading a secret from `/dev/tty` (not stdin) means the prompt still works when
+  stdin is redirected, but `[ -r /dev/tty ]` can report readable on a controlling
+  terminal that then fails to open ("Device not configured"), spewing errors and
+  a bogus downstream failure instead of a clean "run interactively" hint. Probe
+  with `if ! { : </dev/tty; } 2>/dev/null; then die …; fi`. Use `read -r -s` for
+  the silent read and never echo the value back.
 
 ---
 

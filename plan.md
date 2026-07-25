@@ -118,7 +118,7 @@ services: { mysql: "mysql:8.0", opensearch: "opensearchproject/opensearch:2.19.0
 db:        { name: shop, user: shop, password: shop, image: mysql:8.0 }
 multistore: { mode: domain, stores: { de: de.shop.test, fr: fr.shop.test } }
 import:    { strip_definers: true, rules: import-rules }   # hooks live in .harbor/hooks/
-remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }   # db pull / media pull
+remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media, user: dbuser }   # db pull / media pull; user optional (pw via env/prompt)
 ```
 A project may also drop a `.harbor/nginx.conf` snippet (committable) that is
 `include`d inside its vhost `server {}` — the escape hatch for apps needing custom
@@ -577,7 +577,15 @@ name/creds, media paths):
 - **`harbor db pull <name>`** streams `ssh <host> 'mysqldump …'` straight into the
   `db import` pipeline (strip-definers → pre-hooks → load → serialized replace →
   post-hooks/credential scrub → Magento reconfigure) — no intermediate file. With
-  `--save` it also writes the dump to `backups/db/<name>/`.
+  `--save` it also writes the dump to `backups/db/<name>/`. If the remote can't
+  authenticate `mysqldump` on its own (no `~/.my.cnf`/socket auth), set
+  `remote.user` and Harbor supplies the password from `HARBOR_REMOTE_DB_PASSWORD`
+  (the same name whether exported or set in the gitignored `.harbor/remote.env`)
+  → an interactive prompt, passing it via `MYSQL_PWD` inside the ssh script so it never lands in
+  any process list. The manifest holds only the username, never the password.
+  A `user:` also makes the dump connect over `127.0.0.1` instead of the socket
+  (MySQL treats the socket as `@localhost`, which a TCP-granted app user can't
+  match); `remote.db_host` overrides the connection host.
 - **`harbor media pull <name>`** `rsync`s remote media to the right place per
   framework (Magento `pub/media`, Laravel `storage/app`), with sensible excludes
   (cache/resized). Code is git-managed, so only user-generated assets sync.

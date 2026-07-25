@@ -357,7 +357,7 @@ services: { mysql: "mysql:8.0", opensearch: "opensearchproject/opensearch:2.19.0
 db:        { name: shop, user: shop, password: shop }   # image lives in services.mysql
 multistore: { mode: domain, stores: { de: de.shop.test, fr: fr.shop.test } }
 import:    { strip_definers: true, rules: import-rules }
-remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }
+remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }   # + optional user: dbuser (password via env/prompt, never here)
 ```
 
 Generated/runtime files (`connection.env`, `compose.env`, `docker-compose.yml`)

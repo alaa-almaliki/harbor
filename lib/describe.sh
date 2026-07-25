@@ -278,7 +278,21 @@ _dsc_extras() {
   [ -n "$(_mf_trim "$hooks")" ] && _dsc_row "import hooks" "$hooks"
   [ -n "$scripts" ] && _dsc_row "scripts" "$scripts  ${_c_dim}(.harbor/scripts — first on PATH for run/shell)${_c_reset}"
   if [ -n "$remote" ]; then
-    _dsc_row "remote" "$remote  ${_c_dim}(harbor db pull / media pull)${_c_reset}"
+    local rdb ruser src
+    rdb="$(manifest_get "$mf" remote.db "")"
+    ruser="$(manifest_get "$mf" remote.user "")"
+    _dsc_row "remote" "$remote${rdb:+  db: $rdb}  ${_c_dim}(harbor db pull / media pull)${_c_reset}"
+    if [ -n "$ruser" ]; then
+      local rval="" rdbhost
+      # Mirror _remote_db_password: the file only counts when it actually yields a
+      # non-empty HARBOR_REMOTE_DB_PASSWORD, else the pull falls through to the prompt.
+      [ -f "$hdir/remote.env" ] && rval="$( . "$hdir/remote.env" 2>/dev/null; printf '%s' "${HARBOR_REMOTE_DB_PASSWORD:-}" )" || rval=""
+      if [ -n "${HARBOR_REMOTE_DB_PASSWORD:-}" ]; then src="\$HARBOR_REMOTE_DB_PASSWORD"
+      elif [ -n "$rval" ]; then src=".harbor/remote.env"
+      else src="interactive prompt"; fi
+      rdbhost="$(manifest_get "$mf" remote.db_host "")"; [ -z "$rdbhost" ] && rdbhost="127.0.0.1"
+      _dsc_row "remote db auth" "user $ruser via $rdbhost, password from $src"
+    fi
   fi
 }
 

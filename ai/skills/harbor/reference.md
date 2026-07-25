@@ -67,7 +67,7 @@ spell the project out when a database, store code or tool shares its name.
 | `harbor db drop [<name>] [db]` | Drop a database (confirm-gated). |
 | `harbor db backup [<name>] [db] [file]` | Dump → `backups/db/<name>/<timestamp>.sql.gz`. |
 | `harbor db import [<name>] <file> [db]` | Hookable import pipeline (below). `--force` = best-effort (skip rejected statements, load truncated dumps); `--replace OLD=NEW`; `--no-backup`; `--keep-definers`; Magento `--reconfigure`. |
-| `harbor db pull [<name>]` | Pull a remote dump straight into the import pipeline. |
+| `harbor db pull [<name>]` | Pull a remote dump straight into the import pipeline. Needs `remote: { host, db }`. If the remote can't auth `mysqldump` itself, add `user:` and Harbor supplies the password from `HARBOR_REMOTE_DB_PASSWORD` (same name whether exported or set in the gitignored `.harbor/remote.env`) → prompt — never stored in the manifest. |
 | `harbor media pull [<name>]` | rsync remote media/storage. |
 | `harbor redis [<name>] [args…]` | `redis-cli` on this project's **cache** index (args pass through — e.g. `harbor redis FLUSHDB`). There is no `redis flush` subcommand; `harbor down <name>` flushes all four indices. |
 
@@ -151,7 +151,7 @@ db:        { name: shop, user: shop, password: shop }   # image lives in service
 tools:     [wkhtmltopdf, ghostscript]                   # or { wkhtmltopdf: { image: …, bin: …, mode: entrypoint } }
 multistore: { mode: domain, stores: { de: de.shop.test, fr: fr.shop.test } }
 import:    { strip_definers: true, rules: import-rules }
-remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }
+remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }   # optional user: dbuser
 ```
 
 ### Backing services

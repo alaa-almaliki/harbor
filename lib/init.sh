@@ -328,6 +328,7 @@ compose.env
 docker-compose.yml
 install.sh
 bin/
+remote.env
 # committable: harbor.yml, import-rules, hooks/, scripts/
 EOF
 }
