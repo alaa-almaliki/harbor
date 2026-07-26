@@ -263,6 +263,8 @@ harbor db drop   [<name>] [db]             # destructive (confirm)
 harbor db backup [<name>] [db] [file]      # -> backups/db/<name>/<ts>.sql.gz
 harbor db import [<name>] <file> [db]      # decompress→strip-definer→hooks→load→replace
 harbor db pull  [<name>]                   # ssh mysqldump from remote -> import pipeline
+harbor db restore [<name>] [--list] [--checkpoint N] [--no-backup]
+                                           # roll back to a pre-import backup (#1=newest); snapshot-first, verbatim reload
 harbor db sandbox create|drop|list|backup|restore|console|up|down|destroy|status
                                            # project-independent scratch MySQL on 127.0.0.1:3306
 harbor media pull [<name>]                 # rsync remote media/storage
@@ -515,7 +517,7 @@ allocator keeps their stacks from colliding. A consumer calls a provider at
   post-install; mail via PHP `sendmail_path` → Mailpit shim. Laravel →
   `key:generate` + `migrate`; Symfony → `doctrine:migrations:migrate`; CI4 →
   `spark migrate`.
-- **DB lifecycle** (`harbor db create|drop|backup|import`), all against the
+- **DB lifecycle** (`harbor db create|drop|backup|import|restore`), all against the
   project's MySQL container via `docker compose exec -T` using the container root
   account (stack must be up):
   - **Credential convention** — identifiers default down a chain: `db` → project
@@ -645,6 +647,13 @@ standalone; `new` just chains them. `harbor destroy` is the inverse.
   pulls don't accumulate unbounded. N is `DB_BACKUP_KEEP` in
   `~/.config/harbor/config` (global default) or per-project `backups: { keep: N }`
   (manifest wins); `0` keeps all. Manual `db backup` dumps are never pruned.
+- **Restore from a checkpoint**: `db restore [--checkpoint N]` rolls back to one
+  of those pre-import snapshots (numbered newest-first, `#1` = last import). It
+  snapshots the current DB first (via `db import`, so the rollback is undoable and
+  retention applies), stages the chosen file to `var/tmp` *before* that snapshot's
+  prune could evict it, confirms, then reloads verbatim (`--no-rules --no-hooks
+  --keep-definers`). `--list` shows the checkpoints; `--no-backup` skips the
+  pre-restore snapshot.
 - **Committable vs runtime**: the manifest (`harbor.yml`), `import-rules`, and
   `hooks/` are committable; runtime (`connection.env`, `compose.env`,
   `docker-compose.yml`, `install.sh`, `var/ports`) is generated and gitignored.

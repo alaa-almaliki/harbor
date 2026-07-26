@@ -87,11 +87,15 @@ harbor db import <name> <file> [db]   # hookable pipeline: DEFINER-strip, replac
 harbor db import <name> <file> --force        # skip server-rejected rows instead of aborting
 harbor db import <name> <file> --replace old.com=<name>.test
 harbor db pull <name>                 # ssh mysqldump from prod -> straight into import
+harbor db restore <name> --list       # list pre-import backups (newest first, #1 = last import)
+harbor db restore <name>              # interactive: pick from the list (Enter = latest)
+harbor db restore <name> --checkpoint 3   # restore an older checkpoint directly (no menu)
 harbor db create <name> [db] [user] [pass]    # extra DB (db/user/pass default to <name>)
 harbor db drop <name> [db]            # confirm-gated
 ```
 `db import` auto-backs-up first (`--no-backup` to skip) and runs
-`.harbor/hooks/pre-import.d/` + `post-import.d/` (credential scrub, etc.).
+`.harbor/hooks/pre-import.d/` + `post-import.d/` (credential scrub, etc.). To undo
+a bad import, `db restore` reloads one of those pre-import backups.
 
 **This project may have no database at all.** Check `services:` in
 `.harbor/harbor.yml` — if it's `{}` or has no `mysql` key, `harbor db …` and

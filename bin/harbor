@@ -121,7 +121,7 @@ Running code & tooling:
 
 Consoles & data:
   mysql | redis | shell [<name>]
-  db create|drop|backup|import|pull [<name>] ... | media pull [<name>]
+  db create|drop|backup|import|pull|restore [<name>] ... | media pull [<name>]
   db sandbox create|drop|list|backup|restore|console|up|down|destroy|status
                             Project-independent scratch MySQL on 127.0.0.1:3306
   store add|list|rm [<name>] ...

@@ -1056,6 +1056,7 @@ Usage: harbor db <sub> [<name>] [args]
   backup [<name>] [db] [file]        Dump to backups/db/<name>/<db>-<ts>.sql.gz
   import [<name>] <file> [db]        Import a dump (auto-backup first)
   pull [<name>] [import flags]       mysqldump over ssh, straight into import
+  restore [<name>] [--checkpoint N]  Roll back to a pre-import backup (see --help)
   sandbox <sub>                      Scratch MySQL, no project — see below
 
 The leading <name> is only taken as the project when it names one that exists,
@@ -1124,7 +1125,50 @@ Examples:
   harbor db import dump.sql.gz --replace https://prod.com=https://shop.test
   harbor db pull shop --reconfigure
 
-See also: harbor db sandbox --help · harbor mysql --help · harbor media --help
+See also: harbor db sandbox --help · harbor db restore --help · harbor mysql --help
+EOF
+  ;;
+
+  db-restore) cat <<'EOF'
+harbor db restore — roll a project DB back to a pre-import backup
+
+Usage: harbor db restore [<name>] [--list] [--checkpoint N] [--no-backup]
+       ( <name> optional inside a project dir or a `harbor shell` )
+
+  --list, -l          Show the numbered checkpoints (newest first) and exit
+  --checkpoint N, -c  Restore checkpoint #N directly (1 = newest), no menu
+  --no-backup         Skip the pre-restore snapshot of the current DB
+
+Checkpoints are the auto-backups Harbor takes before every import/pull
+(backups/db/<name>/pre-import-<ts>.sql.gz), numbered NEWEST FIRST: #1 is the
+backup from your last import, #2 the one before it, and so on. Manual `harbor db
+backup` dumps are not checkpoints and are never restored or pruned here.
+
+Run WITHOUT --checkpoint on a terminal and Harbor lists the checkpoints and asks
+which to restore (Enter takes #1, the latest; `q` cancels) — that choice is the
+confirmation. With --checkpoint N it restores that one directly (after a normal
+confirm). Under HARBOR_YES=1 or a non-interactive stdin there's no menu: it
+targets #1 (the latest).
+
+By default restore snapshots the CURRENT database first (a fresh pre-import
+backup, so the restore is itself undoable — the state you rolled back from
+becomes the new #1), then loads the chosen checkpoint. `--no-backup` skips that
+snapshot.
+
+The reload is VERBATIM: no .harbor/import-rules, no import hooks, DEFINERs kept
+— a pre-import backup is already your own local, wired data, so it comes back
+exactly as saved. (A restore is only as complete as the snapshot; note those
+snapshots don't currently capture stored routines/events.)
+
+Destructive — it overwrites the current DB, so it confirms first. Skip the
+confirm with HARBOR_YES=1 (there is no --yes flag). Stack must be up.
+
+Examples:
+  harbor db restore shop --list           # what can I roll back to?
+  harbor db restore shop                   # pick from the list (Enter = latest)
+  harbor db restore shop --checkpoint 3    # roll back three imports directly
+
+See also: harbor db --help · harbor db pull --help
 EOF
   ;;
 

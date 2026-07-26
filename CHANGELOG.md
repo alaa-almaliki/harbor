@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`harbor db restore [<name>] [--list] [--checkpoint N] [--no-backup]`** — roll a
+  project's database back to one of the pre-import backups Harbor takes before
+  every import/pull. Checkpoints are numbered **newest-first** (`#1` = your last
+  import's backup); `--list` shows them (taken-time + size). Run bare on a
+  terminal, it lists the checkpoints and asks which to restore (Enter = latest,
+  `q` cancels); `--checkpoint N` restores one directly. It snapshots the current DB first (so the
+  rollback is itself undoable, and retention applies) and reloads **verbatim** —
+  no import-rules, no hooks, DEFINERs kept, since a pre-import backup is already
+  your own local, wired data. Destructive, so it confirms (`HARBOR_YES=1` to
+  skip; no `--yes` flag). Manual `harbor db backup` dumps are not checkpoints.
 - **Pre-import backups are now pruned to a retention window.** `harbor db
   import` and `harbor db pull` still take an automatic pre-import backup, but only
   the newest **N** per project are kept — older `pre-import-*.sql.gz` files are

@@ -226,4 +226,41 @@ assert_eq "autobackup: successful dump adds a new backup (2 + 1, within keep=3)"
 assert_contains "autobackup: successful dump reports the backup" "backed up in" "$ok_out"
 assert_contains "autobackup: successful dump reports retention" "pre-import backup(s)" "$ok_out"
 
+# --- db restore: checkpoint enumeration + selection (pure) -------------------
+export HARBOR_BACKUPS="$tmp/hb"      # keep the real repo backups/ out of the test
+cbdir="$HARBOR_BACKUPS/proj"; mkdir -p "$cbdir"
+
+assert_eq   "checkpoints: none -> empty" "0" "$(_db_checkpoints proj | grep -c .)"
+assert_fail "checkpoint_file: none -> fail" _db_checkpoint_file proj 1
+
+for s in 20260101-000000 20260102-000000 20260103-000000; do : > "$cbdir/pre-import-$s.sql.gz"; done
+: > "$cbdir/proj-20260101-000000.sql.gz"   # manual `db backup` dump — NOT a checkpoint
+assert_eq "checkpoints: count excludes manual dumps" "3" "$(_db_checkpoints proj | grep -c .)"
+assert_contains "checkpoints: #1 is newest" "pre-import-20260103-000000.sql.gz" \
+  "$(_db_checkpoints proj | head -1)"
+assert_contains "checkpoints: last is oldest" "pre-import-20260101-000000.sql.gz" \
+  "$(_db_checkpoints proj | tail -1)"
+
+# index -> file (1 = newest). Called plainly (not in a subshell) so the global sticks.
+_db_checkpoint_file proj 1
+assert_contains "checkpoint_file: #1 = newest" "pre-import-20260103-000000.sql.gz" "$_DB_CKPT_FILE"
+_db_checkpoint_file proj 3
+assert_contains "checkpoint_file: #3 = oldest" "pre-import-20260101-000000.sql.gz" "$_DB_CKPT_FILE"
+assert_fail "checkpoint_file: out of range (#4) fails" _db_checkpoint_file proj 4
+assert_fail "checkpoint_file: 0 fails"                 _db_checkpoint_file proj 0
+assert_fail "checkpoint_file: non-numeric fails"       _db_checkpoint_file proj x
+
+assert_eq "ckpt_stamp: filename -> readable timestamp" \
+  "2026-01-03 00:00:00" "$(_db_ckpt_stamp "$cbdir/pre-import-20260103-000000.sql.gz")"
+
+# --- db restore: interactive picker (fed via stdin; -t 0 gating is the caller's) ---
+# The pipe runs the menu in a subshell, so read _DB_MENU_CHOICE back out there too.
+menu_pick() { printf '%b' "$1" | { _db_restore_menu proj demo 3 >/dev/null 2>&1; printf '%s' "$_DB_MENU_CHOICE"; }; }
+assert_eq "menu: entered number is chosen"        "2" "$(menu_pick '2\n')"
+assert_eq "menu: blank Enter -> latest (#1)"      "1" "$(menu_pick '\n')"
+assert_eq "menu: reprompts past out-of-range"     "2" "$(menu_pick '9\n2\n')"
+assert_eq "menu: reprompts past non-numeric"      "1" "$(menu_pick 'x\n1\n')"
+menu_cancel() { printf 'q\n' | { _db_restore_menu proj demo 3 >/dev/null 2>&1; }; }
+assert_fail "menu: q cancels (nonzero return)" menu_cancel
+
 report

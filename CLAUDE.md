@@ -235,6 +235,24 @@ This is the project's defining constraint. Concretely:
   mysqldump's exit, so gate on the pipeline status under pipefail (`if dump | gzip
   && [ -s f ]`), not on the file existing. `_db_prune_backups` always reports the
   outcome (pruned/kept/off) so retention isn't a silent side effect.
+- `db restore [--checkpoint N]` (`db_restore`, `lib/db.sh`) rolls back to a
+  pre-import backup — checkpoints numbered **newest-first** (`#1` = last import) by
+  `_db_checkpoints`/`_db_checkpoint_file`. It reloads **verbatim** by delegating to
+  `db_import` with `--no-rules --no-hooks --keep-definers` (a pre-import backup is
+  already local, wired data — re-running the import transform on it would be
+  wrong), letting `db_import` take the pre-restore snapshot + prune. **Load-bearing
+  ordering: stage the chosen checkpoint to `var/tmp` (a copy) *before* that
+  snapshot runs** — the snapshot's retention prune only touches
+  `backups/db/<name>/pre-import-*`, so restoring the *oldest* checkpoint while at
+  the keep limit would otherwise delete the very file being restored. Copying it
+  out of `backups/` first sidesteps that entirely. **Destructive gate:** bare
+  `db restore` on an interactive stdin (`[ -t 0 ]`, non-`HARBOR_YES`) shows a
+  numbered picker (`_db_restore_menu`, latest = #1 default, `q` cancels) and the
+  deliberate numeric choice over its overwrite-warned prompt *is* the gate — no
+  second `confirm()`. `--checkpoint N`, a non-tty stdin, and `HARBOR_YES=1` skip
+  the menu and target #1; those paths take the normal `confirm()` (bypassed by
+  `HARBOR_YES=1`). So exactly one interactive gate fires in every case, and
+  automation still bypasses via `HARBOR_YES=1`.
 - **A host mutation with no atomic swap must restore what it replaced when it
   fails, and must not start at all when it's a no-op.** `php_use` is the case
   that proves it: brew has no "relink as", so the old formula is unlinked before

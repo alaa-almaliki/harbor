@@ -1,0 +1,11 @@
+Harbor backlog
+==============
+
+- Pre-import backups omit stored routines and events.
+  The auto-backup taken before `db import`/`db pull`/`db restore` dumps with
+  `--single-transaction --no-tablespaces` and no `--routines`/`--events`, so
+  stored procedures, functions, and scheduled events are NOT captured (triggers
+  are, by mysqldump default). Restoring such a backup therefore loses them.
+  Fix: add `--routines --events` (and keep `--triggers` explicit) to the
+  pre-import dump in `_db_autobackup` (lib/db.sh). Trade-off: larger dumps.
+  Its own change — behavior/size impact on every project's backups.

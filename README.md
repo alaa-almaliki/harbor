@@ -494,6 +494,13 @@ project (overriding the global) with `backups: { keep: <n> }` in the manifest;
 Global hooks in `etc/hooks/` apply to every project (e.g. an org-wide credential
 scrub).
 
+To roll back a bad import, `harbor db restore` reloads one of those pre-import
+backups. Run bare (`harbor db restore <name>`) it lists the checkpoints
+newest-first and asks which to restore (Enter picks the latest, `q` cancels);
+`--checkpoint N` restores one directly, and `--list` just shows them. It
+snapshots the current DB first (so the rollback is itself undoable) and reloads
+verbatim — no rules or hooks.
+
 **You don't have to start from scratch** — `harbor init`/`new` (and
 `harbor render` for existing projects) seed a commented-out
 `.harbor/import-rules` plus one sample hook per phase
@@ -882,6 +889,7 @@ above.
 | `harbor db backup [<name>] [db] [file]` | Dump to `backups/db/<name>/<timestamp>.sql.gz`. |
 | `harbor db import [<name>] <file> [db]` | Hookable import pipeline (see above). `--force` = best-effort: skip server-rejected statements, load truncated dumps. |
 | `harbor db pull [<name>]` | Pull a remote dump straight into the import pipeline. |
+| `harbor db restore [<name>] [--checkpoint N]` | Roll back to a pre-import backup (`--list` to see them; `#1` = newest). Snapshots the current DB first; verbatim reload (no rules/hooks). |
 | `harbor media pull [<name>]` | rsync remote media/storage. |
 | `harbor redis [<name>] [args…]` | `redis-cli` on the project's **cache** index; args pass through (e.g. `harbor redis shop FLUSHDB`). `harbor down <name>` flushes all four of its indices. |
 

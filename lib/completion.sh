@@ -27,7 +27,7 @@ _harbor() {
     xdebug) COMPREPLY=(\$(compgen -W "on off status" -- "\$cur")); return ;;
     update) COMPREPLY=(\$(compgen -W "--check --stash --yes" -- "\$cur")); return ;;
     logs) COMPREPLY=(\$(compgen -W "clear nginx php dnsmasq \$(ls \"$HARBOR_PROJECTS\" 2>/dev/null)" -- "\$cur")); return ;;
-    db) COMPREPLY=(\$(compgen -W "create drop backup import pull sandbox" -- "\$cur")); return ;;
+    db) COMPREPLY=(\$(compgen -W "create drop backup import pull restore sandbox" -- "\$cur")); return ;;
     sandbox) COMPREPLY=(\$(compgen -W "create drop list backup restore console up down destroy status" -- "\$cur")); return ;;
     store) COMPREPLY=(\$(compgen -W "add list rm" -- "\$cur")); return ;;
     services) COMPREPLY=(\$(compgen -W "list add rm \$(ls \"$HARBOR_PROJECTS\" 2>/dev/null)" -- "\$cur")); return ;;
@@ -53,7 +53,7 @@ _harbor() {
     xdebug) compadd on off status; return ;;
     update) compadd -- --check --stash --yes; return ;;
     logs) compadd clear nginx php dnsmasq \$(ls "$HARBOR_PROJECTS" 2>/dev/null); return ;;
-    db) compadd create drop backup import pull sandbox; return ;;
+    db) compadd create drop backup import pull restore sandbox; return ;;
     sandbox) compadd create drop list backup restore console up down destroy status; return ;;
     store) compadd add list rm; return ;;
     services) compadd list add rm \$(ls "$HARBOR_PROJECTS" 2>/dev/null); return ;;

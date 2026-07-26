@@ -212,6 +212,93 @@ _db_autobackup() {
   return 0
 }
 
+# List a project's pre-import backups, NEWEST FIRST, one path per line (empty if
+# none). Pure: globs `pre-import-*.sql.gz` — whose embedded YYYYMMDD-HHMMSS names
+# sort chronologically — and reverses. Manual `db backup` dumps (`<db>-<ts>`) are
+# not matched, so they never appear as restore checkpoints.
+_db_checkpoints() {
+  local name="$1" bdir f i
+  bdir="$HARBOR_BACKUPS/$name"
+  [ -d "$bdir" ] || return 0
+  local -a files=()
+  for f in "$bdir"/pre-import-*.sql.gz; do
+    [ -e "$f" ] || continue
+    files+=("$f")
+  done
+  [ "${#files[@]}" -eq 0 ] && return 0
+  for (( i=${#files[@]}-1; i>=0; i-- )); do
+    printf '%s\n' "${files[$i]}"
+  done
+}
+
+# Resolve checkpoint index N (1-based, 1 = newest) to a file path. Sets global
+# _DB_CKPT_FILE and returns 0 on success; returns 1 (leaving it empty) when N is
+# non-numeric, < 1, or beyond the number of checkpoints available.
+_db_checkpoint_file() {
+  local name="$1" n="$2" line
+  _DB_CKPT_FILE=""
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$n" -ge 1 ] || return 1
+  local -a ck=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && ck+=("$line")
+  done < <(_db_checkpoints "$name")
+  [ "${#ck[@]}" -ge "$n" ] || return 1
+  _DB_CKPT_FILE="${ck[$((n - 1))]}"
+  return 0
+}
+
+# pre-import-YYYYMMDD-HHMMSS.sql.gz -> "YYYY-MM-DD HH:MM:SS" (pure string slice).
+_db_ckpt_stamp() {
+  local b d t; b="$(basename "$1")"; b="${b#pre-import-}"; b="${b%.sql.gz}"
+  d="${b%%-*}"; t="${b##*-}"
+  printf '%s-%s-%s %s:%s:%s' "${d:0:4}" "${d:4:2}" "${d:6:2}" "${t:0:2}" "${t:2:2}" "${t:4:2}"
+}
+
+# Print the numbered checkpoint table (newest first). $2=1 (default) appends the
+# usage hint — suppressed (0) when the table backs the interactive picker.
+_db_restore_list() {
+  local name="$1" hint="${2:-1}" i=0 f n
+  n="$(_db_checkpoints "$name" | grep -c .)"
+  if [ "$n" -eq 0 ]; then
+    warn "no pre-import backups for '$name' yet (one is taken automatically before each import/pull)"
+    return 0
+  fi
+  log "pre-import checkpoints for '$name' (newest first):"
+  printf '  %3s  %-19s  %8s\n' "#" "taken" "size"
+  while IFS= read -r f; do
+    i=$((i + 1))
+    printf '  %3s  %-19s  %8s\n' "$i" "$(_db_ckpt_stamp "$f")" "$(du -h "$f" 2>/dev/null | cut -f1)"
+  done < <(_db_checkpoints "$name")
+  [ "$hint" = 1 ] && step "restore the latest: harbor db restore $name   ·   an older one: --checkpoint <#>"
+  return 0
+}
+
+# Interactive picker: show the table, read a checkpoint number from stdin, and
+# set _DB_MENU_CHOICE (1 = newest, the default on Enter). Returns 1 on cancel
+# (q/0) or EOF. The deliberate numeric choice over this overwrite-warned prompt
+# IS the destructive gate for bare `db restore` — the caller gates entry on an
+# interactive stdin (`[ -t 0 ]`) and a non-`HARBOR_YES` run.
+_db_restore_menu() {
+  local name="$1" db="$2" total="$3" reply
+  _DB_MENU_CHOICE=""
+  _db_restore_list "$name" 0 >&2
+  while :; do
+    if ! read -r -p "Restore which # over '$db' (overwrites current data)? [1=latest, q=cancel] " reply; then
+      printf '\n' >&2; return 1
+    fi
+    reply="${reply:-1}"
+    case "$reply" in
+      q|Q|0) return 1 ;;
+      *[!0-9]*) warn "enter a number 1-$total (or q to cancel)"; continue ;;
+    esac
+    if [ "$reply" -ge 1 ] && [ "$reply" -le "$total" ]; then
+      _DB_MENU_CHOICE="$reply"; return 0
+    fi
+    warn "out of range — pick 1-$total"
+  done
+}
+
 # Validate hooks before an import so problems surface up front, not after the
 # load (or never): a hook you wrote but forgot to chmod +x would be silently
 # skipped; a shell hook with a syntax error would die mid-pipeline. `.sample`
@@ -448,6 +535,78 @@ EOF
   ok "import complete -> $db ($(human_size "$bytes") dump in $(human_duration $((SECONDS - t0))))"
 }
 
+# harbor db restore [<name>] [--list] [--checkpoint N] [--no-backup]
+# Roll the project DB back to a pre-import backup. Checkpoints are numbered
+# newest-first (#1 = the backup from your last import). A verbatim reload — no
+# import-rules, no hooks, DEFINERs kept — because a pre-import backup is already
+# your own local, wired data. Snapshots the current DB first (so the restore is
+# itself undoable) by delegating the load to db_import, which owns the
+# auto-backup + retention machinery.
+db_restore() {
+  resolve_project "${1-}" "harbor db restore [<name>] [--list] [--checkpoint N] [--no-backup]"
+  [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
+  local list=0 ckpt=1 ckpt_explicit=0 nobackup=0 menu_used=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --list|-l) list=1; shift ;;
+      --checkpoint|-c)
+        case "${2-}" in
+          ''|*[!0-9]*) usage_die db-restore "harbor db restore: --checkpoint needs a positive number (got '${2-}')" ;;
+        esac
+        ckpt="$2"; ckpt_explicit=1; shift 2 ;;
+      --no-backup) nobackup=1; shift ;;
+      *) usage_die db-restore "harbor db restore [<name>] [--list] [--checkpoint N] [--no-backup]  (unexpected: $1)" ;;
+    esac
+  done
+  _db_load "$name"; _db_up_check "$name"
+  local db; db="$(db_ident "$name")"
+
+  if [ "$list" = 1 ]; then _db_restore_list "$name"; return 0; fi
+
+  local have; have="$(_db_checkpoints "$name" | grep -c .)"
+  [ "$have" -eq 0 ] && die "no pre-import backups for '$name' to restore (one is taken automatically before each import/pull)"
+
+  # Bare `db restore` on an interactive terminal: let the user pick from the
+  # numbered list (latest = #1, the default on Enter). That deliberate choice is
+  # the destructive gate, so no extra confirm below. `--checkpoint`, HARBOR_YES,
+  # and a non-tty stdin all skip the menu and fall through to confirm()/#1.
+  if [ "$ckpt_explicit" = 0 ] && [ "${HARBOR_YES:-0}" != 1 ] && [ -t 0 ]; then
+    if _db_restore_menu "$name" "$db" "$have"; then ckpt="$_DB_MENU_CHOICE"; menu_used=1
+    else warn "aborted"; return 1; fi
+  fi
+
+  # resolve the requested checkpoint (fail fast with the real count + a hint)
+  if ! _db_checkpoint_file "$name" "$ckpt"; then
+    die "no checkpoint #$ckpt for '$name' — only $have available → harbor db restore $name --list"
+  fi
+  local src="$_DB_CKPT_FILE" ts; ts="$(_db_ckpt_stamp "$src")"
+
+  # Stage the checkpoint into var/tmp BEFORE the pre-restore snapshot: that
+  # snapshot's retention prune could otherwise delete this very file (restoring
+  # the oldest at the keep limit). Prune only ever touches backups/db/<name>, so
+  # a copy under Harbor's own var/tmp is safe.
+  mkdir -p "$HARBOR_TMP"
+  local safe; safe="$(mktemp "$HARBOR_TMP/harbor-restore.XXXXXX")" || die "mktemp failed"
+  mv "$safe" "$safe.sql.gz" || { rm -f "$safe"; die "could not prepare temp file"; }
+  safe="$safe.sql.gz"
+  cp "$src" "$safe" || { rm -f "$safe"; die "could not stage checkpoint for restore"; }
+
+  # The menu already served as the interactive gate; otherwise confirm the overwrite.
+  if [ "$menu_used" = 0 ]; then
+    confirm "Restore checkpoint #$ckpt ($ts) over database '$db' on '$name'? This overwrites the current data." \
+      || { warn "aborted"; rm -f "$safe"; return 1; }
+  fi
+
+  # Verbatim reload via the existing loader. --no-rules/--no-hooks/--keep-definers
+  # make it faithful; db_import takes the pre-restore snapshot (+ prune/report)
+  # unless --no-backup. Plain call (not `if …`) so set -e stays live inside it.
+  local -a impflags=(--no-rules --no-hooks --keep-definers)
+  [ "$nobackup" = 1 ] && impflags+=(--no-backup)
+  db_import "$name" "$safe" "$db" "${impflags[@]}"
+  rm -f "$safe"
+  ok "restored '$name' from checkpoint #$ckpt ($ts)"
+}
+
 cmd_db() {
   local sub="${1-}"; shift || true
   case "$sub" in
@@ -457,6 +616,7 @@ cmd_db() {
     backup) db_backup "$@" ;;
     import) db_import "$@" ;;
     pull)   db_pull "$@" ;;
-    *) usage_die db "harbor db create|drop|backup|import|pull [<name>] ...  |  harbor db sandbox <sub>" ;;
+    restore) db_restore "$@" ;;
+    *) usage_die db "harbor db create|drop|backup|import|pull|restore [<name>] ...  |  harbor db sandbox <sub>" ;;
   esac
 }
