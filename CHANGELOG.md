@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Pre-import backups are now pruned to a retention window.** `harbor db
+  import` and `harbor db pull` still take an automatic pre-import backup, but only
+  the newest **N** per project are kept — older `pre-import-*.sql.gz` files are
+  removed after each import so repeated pulls can't slowly fill the disk. N
+  defaults to **3** and is configurable: globally via `DB_BACKUP_KEEP=<n>` in
+  `~/.config/harbor/config`, or per project (overriding the global) via
+  `backups: { keep: <n> }` in the manifest. `0` (or a negative value) disables
+  pruning and keeps every backup. Only auto-taken pre-import backups are pruned —
+  manual `harbor db backup` dumps are never touched. Pruning runs **only after a
+  successful backup** — a failed/empty dump leaves its partial file removed and
+  every existing backup untouched, so a broken snapshot can never evict a good
+  one. Each import/pull now reports the retention outcome (`pruned N …, keeping
+  newest K` / `keeping K pre-import backup(s)`), so the policy is visible instead
+  of silent.
 - **`harbor db pull`/`media pull` can keep remote details out of git.** Every
   connection field — `host`, `db`, `user`, `db_host`, `media` — now resolves from
   an env var, then the gitignored `.harbor/remote.env`, then the manifest
@@ -97,6 +111,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `harbor render <name> && harbor up <name>` to apply. No host-footprint change.
 
 ### Changed
+- **`harbor db import`/`db pull` now use Harbor's own `var/tmp/` for scratch**
+  (dump decompression and the remote-pull download) instead of the OS `$TMPDIR`
+  (`/var/folders/…` on macOS). A multi-GB decompress now stays inside Harbor's
+  tree on one volume, and `harbor teardown` reclaims any scratch a crash leaves
+  behind. `var/tmp/` is gitignored (under the existing `var/*` rule).
 - **`harbor test` output is now a compact two-column grid** — one cell per file
   (`✓ <n>` when all its assertions pass, `✗ <failed>/<total>` when some don't),
   with every failure expanded in a `FAILURES` block below — instead of ~500 green

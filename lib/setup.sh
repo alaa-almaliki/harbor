@@ -92,6 +92,9 @@ cmd_teardown() {
   log "removing php pools";           php_remove_pools
   log "stopping shared stack";        shared_down
   log "stopping sandbox MySQL";       sandbox_down
+  # reclaim transient scratch (dump decompress / remote pull) — always safe, it
+  # only ever holds in-flight temp files a crash may have stranded.
+  rm -rf "$HARBOR_TMP" 2>/dev/null || true
   if [ "$purge" = "1" ]; then
     HARBOR_YES=1 sandbox_destroy >/dev/null 2>&1 || true
     rm -rf "$HARBOR_ETC"

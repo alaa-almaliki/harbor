@@ -219,7 +219,22 @@ This is the project's defining constraint. Concretely:
   interactively** via `confirm()`, which is bypassed by **`HARBOR_YES=1` only**.
   There is **no `--yes` flag** except on `harbor update` — don't document one, and
   if you add a flag, add it to the command's help topic in the same commit.
-- `db import`/`db pull` take an **auto-backup first** (`--no-backup` to skip).
+- `db import`/`db pull` take an **auto-backup first** (`--no-backup` to skip),
+  then prune to a retention window: only the newest N `pre-import-*.sql.gz` per
+  project are kept (`_db_prune_backups`, `lib/db.sh`). N resolves manifest
+  `backups.keep` (per-project override) → config `DB_BACKUP_KEEP`
+  (`~/.config/harbor/config` global default) → **3** (`_db_backup_keep`);
+  `0`/negative disables pruning. **Prune only auto-taken `pre-import-*` dumps —
+  never manual `db backup` files** (`<db>-<ts>.sql.gz`); those are user-owned. A
+  non-numeric value falls back to the default rather than risk deleting on garbage.
+  **Prune only after a *successful* backup** (`_db_autobackup`, `lib/db.sh`): a
+  failed dump still leaves a partial gzip (gzip exits 0 on empty input), and
+  keeping it while pruning to the window could evict a valid older backup — so on
+  failure the partial is removed and existing backups are left untouched, no
+  prune. This is the same "empty ≠ failed" trap as §3: `| gzip > f` masks
+  mysqldump's exit, so gate on the pipeline status under pipefail (`if dump | gzip
+  && [ -s f ]`), not on the file existing. `_db_prune_backups` always reports the
+  outcome (pruned/kept/off) so retention isn't a silent side effect.
 - **A host mutation with no atomic swap must restore what it replaced when it
   fails, and must not start at all when it's a no-op.** `php_use` is the case
   that proves it: brew has no "relink as", so the old formula is unlinked before
@@ -321,8 +336,10 @@ and **[SemVer](https://semver.org)**.
 ## 5. Conventions
 
 - **Paths/naming:** launchd units are `com.harbor.<svc>`; sockets/pids in
-  `var/run/`; logs in `var/log/`; per-project state in `var/ports/<name>` and
-  `projects/<name>/.harbor/`.
+  `var/run/`; logs in `var/log/`; transient scratch (dump decompress, remote
+  pull) in `var/tmp/` (`$HARBOR_TMP`, reclaimed by `teardown`) — **not** the OS
+  `$TMPDIR`, so a multi-GB decompress stays inside Harbor and is Harbor's to
+  clean; per-project state in `var/ports/<name>` and `projects/<name>/.harbor/`.
 - **Ports:** `base = 20000 + N*20`; offsets per `lib/ports.sh`. Redis is shared —
   projects get a DB-index block, not a port.
 - **Credential convention:** db → project name; user → db; password → db.

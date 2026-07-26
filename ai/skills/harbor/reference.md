@@ -225,8 +225,11 @@ through the image's own entrypoint (needed for s6-overlay/init images like
    credentials/API keys.
 7. **Magento `--reconfigure`** (optional) — rewrite base URLs and search host.
 
-A backup is taken before every import (`--no-backup` to skip). `.harbor/import-rules`
-example:
+A backup is taken before every import (`--no-backup` to skip). Only the newest 3
+pre-import backups per project are kept (older ones pruned after each import/pull);
+change with `DB_BACKUP_KEEP=<n>` in `~/.config/harbor/config` or `backups: { keep:
+<n> }` in the manifest (manifest wins), `0` to keep all. Manual `db backup` dumps
+aren't pruned. `.harbor/import-rules` example:
 ```
 live.com             => local.test
 https://cdn.live.com => https://shop.test

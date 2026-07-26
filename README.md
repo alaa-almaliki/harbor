@@ -485,8 +485,14 @@ silently skipped (forgotten `chmod +x`, a `*.sql` in `pre-import.d/`) warns:
    place to scrub live credentials, API keys, etc.
 7. **Magento `--reconfigure`** (optional) — rewrite base URLs and search host.
 
-A backup is taken before every import (`--no-backup` to skip). Global hooks in
-`etc/hooks/` apply to every project (e.g. an org-wide credential scrub).
+A backup is taken before every import (`--no-backup` to skip). Only the newest
+**3** pre-import backups per project are kept — older ones are pruned after each
+import/pull, so `db import`/`db pull` can't slowly fill the disk. Change the
+count globally with `DB_BACKUP_KEEP=<n>` in `~/.config/harbor/config`, or per
+project (overriding the global) with `backups: { keep: <n> }` in the manifest;
+`0` keeps every backup. Manual `harbor db backup` dumps are never auto-pruned.
+Global hooks in `etc/hooks/` apply to every project (e.g. an org-wide credential
+scrub).
 
 **You don't have to start from scratch** — `harbor init`/`new` (and
 `harbor render` for existing projects) seed a commented-out
@@ -508,10 +514,32 @@ re:UA-\d+-\d+       =>
 
 ## Configuration
 
-- **Global defaults** live in `~/.config/harbor/config` (default PHP version,
-  locale/currency/timezone, admin credentials, MySQL root password, OpenSearch
-  heap, etc.).
-- **Per-project** settings live in the manifest and override the global defaults.
+- **Global defaults** live in `~/.config/harbor/config` — a plain `KEY=VALUE`
+  file Harbor owns, seeded by `harbor setup` (create-if-absent, so your edits are
+  never overwritten). It's the machine-wide default for anything not pinned per
+  project. Edit it in place; new values take effect on the next command. Common
+  keys:
+
+  ```sh
+  # ~/.config/harbor/config
+  DEFAULT_PHP=8.4              # PHP version for new projects
+  PHP_MEMORY_LIMIT=2G          # default php.ini memory_limit
+  LOCALE=en_US                 # locale / currency / timezone for scaffolds
+  CURRENCY=USD
+  TIMEZONE=UTC
+  ADMIN_USER=admin             # default admin credentials for installers
+  ADMIN_PASSWORD=Admin123!
+  MYSQL_ROOT_PASSWORD=root     # root password for project MySQL containers
+  MYSQL_IMAGE=mysql:8.0        # default DB image
+  OPENSEARCH_HEAP=512m         # OpenSearch JVM heap cap
+  DNS_PORT=5354                # Harbor's dnsmasq port
+  DB_BACKUP_KEEP=3             # pre-import backups retained per project
+  DOCKER_PLATFORM=             # force an image arch, e.g. linux/amd64
+  XDEBUG_CLI_TRIGGER=1         # auto-trigger Xdebug on project CLI runs
+  ```
+
+- **Per-project** settings live in the manifest (`.harbor/harbor.yml`) and
+  override the global defaults (e.g. `php:`, `php_ini:`, `backups: { keep: N }`).
 
 Customizations supported per project:
 

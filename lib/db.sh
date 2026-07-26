@@ -139,6 +139,79 @@ db_backup() {
   ok "backup: $file"
 }
 
+# How many pre-import backups to retain. Precedence: per-project manifest
+# `backups.keep` (override) -> global config `DB_BACKUP_KEEP` in
+# ~/.config/harbor/config (Harbor's own sanctioned config file) -> default 3.
+# A non-numeric value falls back to the default (never risk pruning on garbage);
+# 0 (or negative) means "keep all" — retention disabled.
+_db_backup_keep() {
+  local name="$1" v
+  v="$(manifest_get "$(manifest_path "$name")" backups.keep "")"
+  [ -z "$v" ] && v="$(config_get DB_BACKUP_KEEP "")"
+  [ -z "$v" ] && v=3
+  case "$v" in
+    -[0-9]*) : ;;                # negative: keep-all sentinel, allowed
+    ''|*[!0-9]*) v=3 ;;          # non-numeric: fall back to the safe default
+  esac
+  printf '%s' "$v"
+}
+
+# Prune old pre-import backups in $bdir, keeping only the newest N (per
+# _db_backup_keep), and always report the retention state so the user can see
+# the policy is active. Only touches `pre-import-*.sql.gz` — manual `db backup`
+# dumps (`<db>-<ts>.sql.gz`) are user-owned and never auto-pruned. The
+# timestamped names sort chronologically, so shell glob order is oldest-first.
+_db_prune_backups() {
+  local name="$1" bdir="$2" keep total del i=0 f
+  keep="$(_db_backup_keep "$name")"
+  [ -d "$bdir" ] || return 0
+  local -a files=()
+  for f in "$bdir"/pre-import-*.sql.gz; do
+    [ -e "$f" ] || continue                # no matches -> literal glob, skip
+    files+=("$f")
+  done
+  total=${#files[@]}
+  [ "$total" -eq 0 ] && return 0
+  if [ "$keep" -le 0 ]; then               # 0/negative -> keep all
+    step "backup retention off (backups.keep=$keep) — keeping all $total pre-import backup(s)"
+    return 0
+  fi
+  if [ "$total" -le "$keep" ]; then
+    step "keeping $total pre-import backup(s) (retention: newest $keep)"
+    return 0
+  fi
+  del=$((total - keep))
+  for f in "${files[@]}"; do
+    [ "$i" -ge "$del" ] && break
+    rm -f "$f"
+    i=$((i + 1))
+  done
+  step "pruned $del old pre-import backup(s), keeping newest $keep"
+  return 0
+}
+
+# Take a pre-import backup of $db into $bdir, then prune to the retention window
+# — but prune ONLY after a good backup. pipefail makes the `if` see mysqldump's
+# failure through gzip; gzip still leaves a partial/empty file on failure, and
+# keeping that (then pruning to stay within the window) could evict a valid
+# older backup. So on failure we drop the partial and leave existing backups
+# untouched — no pruning. Always non-fatal: the import proceeds even with no
+# backup (a fresh/empty db has nothing worth snapshotting).
+_db_autobackup() {
+  local name="$1" db="$2" bdir="$3"
+  mkdir -p "$bdir"
+  local pre tb=$SECONDS; pre="$bdir/pre-import-$(date +%Y%m%d-%H%M%S).sql.gz"
+  log "auto-backup before import -> $pre"
+  if _db_mysqldump "$name" --single-transaction --no-tablespaces "$db" 2>/dev/null | gzip > "$pre" && [ -s "$pre" ]; then
+    step "backed up in $(human_duration $((SECONDS - tb)))  (--no-backup to skip on re-imports)"
+    _db_prune_backups "$name" "$bdir"
+    return 0
+  fi
+  rm -f "$pre"
+  warn "pre-backup skipped (empty db?) — existing backups left untouched, no pruning"
+  return 0
+}
+
 # Validate hooks before an import so problems surface up front, not after the
 # load (or never): a hook you wrote but forgot to chmod +x would be silently
 # skipped; a shell hook with a syntax error would die mid-pipeline. `.sample`
@@ -226,8 +299,11 @@ db_import() {
 
   # temp workspace up front (all temps under one dir, cleaned on any exit) —
   # rules are assembled and validated here, BEFORE the backup/decompress/load
-  # work, so a typo'd rule or broken hook can't waste an import.
-  local tmpd; tmpd="$(mktemp -d "${TMPDIR:-/tmp}/harbor-import.XXXXXX")"
+  # work, so a typo'd rule or broken hook can't waste an import. Scratch lives
+  # under Harbor's own var/tmp (not the OS $TMPDIR), so a multi-GB decompress
+  # stays inside Harbor and teardown can reclaim it.
+  mkdir -p "$HARBOR_TMP"
+  local tmpd; tmpd="$(mktemp -d "$HARBOR_TMP/harbor-import.XXXXXX")"
   # bake $tmpd into the trap NOW: it's a function-local, gone by the time EXIT fires.
   # shellcheck disable=SC2064
   trap "rm -rf '$tmpd'" EXIT
@@ -258,13 +334,9 @@ db_import() {
   # ensure target db exists
   _db_mysql "$name" -e "CREATE DATABASE IF NOT EXISTS \`$db\` CHARACTER SET utf8mb4;"
 
-  # 0. auto-backup
+  # 0. auto-backup (+ retention prune, only on a successful backup)
   if [ "$nobackup" = 0 ]; then
-    local bdir="$HARBOR_BACKUPS/$name"; mkdir -p "$bdir"
-    local pre tb=$SECONDS; pre="$bdir/pre-import-$(date +%Y%m%d-%H%M%S).sql.gz"
-    log "auto-backup before import -> $pre"
-    _db_mysqldump "$name" --single-transaction --no-tablespaces "$db" 2>/dev/null | gzip > "$pre" || warn "pre-backup skipped (empty db?)"
-    step "backed up in $(human_duration $((SECONDS - tb)))  (--no-backup to skip on re-imports)"
+    _db_autobackup "$name" "$db" "$HARBOR_BACKUPS/$name"
   fi
 
   # 1+2. decompress AND strip DEFINER in one streaming pass — the old

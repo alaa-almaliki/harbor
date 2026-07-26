@@ -640,7 +640,11 @@ standalone; `new` just chains them. `harbor destroy` is the inverse.
   interactively; `--yes` skips for scripting.
 - **Auto-backup before import**: `db import`/`db pull` snapshot the current DB to
   `backups/db/<name>/pre-import-<ts>.sql.gz` first (skip with `--no-backup`), so a
-  bad dump or hook is always recoverable.
+  bad dump or hook is always recoverable. Only the newest N (default **3**) are
+  retained — older pre-import snapshots are pruned after each import so repeated
+  pulls don't accumulate unbounded. N is `DB_BACKUP_KEEP` in
+  `~/.config/harbor/config` (global default) or per-project `backups: { keep: N }`
+  (manifest wins); `0` keeps all. Manual `db backup` dumps are never pruned.
 - **Committable vs runtime**: the manifest (`harbor.yml`), `import-rules`, and
   `hooks/` are committable; runtime (`connection.env`, `compose.env`,
   `docker-compose.yml`, `install.sh`, `var/ports`) is generated and gitignored.

@@ -1088,6 +1088,12 @@ warns, and a shell hook with a syntax error aborts. `drop` removes the
 database but keeps the MySQL user. Skip a confirm with HARBOR_YES=1 (there is no
 --yes flag). Stack must be up.
 
+Only the newest N pre-import backups are kept (older ones are pruned after each
+import/pull); N defaults to 3. Set it globally with `DB_BACKUP_KEEP=<n>` in
+~/.config/harbor/config, or per project (which wins) with `backups: { keep: <n> }`
+in the manifest. Set it to 0 to keep every backup. Manual `harbor db backup`
+dumps are never auto-pruned.
+
 `pull` needs a remote host + db and connects over ssh. Each connection field —
 host, db, user, db_host, media — resolves from (1) an env var, (2) the gitignored
 .harbor/remote.env, then (3) the manifest `remote:` block, in that order. Put

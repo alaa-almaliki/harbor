@@ -19,6 +19,7 @@ HARBOR_RUN="$HARBOR_VAR/run"                  # sockets + pids
 HARBOR_LOG_DIR="$HARBOR_VAR/log"
 HARBOR_PORTS_DIR="$HARBOR_VAR/ports"
 HARBOR_LOCK_DIR="$HARBOR_VAR/lock"
+HARBOR_TMP="$HARBOR_VAR/tmp"                   # transient scratch (dump decompress, remote pull)
 
 # Runtime state
 HARBOR_DEFAULT_PHP_FILE="$HARBOR_VAR/default-php"
@@ -391,5 +392,5 @@ config_get() {
 
 ensure_dirs() {
   mkdir -p "$HARBOR_RUN" "$HARBOR_LOG_DIR" "$HARBOR_PORTS_DIR" "$HARBOR_LOCK_DIR" \
-           "$HARBOR_CERTS" "$HARBOR_NGINX_SITES" "$HARBOR_ETC/php" "$HARBOR_ETC/dnsmasq"
+           "$HARBOR_TMP" "$HARBOR_CERTS" "$HARBOR_NGINX_SITES" "$HARBOR_ETC/php" "$HARBOR_ETC/dnsmasq"
 }

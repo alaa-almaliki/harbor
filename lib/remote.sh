@@ -129,7 +129,11 @@ db_pull() {
   fi
   # BSD mktemp only substitutes TRAILING X's, so the template's XXXXXX must be
   # last; rename to .sql.gz afterward because db_import decompresses by extension.
-  tmp="$(mktemp "${TMPDIR:-/tmp}/harbor-pull.XXXXXX")" || die "mktemp failed"
+  # Scratch under Harbor's own var/tmp (not the OS $TMPDIR): the downloaded dump
+  # and the import's decompress dir then share one Harbor-owned volume, and
+  # teardown can reclaim whatever a crash leaves behind.
+  mkdir -p "$HARBOR_TMP"
+  tmp="$(mktemp "$HARBOR_TMP/harbor-pull.XXXXXX")" || die "mktemp failed"
   mv "$tmp" "$tmp.sql.gz" || { rm -f "$tmp"; die "could not prepare temp file"; }
   tmp="$tmp.sql.gz"
   log "pulling '$rdb' from $host${ruser:+ as MySQL user '$ruser'}${rdbhost:+ via $rdbhost} (mysqldump over ssh)"

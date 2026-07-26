@@ -141,4 +141,89 @@ case "$stdout_out" in
 esac
 assert_contains "_db_require: error reaches stderr" "no database service for 'nodb'" "$err_out"
 
+# --- backup retention: _db_backup_keep precedence ----------------------------
+# manifest backups.keep  >  global config DB_BACKUP_KEEP  >  default 3;
+# a non-numeric value falls back to the default (never prune on garbage).
+export HARBOR_CONFIG="$tmp/harbor.config"; : > "$HARBOR_CONFIG"
+
+mkproj keepdefault ''
+assert_eq "keep: default is 3 (no manifest, no config)" \
+  "3" "$(_db_backup_keep keepdefault)"
+
+printf 'DB_BACKUP_KEEP=5\n' > "$HARBOR_CONFIG"
+assert_eq "keep: global config DB_BACKUP_KEEP is the default" \
+  "5" "$(_db_backup_keep keepdefault)"
+
+mkproj keepmanifest 'backups: { keep: 7 }'
+assert_eq "keep: per-project manifest overrides global config" \
+  "7" "$(_db_backup_keep keepmanifest)"
+
+mkproj keepzero 'backups: { keep: 0 }'
+assert_eq "keep: manifest backups.keep 0 (keep-all) passes through" \
+  "0" "$(_db_backup_keep keepzero)"
+
+printf 'DB_BACKUP_KEEP=nonsense\n' > "$HARBOR_CONFIG"
+mkproj keepgarbage ''
+assert_eq "keep: non-numeric config falls back to default 3" \
+  "3" "$(_db_backup_keep keepgarbage)"
+: > "$HARBOR_CONFIG"
+
+# --- backup retention: _db_prune_backups keeps newest N, pre-import only ------
+count_glob() { local n=0 f; for f in "$@"; do [ -e "$f" ] && n=$((n + 1)); done; printf '%s' "$n"; }
+bdir="$tmp/backups/demo"; mkdir -p "$bdir"
+for n in 1 2 3 4 5; do : > "$bdir/pre-import-2026010$n-000000.sql.gz"; done
+: > "$bdir/demo-20260101-000000.sql.gz"     # manual `db backup` dump — must survive
+prune_out="$(_db_prune_backups demo "$bdir" 2>&1)"
+
+assert_eq "prune: keeps newest 3 pre-import backups (default)" \
+  "3" "$(count_glob "$bdir"/pre-import-*.sql.gz)"
+assert_ok   "prune: newest pre-import kept"   test -f "$bdir/pre-import-20260105-000000.sql.gz"
+assert_fail "prune: oldest pre-import removed" test -f "$bdir/pre-import-20260101-000000.sql.gz"
+assert_ok   "prune: manual backup untouched"  test -f "$bdir/demo-20260101-000000.sql.gz"
+assert_contains "prune: reports what it pruned" "pruned 2 old pre-import backup(s), keeping newest 3" "$prune_out"
+
+# nothing to prune (total <= keep) still reports the retention state, so the
+# user always sees the policy is active — this is the case the user hit on pull.
+noop_out="$(_db_prune_backups demo "$bdir" 2>&1)"    # now 3 backups, keep 3
+assert_contains "prune: reports retention when nothing to prune" \
+  "keeping 3 pre-import backup(s) (retention: newest 3)" "$noop_out"
+
+# keep=0 (manifest backups.keep: 0) disables pruning entirely
+zdir="$tmp/backups/keepzero"; mkdir -p "$zdir"   # keepzero project has backups.keep: 0
+for n in 1 2 3 4 5; do : > "$zdir/pre-import-2026010$n-000000.sql.gz"; done
+zero_out="$(_db_prune_backups keepzero "$zdir" 2>&1)"
+assert_eq "prune: manifest backups.keep 0 disables pruning (keeps all)" \
+  "5" "$(count_glob "$zdir"/pre-import-*.sql.gz)"
+assert_contains "prune: reports retention off when keep=0" \
+  "backup retention off" "$zero_out"
+
+# --- _db_autobackup: prune only after a SUCCESSFUL backup --------------------
+# A failed dump still leaves a partial gzip; it must be removed and existing
+# backups left untouched (no pruning could evict a valid older backup).
+# demo has no manifest here, config is empty -> retention default 3.
+: > "$HARBOR_CONFIG"
+
+# failing dump: mysqldump writes some bytes then exits nonzero (pipefail catches it)
+# shellcheck disable=SC2329  # invoked indirectly via _db_autobackup
+_db_mysqldump() { printf 'partial write\n'; return 1; }
+bfail="$tmp/backups/bfail"; mkdir -p "$bfail"
+: > "$bfail/pre-import-20260101-000000.sql.gz"   # two existing good backups
+: > "$bfail/pre-import-20260102-000000.sql.gz"
+fail_out="$(_db_autobackup demo demo "$bfail" 2>&1)"
+assert_eq "autobackup: failed dump leaves existing backups untouched (no prune, partial removed)" \
+  "2" "$(count_glob "$bfail"/pre-import-*.sql.gz)"
+assert_contains "autobackup: failed dump warns it did not prune" "no pruning" "$fail_out"
+
+# successful dump: a new backup is written, then retention applies
+# shellcheck disable=SC2329  # invoked indirectly via _db_autobackup
+_db_mysqldump() { printf 'SQL DUMP CONTENT\n'; return 0; }
+bok="$tmp/backups/bok"; mkdir -p "$bok"
+: > "$bok/pre-import-20260101-000000.sql.gz"
+: > "$bok/pre-import-20260102-000000.sql.gz"
+ok_out="$(_db_autobackup demo demo "$bok" 2>&1)"
+assert_eq "autobackup: successful dump adds a new backup (2 + 1, within keep=3)" \
+  "3" "$(count_glob "$bok"/pre-import-*.sql.gz)"
+assert_contains "autobackup: successful dump reports the backup" "backed up in" "$ok_out"
+assert_contains "autobackup: successful dump reports retention" "pre-import backup(s)" "$ok_out"
+
 report
