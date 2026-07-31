@@ -4,9 +4,10 @@
   <img src="assets/harbor-banner.svg" alt="Harbor — a hybrid local PHP dev platform for macOS: native PHP, nginx, Xdebug, dnsmasq and TLS run on the host, while MySQL, OpenSearch, Redis, RabbitMQ and Mailpit run in Docker containers docked in the harbor" width="820">
 </p>
 
-[![Downloads](https://img.shields.io/endpoint?url=https://alaa-almaliki.github.io/traffic-stats/harbor.json)](https://github.com/alaa-almaliki/harbor)
-[![Status](https://img.shields.io/badge/status-unstable-orange)](https://github.com/alaa-almaliki/harbor)
-[![Version](https://img.shields.io/badge/version-0.1.0--dev-blue)](https://github.com/alaa-almaliki/harbor)
+[![downloads](https://img.shields.io/endpoint?url=https://alaa-almaliki.github.io/traffic-stats/harbor.json&label=downloads)](https://github.com/alaa-almaliki/harbor)
+[![tests](https://github.com/alaa-almaliki/harbor/actions/workflows/tests.yml/badge.svg)](https://github.com/alaa-almaliki/harbor/actions/workflows/tests.yml)
+[![status](https://img.shields.io/badge/status-unstable-orange)](https://github.com/alaa-almaliki/harbor)
+[![version](https://img.shields.io/badge/version-0.1.0--dev-blue)](https://github.com/alaa-almaliki/harbor)
 
 **A hybrid local development platform for PHP — macOS only.**
 

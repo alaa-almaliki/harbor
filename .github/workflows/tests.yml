@@ -1,0 +1,20 @@
+name: tests
+
+# Runs Harbor's zero-dependency, pure-bash unit suite (test/run.sh). It exercises
+# only pure logic — parsing, allocation, validation, templating — and never
+# touches Docker, launchd, nginx, or certs, so it runs on a bare macOS runner.
+# macOS is the target platform (Apple Silicon + Homebrew, system bash 3.2), so
+# the suite runs there rather than on Linux.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run test suite
+        run: ./test/run.sh
