@@ -5,6 +5,8 @@
 </p>
 
 [![Downloads](https://img.shields.io/endpoint?url=https://alaa-almaliki.github.io/traffic-stats/harbor.json)](https://github.com/alaa-almaliki/harbor)
+[![Status](https://img.shields.io/badge/status-unstable-orange)](https://github.com/alaa-almaliki/harbor)
+[![Version](https://img.shields.io/badge/version-0.1.0--dev-blue)](https://github.com/alaa-almaliki/harbor)
 
 **A hybrid local development platform for PHP — macOS only.**
 
