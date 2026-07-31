@@ -131,8 +131,9 @@ LaunchDaemon (+ `nginx -t`, which binds :80/:443). Nothing else needs root.
 Never writes into Homebrew's nginx/php/dnsmasq config — Harbor renders its own
 into etc/ and runs its own instances.
 
-Note: ~/.config/harbor/config is written only if absent — re-running setup will
-not refresh it.
+Note: Harbor's global config (etc/config, in-tree and gitignored) is written
+only if absent — re-running setup will not refresh it. A pre-move config at
+~/.config/harbor/config is relocated into etc/config automatically.
 
 See also: harbor teardown (undo) · harbor doctor · harbor start | stop
 EOF
@@ -149,8 +150,10 @@ Usage: harbor teardown [--purge]
 Always removes: nginx LaunchDaemon, dnsmasq agent, /etc/resolver/test, all PHP
 pools, the shared stack, the sandbox container.
 
-Does NOT touch: your projects/ code, per-project stacks or volumes, backups/, or
-~/.config/harbor/config. Homebrew's own nginx/php/dnsmasq stay untouched.
+Does NOT touch: your projects/ code, per-project stacks or volumes, or backups/.
+Your global config (etc/config) survives a plain teardown; only `--purge`
+removes it (along with the rest of etc/). Homebrew's own nginx/php/dnsmasq stay
+untouched.
 
 Skip the prompt with HARBOR_YES=1 (there is no --yes flag).
 Sudo: removing the nginx LaunchDaemon and /etc/resolver/test.
@@ -285,7 +288,7 @@ when triggered. Where the trigger comes from is the one thing they differ on:
         `harbor run`/`php`/`magento`/`artisan` just debug. There's no browser
         extension out here, and remembering the prefix every time is the step
         everyone forgets. An explicit XDEBUG_TRIGGER in your env still wins;
-        XDEBUG_CLI_TRIGGER=0 in ~/.config/harbor/config restores the manual way.
+        XDEBUG_CLI_TRIGGER=0 in Harbor's etc/config restores the manual way.
   Web:  explicit — browser extension (Xdebug helper), or append ?XDEBUG_TRIGGER=1.
         Deliberately NOT automatic: it would open a session for every asset
         request and ajax poll on the page.
@@ -1091,7 +1094,7 @@ database but keeps the MySQL user. Skip a confirm with HARBOR_YES=1 (there is no
 
 Only the newest N pre-import backups are kept (older ones are pruned after each
 import/pull); N defaults to 3. Set it globally with `DB_BACKUP_KEEP=<n>` in
-~/.config/harbor/config, or per project (which wins) with `backups: { keep: <n> }`
+Harbor's etc/config, or per project (which wins) with `backups: { keep: <n> }`
 in the manifest. Set it to 0 to keep every backup. Manual `harbor db backup`
 dumps are never auto-pruned.
 
@@ -1189,7 +1192,7 @@ Usage: harbor db sandbox <sub> [args]        (never takes a project name)
 
 This is the "just give me a MySQL" server — deliberately on the standard :3306,
 so it can clash with a host MySQL. Override with SANDBOX_MYSQL_PORT in
-~/.config/harbor/config. It starts lazily on first use.
+Harbor's etc/config. It starts lazily on first use.
 
 `down` keeps your data; `destroy` deletes it. `restore` is a thin loader — no
 auto-backup, no hooks, no --replace (that's `harbor db import`). Skip a confirm

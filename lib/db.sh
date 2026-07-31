@@ -140,8 +140,8 @@ db_backup() {
 }
 
 # How many pre-import backups to retain. Precedence: per-project manifest
-# `backups.keep` (override) -> global config `DB_BACKUP_KEEP` in
-# ~/.config/harbor/config (Harbor's own sanctioned config file) -> default 3.
+# `backups.keep` (override) -> global config `DB_BACKUP_KEEP` in Harbor's own
+# etc/config (in-tree, gitignored) -> default 3.
 # A non-numeric value falls back to the default (never risk pruning on garbage);
 # 0 (or negative) means "keep all" — retention disabled.
 _db_backup_keep() {
@@ -421,11 +421,6 @@ db_import() {
   # ensure target db exists
   _db_mysql "$name" -e "CREATE DATABASE IF NOT EXISTS \`$db\` CHARACTER SET utf8mb4;"
 
-  # 0. auto-backup (+ retention prune, only on a successful backup)
-  if [ "$nobackup" = 0 ]; then
-    _db_autobackup "$name" "$db" "$HARBOR_BACKUPS/$name"
-  fi
-
   # 1+2. decompress AND strip DEFINER in one streaming pass — the old
   # copy-then-sed-in-place rewrote the whole (multi-GB) file twice.
   local work="$tmpd/dump.sql" t1=$SECONDS
@@ -441,6 +436,12 @@ db_import() {
   # refuse a truncated dump up front — loading one "succeeds" per-statement but
   # silently drops every table after the cut (a Magento dump cut in the s's has
   # no store/url_rewrite). --force keeps its best-effort meaning and loads anyway.
+  # This runs BEFORE the auto-backup on purpose: a truncated dump aborts with
+  # nothing loaded (so a pre-import backup would be pure waste), and taking one
+  # anyway would churn the retention window — pruning a valid older checkpoint
+  # out of the keep=N window for an import that never happened. Same fail-fast
+  # rationale as the rules/hooks validation above; the check only tails $work,
+  # which we had to decompress for the load regardless.
   if ! _dump_looks_complete "$work"; then
     if [ "$force" = 1 ]; then
       truncated=1
@@ -448,6 +449,13 @@ db_import() {
     else
       die "dump looks truncated — it ends mid-statement, so every table after the cut is missing (interrupted download/export?) → re-export or re-download it; --force loads the partial dump anyway"
     fi
+  fi
+
+  # 0. auto-backup (+ retention prune, only on a successful backup). After the
+  # truncation guard: we back up only once the dump we're about to load looks
+  # complete, so a rejected dump never touches the pre-import retention window.
+  if [ "$nobackup" = 0 ]; then
+    _db_autobackup "$name" "$db" "$HARBOR_BACKUPS/$name"
   fi
 
   # optional in-stream literal replace (fast; not serialized-safe).

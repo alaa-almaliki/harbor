@@ -12,7 +12,7 @@
 
 HARBOR_SANDBOX_COMPOSE="$HARBOR_DOCKER/sandbox.yml"
 
-# config knobs (overridable in ~/.config/harbor/config), sensible defaults:
+# config knobs (overridable in Harbor's etc/config), sensible defaults:
 _sandbox_port()  { config_get SANDBOX_MYSQL_PORT 3306; }
 _sandbox_image() { config_get SANDBOX_MYSQL_IMAGE "$(config_get MYSQL_IMAGE mysql:8.0)"; }
 _sandbox_root()  { config_get MYSQL_ROOT_PASSWORD root; }

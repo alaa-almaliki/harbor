@@ -43,8 +43,14 @@ HARBOR_CERT="$HARBOR_CERTS/_wildcard.${HARBOR_TLD}.pem"
 HARBOR_CERT_KEY="$HARBOR_CERTS/_wildcard.${HARBOR_TLD}-key.pem"
 HARBOR_CA_BUNDLE="$HARBOR_CERTS/harbor-ca-bundle.pem"
 
-# Global user config
-HARBOR_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/harbor/config"
+# Global user config. Lives inside Harbor's own tree (etc/ is gitignored,
+# machine-specific, and wiped by `teardown --purge`) — Harbor owns zero config
+# outside its repo. HARBOR_CONFIG_LEGACY is the pre-move location under
+# ~/.config; config_migrate (lib/setup.sh) relocates it in place on the next
+# setup/update, so an existing install keeps its settings and the host footprint
+# disappears.
+HARBOR_CONFIG="$HARBOR_ETC/config"
+HARBOR_CONFIG_LEGACY="${XDG_CONFIG_HOME:-$HOME/.config}/harbor/config"
 
 # Homebrew (binaries only — never its config dirs)
 BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
@@ -326,7 +332,7 @@ xdebug_dflags() {
 # everyone forgets. So the shim exports it while the toggle is on, and stops
 # exporting it the moment it's off.
 #
-# Escape hatches: XDEBUG_CLI_TRIGGER=0 in ~/.config/harbor/config restores the
+# Escape hatches: XDEBUG_CLI_TRIGGER=0 in Harbor's etc/config restores the
 # manual behavior globally, and an explicit XDEBUG_TRIGGER in the environment is
 # never overwritten (for setups that pin xdebug.trigger_value).
 xdebug_cli_trigger() {

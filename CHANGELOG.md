@@ -121,6 +121,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `harbor render <name> && harbor up <name>` to apply. No host-footprint change.
 
 ### Changed
+- **The global config moved into Harbor's own tree — `etc/config` instead of
+  `~/.config/harbor/config`.** _(host footprint: removes the last config file
+  Harbor kept outside its repo.)_ `etc/` is gitignored and machine-specific, so
+  your settings aren't committed; a plain `harbor teardown` preserves the file,
+  `teardown --purge` removes it with the rest of `etc/`. Existing installs are
+  migrated automatically: the pre-move `~/.config/harbor/config` is relocated
+  into `etc/config` (and its now-empty `~/.config/harbor` dir removed) on the
+  next `harbor setup` or `harbor update` (`config_migrate`), preserving your
+  values. No action needed. `$XDG_CONFIG_HOME` no longer affects the location.
 - **`harbor db import`/`db pull` now use Harbor's own `var/tmp/` for scratch**
   (dump decompression and the remote-pull download) instead of the OS `$TMPDIR`
   (`/var/folders/…` on macOS). A multi-GB decompress now stays inside Harbor's
@@ -138,6 +147,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ok`/`FAIL` lines.
 
 ### Fixed
+- **`harbor db import` no longer takes a pre-import backup for a dump it then
+  rejects as truncated.** The truncation guard now runs *before* the auto-backup,
+  not after — a truncated dump aborts with nothing loaded, so backing up first
+  was pure waste and, worse, its retention prune could age a valid older
+  `pre-import-*.sql.gz` out of the `keep=N` window (re-trying a flaky multi-GB
+  download a few times could evict every real checkpoint). Now Harbor validates
+  the dump is complete, then backs up, matching the fail-fast order already used
+  for import-rules and hooks. The guard still only reads the dump's tail.
 - **`harbor db pull` failed with `mktemp: mkstemp failed … File exists`.** Its
   temp-file template put the `XXXXXX` in the middle (`harbor-pull.XXXXXX.sql.gz`),
   but BSD `mktemp` on macOS only substitutes *trailing* X's — so the placeholder

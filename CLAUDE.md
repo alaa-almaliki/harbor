@@ -88,8 +88,14 @@ This is the project's defining constraint. Concretely:
   system cert stores beyond mkcert's own `-install` (user-run, not us).
 - **The ONLY files Harbor may place outside its repo:**
   `~/Library/LaunchAgents/com.harbor.*.plist`,
-  `/Library/LaunchDaemons/com.harbor.nginx.plist`, `/etc/resolver/test`,
-  and `~/.config/harbor/config`. Every one is removed/cleaned by `harbor teardown`.
+  `/Library/LaunchDaemons/com.harbor.nginx.plist`, and `/etc/resolver/test`.
+  Every one is removed/cleaned by `harbor teardown`. The global user config is
+  **not** in this list — it lives in-tree at `etc/config` (gitignored, wiped by
+  `teardown --purge` with the rest of `etc/`); Harbor owns **zero** config
+  outside its repo. A pre-move `~/.config/harbor/config` is relocated into
+  `etc/config` on the next `setup`/`update` (`config_migrate`, `lib/setup.sh`).
+  Never reintroduce an out-of-repo config file — resolve new global knobs
+  through `config_get` against `etc/config`.
 - **Before adding any file-writing path**, ask: does this write into a tool's
   config dir? If yes, redesign so Harbor owns the file and runs its own instance.
 
@@ -223,7 +229,7 @@ This is the project's defining constraint. Concretely:
   then prune to a retention window: only the newest N `pre-import-*.sql.gz` per
   project are kept (`_db_prune_backups`, `lib/db.sh`). N resolves manifest
   `backups.keep` (per-project override) → config `DB_BACKUP_KEEP`
-  (`~/.config/harbor/config` global default) → **3** (`_db_backup_keep`);
+  (`etc/config` global default) → **3** (`_db_backup_keep`);
   `0`/negative disables pruning. **Prune only auto-taken `pre-import-*` dumps —
   never manual `db backup` files** (`<db>-<ts>.sql.gz`); those are user-owned. A
   non-numeric value falls back to the default rather than risk deleting on garbage.

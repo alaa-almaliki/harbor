@@ -41,7 +41,7 @@ dnsmasq; mkcert (CA installed); Docker 29.4 + compose v2; Composer 2.9; node via
 | **Config injection** | Source of truth in `.harbor/`; surgical per-key upsert into the app's real config; never clobbers (see below). |
 | **Ownership / no pollution** | All nginx/php-fpm/dnsmasq config is authored from templates and **owned in Harbor's `etc/`**. Brew's nginx/php/dnsmasq config dirs are **never written to**. Harbor runs its **own** nginx (root LaunchDaemon, `:80/:443`), php-fpm pools and dnsmasq (`:5354`, user LaunchAgents). Fully reversible via `harbor teardown`. |
 | **Project manifest** | Each project's topology lives in one declarative, committable `.harbor/harbor.yml` (framework, php, node, services, multistore, db, hooks). Everything else (compose, vhost, connection env) is **generated** from it. |
-| **Global config** | User-overridable defaults in `~/.config/harbor/config` (default php, locale/tz/currency, admin creds, MySQL root pw, OpenSearch heap, etc.) replace hardcoded values; per-project manifest overrides global. |
+| **Global config** | User-overridable defaults in `etc/config` (default php, locale/tz/currency, admin creds, MySQL root pw, OpenSearch heap, etc.) replace hardcoded values; per-project manifest overrides global. |
 | **RAM tuning** | Footprint is the point: OpenSearch heap capped (`-Xms512m -Xmx512m`, security/ML off), MySQL lean (modest `innodb_buffer_pool_size`, `performance_schema=off`). |
 | **Invariant: code on host** | Project source is **never** mounted into a container — PHP reads it natively (fast FS, native Xdebug). Service containers may only mount their own data volumes. |
 
@@ -90,10 +90,13 @@ reloads.
 Two layers of declarative config; both are plain text, both override hardcoded
 defaults (manifest wins over global wins over built-in).
 
-**Global** — `~/.config/harbor/config` (KEY=VALUE), the one place to change
+**Global** — `etc/config` (KEY=VALUE), the one place to change
 defaults: `DEFAULT_PHP`, `LOCALE`/`CURRENCY`/`TIMEZONE`, `ADMIN_USER`/
 `ADMIN_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `OPENSEARCH_HEAP`, `MYSQL_IMAGE`, etc.
-Created with sane values on first `harbor setup`.
+Created with sane values on first `harbor setup`. It lives inside Harbor's own
+tree (gitignored), so Harbor keeps no config outside its repo; a pre-move
+`~/.config/harbor/config` is relocated into `etc/config` on the next
+`setup`/`update` (`config_migrate`).
 
 Rendered compose pins each service's `platform:` to the host architecture, so a
 cached foreign-arch image is never silently reused (an emulated amd64 database on
@@ -181,7 +184,7 @@ harbor/
              docker-compose.yml,install.sh}
     .harbor/bin/<tool>           # GITIGNORED generated tool shims (wkhtmltopdf, …)
   backups/db/<name>/             # timestamped dumps
-  ~/.config/harbor/config        # GLOBAL user defaults (KEY=VALUE)
+  etc/config        # GLOBAL user defaults (KEY=VALUE)
   var/
     run/php-<ver>.{sock,pid}     # per-version FPM runtime sockets/pids
     run/dnsmasq.pid
@@ -645,7 +648,7 @@ standalone; `new` just chains them. `harbor destroy` is the inverse.
   bad dump or hook is always recoverable. Only the newest N (default **3**) are
   retained — older pre-import snapshots are pruned after each import so repeated
   pulls don't accumulate unbounded. N is `DB_BACKUP_KEEP` in
-  `~/.config/harbor/config` (global default) or per-project `backups: { keep: N }`
+  `etc/config` (global default) or per-project `backups: { keep: N }`
   (manifest wins); `0` keeps all. Manual `db backup` dumps are never pruned.
 - **Restore from a checkpoint**: `db restore [--checkpoint N]` rolls back to one
   of those pre-import snapshots (numbered newest-first, `#1` = last import). It

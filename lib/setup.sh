@@ -2,7 +2,21 @@
 # setup.sh — one-time host prep + teardown. Idempotent. Harbor-owned; brew config
 # is never touched. Sudo only for the nginx LaunchDaemon and /etc/resolver/test.
 
+# Relocate a pre-move global config (~/.config/harbor/config) into Harbor's own
+# tree (etc/config), once, preserving the user's settings and removing the last
+# config file Harbor kept outside its repo. Idempotent: a no-op once the new file
+# exists or the legacy one is already gone. Safe to call before any config read.
+config_migrate() {
+  [ -f "$HARBOR_CONFIG" ] && return 0            # already migrated / freshly seeded
+  [ -f "$HARBOR_CONFIG_LEGACY" ] || return 0     # nothing to migrate
+  mkdir -p "$(dirname "$HARBOR_CONFIG")"
+  mv "$HARBOR_CONFIG_LEGACY" "$HARBOR_CONFIG"
+  rmdir "$(dirname "$HARBOR_CONFIG_LEGACY")" 2>/dev/null || true   # ~/.config/harbor if now empty
+  step "migrated global config -> $HARBOR_CONFIG (was $HARBOR_CONFIG_LEGACY)"
+}
+
 config_init() {
+  config_migrate
   [ -f "$HARBOR_CONFIG" ] && return 0
   mkdir -p "$(dirname "$HARBOR_CONFIG")"
   cat > "$HARBOR_CONFIG" <<EOF
@@ -97,7 +111,11 @@ cmd_teardown() {
   rm -rf "$HARBOR_TMP" 2>/dev/null || true
   if [ "$purge" = "1" ]; then
     HARBOR_YES=1 sandbox_destroy >/dev/null 2>&1 || true
-    rm -rf "$HARBOR_ETC"
+    rm -rf "$HARBOR_ETC"                       # includes etc/config (global config)
+    # also clear a pre-move legacy config never picked up by config_migrate — a
+    # --purge is a full host-footprint restore, so no out-of-repo file survives.
+    rm -f "$HARBOR_CONFIG_LEGACY" 2>/dev/null || true
+    rmdir "$(dirname "$HARBOR_CONFIG_LEGACY")" 2>/dev/null || true
     tls_teardown
     rm -f "$HARBOR_RUN"/*.sock "$HARBOR_RUN"/*.pid
     warn "purged rendered config + certs"

@@ -158,7 +158,7 @@ harbor xdebug on                      # once; layers debug mode onto the pools
   harbor php index.php cron/queue process
   ```
   (An explicit `XDEBUG_TRIGGER` still wins; `XDEBUG_CLI_TRIGGER=0` in
-  `~/.config/harbor/config` restores prefix-it-yourself.)
+  `etc/config` restores prefix-it-yourself.)
 - **Web:** still send the trigger from the browser (Xdebug helper extension, or
   `?XDEBUG_TRIGGER=1`) — deliberately manual, so a page load doesn't open a
   session for every asset and ajax poll.

@@ -86,7 +86,7 @@ spell the project out when a database, store code or tool shares its name.
 | `harbor db sandbox status` | Running state + database list. |
 
 Same credential convention as projects (user/pass default to the db name). Port
-and image are overridable in `~/.config/harbor/config` (`SANDBOX_MYSQL_PORT`,
+and image are overridable in `etc/config` (`SANDBOX_MYSQL_PORT`,
 `SANDBOX_MYSQL_IMAGE`; a `mariadb:*` image runs MariaDB). Because it binds the
 standard `:3306`, stop any other local MySQL first.
 
@@ -96,7 +96,7 @@ standard `:3306`, stop any other local MySQL first.
 | `harbor php [<ver>]` | Show pool status / set the default version for new sites. |
 | `harbor php <script\|flag> …` | Anything that isn't a bare `X.Y`, `sync` or `use` goes to PHP itself, under **this project's** PHP (not the terminal's): `harbor php -v` (which version am I on?), `harbor php -m` (its extensions), `harbor php index.php cron/queue process` (run a script). Runs in your cwd, not the project root. |
 | `harbor php use <ver>` | Switch the brew-linked CLI `php` (terminal/IDE/global composer). Independent of per-project pinning. |
-| `harbor xdebug on\|off\|status` | Toggle Xdebug across pools **and** the project CLI (port 9003). While on, the CLI shim exports `XDEBUG_TRIGGER=1` for you — no prefix needed on `harbor run`/`php`/`magento`. The browser still sends its own trigger. `XDEBUG_CLI_TRIGGER=0` in `~/.config/harbor/config` opts out. |
+| `harbor xdebug on\|off\|status` | Toggle Xdebug across pools **and** the project CLI (port 9003). While on, the CLI shim exports `XDEBUG_TRIGGER=1` for you — no prefix needed on `harbor run`/`php`/`magento`. The browser still sends its own trigger. `XDEBUG_CLI_TRIGGER=0` in `etc/config` opts out. |
 
 ### Logs & health
 | Command | What it does |
@@ -171,7 +171,7 @@ pulls a native image instead of reusing a cached foreign-arch one (an emulated
 amd64 database is correct but much slower). If a pinned image has no build for
 your architecture the pull fails — set `<SVC>_PLATFORM` (e.g.
 `MYSQL_PLATFORM=linux/amd64`, or `none` to drop the pin and let Docker emulate)
-or the stack-wide `DOCKER_PLATFORM` in `~/.config/harbor/config`, then
+or the stack-wide `DOCKER_PLATFORM` in `etc/config`, then
 `harbor render <name>`.
 
 **`services: {}` means no containers — no database at all.** (A bare
@@ -228,7 +228,7 @@ through the image's own entrypoint (needed for s6-overlay/init images like
 
 A backup is taken before every import (`--no-backup` to skip). Only the newest 3
 pre-import backups per project are kept (older ones pruned after each import/pull);
-change with `DB_BACKUP_KEEP=<n>` in `~/.config/harbor/config` or `backups: { keep:
+change with `DB_BACKUP_KEEP=<n>` in `etc/config` or `backups: { keep:
 <n> }` in the manifest (manifest wins), `0` to keep all. Manual `db backup` dumps
 aren't pruned. `.harbor/import-rules` example:
 ```

@@ -69,6 +69,11 @@ cmd_update() {
     || die "no '$remote_ref' on origin (is main the release branch?)"
   remote_head="$(_git rev-parse "$remote_ref")"
 
+  # Relocate a pre-move global config (~/.config/harbor/config) into Harbor's
+  # own tree — one-time, idempotent, so an existing install picks it up on
+  # update without a full re-setup. Not on --check (that path stays read-only).
+  if [ "$check" = 0 ]; then config_migrate; fi
+
   # --- already current ---------------------------------------------------------
   if [ "$before" = "$remote_head" ]; then
     ok "already up to date ($HARBOR_VERSION, $(_git rev-parse --short HEAD))"

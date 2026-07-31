@@ -422,7 +422,7 @@ harbor db sandbox status
 Same credential convention as projects (user/pass default to the database name).
 It's a Harbor-owned singleton: loopback-only, lazily started, and fully
 reversible — `harbor teardown` stops it, `harbor teardown --purge` drops its data
-volume. The port and image are overridable in `~/.config/harbor/config`
+volume. The port and image are overridable in `etc/config`
 (`SANDBOX_MYSQL_PORT`, `SANDBOX_MYSQL_IMAGE`); set a `mariadb:*` image to run
 MariaDB instead. Because it binds the standard `:3306`, stop any other local MySQL
 first (or change the port).
@@ -488,7 +488,7 @@ silently skipped (forgotten `chmod +x`, a `*.sql` in `pre-import.d/`) warns:
 A backup is taken before every import (`--no-backup` to skip). Only the newest
 **3** pre-import backups per project are kept — older ones are pruned after each
 import/pull, so `db import`/`db pull` can't slowly fill the disk. Change the
-count globally with `DB_BACKUP_KEEP=<n>` in `~/.config/harbor/config`, or per
+count globally with `DB_BACKUP_KEEP=<n>` in `etc/config`, or per
 project (overriding the global) with `backups: { keep: <n> }` in the manifest;
 `0` keeps every backup. Manual `harbor db backup` dumps are never auto-pruned.
 Global hooks in `etc/hooks/` apply to every project (e.g. an org-wide credential
@@ -521,14 +521,18 @@ re:UA-\d+-\d+       =>
 
 ## Configuration
 
-- **Global defaults** live in `~/.config/harbor/config` — a plain `KEY=VALUE`
-  file Harbor owns, seeded by `harbor setup` (create-if-absent, so your edits are
-  never overwritten). It's the machine-wide default for anything not pinned per
-  project. Edit it in place; new values take effect on the next command. Common
-  keys:
+- **Global defaults** live in `etc/config` — a plain `KEY=VALUE` file inside
+  Harbor's own tree (gitignored, machine-specific), seeded by `harbor setup`
+  (create-if-absent, so your edits are never overwritten). Keeping it in-tree
+  means Harbor owns no config outside its repo; a `teardown --purge` removes it
+  with the rest of `etc/`, a plain `teardown` leaves it. (Earlier versions kept
+  it at `~/.config/harbor/config`; that file is relocated into `etc/config`
+  automatically on your next `harbor setup` or `harbor update`.) It's the
+  machine-wide default for anything not pinned per project. Edit it in place;
+  new values take effect on the next command. Common keys:
 
   ```sh
-  # ~/.config/harbor/config
+  # etc/config
   DEFAULT_PHP=8.4              # PHP version for new projects
   PHP_MEMORY_LIMIT=2G          # default php.ini memory_limit
   LOCALE=en_US                 # locale / currency / timezone for scaffolds
@@ -619,7 +623,7 @@ harbor up <name>                  # apply
 `harbor services list <name>` shows what's currently on/off, and bare
 `harbor services <name>` opens the same interactive picker as `init`, with the
 project's current services preselected.
-A machine-wide default for a fresh project's pin comes from `~/.config/harbor/config`
+A machine-wide default for a fresh project's pin comes from `etc/config`
 (`OPENSEARCH_IMAGE`, `ELASTICSEARCH_IMAGE`, `RABBITMQ_IMAGE`, `MEILISEARCH_IMAGE`,
 `MYSQL_IMAGE` — uppercased service name + `_IMAGE`).
 
@@ -627,7 +631,7 @@ A machine-wide default for a fresh project's pin comes from `~/.config/harbor/co
 architecture, so Docker pulls a native image rather than silently reusing a
 cached foreign-arch one — an amd64 database on Apple Silicon runs under
 emulation, which works but is markedly slower, and the only hint is a one-line
-warning at `up`. Override it in `~/.config/harbor/config` when an image has no
+warning at `up`. Override it in `etc/config` when an image has no
 build for your architecture (`mysql:5.7` and many legacy tags are amd64-only):
 
 ```bash
@@ -734,7 +738,7 @@ harbor xdebug off                 # CLI runs stop carrying the trigger, immediat
 debuggable. Out here there's no browser extension to flip, so "Xdebug on" can only
 mean "debug my commands" — and remembering the prefix every single time is the
 step everyone forgets. An explicit `XDEBUG_TRIGGER` in your environment still
-wins, and `XDEBUG_CLI_TRIGGER=0` in `~/.config/harbor/config` restores the
+wins, and `XDEBUG_CLI_TRIGGER=0` in `etc/config` restores the
 prefix-it-yourself behavior.
 
 **Web: explicit.** Use a trigger extension (Xdebug helper) or append
