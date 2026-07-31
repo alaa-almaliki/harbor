@@ -5,9 +5,13 @@
 </p>
 
 [![downloads](https://img.shields.io/endpoint?url=https://alaa-almaliki.github.io/traffic-stats/harbor.json&label=downloads)](https://github.com/alaa-almaliki/harbor)
-[![tests](https://github.com/alaa-almaliki/harbor/actions/workflows/tests.yml/badge.svg)](https://github.com/alaa-almaliki/harbor/actions/workflows/tests.yml)
-[![status](https://img.shields.io/badge/status-unstable-orange)](https://github.com/alaa-almaliki/harbor)
+[![tests](https://github.com/alaa-almaliki/harbor/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/alaa-almaliki/harbor/actions/workflows/tests.yml)
+[![last commit](https://img.shields.io/github/last-commit/alaa-almaliki/harbor?branch=main)](https://github.com/alaa-almaliki/harbor/commits/main)
 [![version](https://img.shields.io/badge/version-0.1.0--dev-blue)](https://github.com/alaa-almaliki/harbor)
+[![status](https://img.shields.io/badge/status-unstable-orange)](https://github.com/alaa-almaliki/harbor)
+[![platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/alaa-almaliki/harbor)
+[![shell](https://img.shields.io/badge/shell-bash-4EAA25)](https://github.com/alaa-almaliki/harbor)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **A hybrid local development platform for PHP — macOS only.**
 
