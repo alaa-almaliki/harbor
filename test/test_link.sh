@@ -22,13 +22,19 @@ printf 'name: demo\n# php_ini: { memory_limit: 2G }\n' > "$mf_none"
 value_block_errexit() { ( set -e; link_php_value_block "$1" >/dev/null; echo SURVIVED ) 2>/dev/null; }
 
 # --- a manifest WITH php_ini emits the fastcgi_param line --------------------
+# PHP_ADMIN_VALUE (not plain PHP_VALUE): admin values can't be overridden by a
+# docroot .user.ini or ini_set(), so the manifest wins on the web surface. A
+# plain PHP_VALUE let Magento's shipped `.user.ini memory_limit=756M` silently
+# defeat a higher manifest limit (see link_php_value_block).
 assert_ok "with php_ini: returns 0" link_php_value_block "$mf_with"
-assert_contains "with php_ini: emits fastcgi_param" \
-  'fastcgi_param PHP_VALUE' "$(link_php_value_block "$mf_with")"
+assert_contains "with php_ini: emits admin fastcgi_param" \
+  'fastcgi_param PHP_ADMIN_VALUE' "$(link_php_value_block "$mf_with")"
+assert_contains "with php_ini: not overridable plain PHP_VALUE" \
+  'PHP_ADMIN_VALUE' "$(link_php_value_block "$mf_with")"
 assert_contains "with php_ini: carries the key=value" \
   'memory_limit=2G' "$(link_php_value_block "$mf_with")"
 
-# multiple keys are newline-joined inside one PHP_VALUE
+# multiple keys are newline-joined inside one PHP_ADMIN_VALUE
 assert_contains "multi php_ini: first key present"  'memory_limit=4G' \
   "$(link_php_value_block "$mf_multi")"
 assert_contains "multi php_ini: second key present" 'max_execution_time=600' \

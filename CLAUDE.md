@@ -57,12 +57,20 @@ This is the project's defining constraint. Concretely:
 - **php-fpm** — render `etc/php/<ver>/fpm.conf`; launch with `--fpm-config`. Do
   **not** edit brew's `php-fpm.d/` or pool defaults.
 - **php / xdebug** — configure via `-d` flags at launch (and per-site
-  `fastcgi_param PHP_VALUE`). Do **not** write into `…/etc/php/*/conf.d/`. Manifest
+  `fastcgi_param PHP_ADMIN_VALUE`). Do **not** write into `…/etc/php/*/conf.d/`. Manifest
   `php_ini:` is applied to **both** surfaces from the same source: FPM via
-  `link_php_value_block` (`PHP_VALUE`) and the project CLI via `cli_php_pathdir`
+  `link_php_value_block` (`PHP_ADMIN_VALUE`) and the project CLI via `cli_php_pathdir`
   (`-d` flags in the per-project php shim). Keep the two in sync — a php_ini change
   that only reaches one surface (e.g. `memory_limit` on web but not
-  `harbor magento`) is a bug. **Xdebug obeys the same both-surfaces rule, via one
+  `harbor magento`) is a bug. **The web block MUST be `PHP_ADMIN_VALUE`, not plain
+  `PHP_VALUE`** — a plain `PHP_VALUE` is overridable by a docroot `.user.ini`
+  (and `ini_set()`), and Magento *ships* one (`.user.ini`/`pub/.user.ini` set
+  `memory_limit = 756M`), so a plain value let the app silently cap the
+  manifest's `memory_limit` to 756M on web while the CLI (which never reads
+  `.user.ini`) got the manifest value — an OOM at exactly 756M despite a 4G
+  manifest. `PHP_ADMIN_VALUE` can't be overridden, keeping the manifest
+  authoritative and the both-surfaces rule real. The CLI's `-d` flags are
+  already unoverridable (CLI ignores `.user.ini`), so the symmetry holds. **Xdebug obeys the same both-surfaces rule, via one
   helper:** `xdebug_dflags <ver>` (`lib/common.sh`) is the *only* place the flags
   are built, and both `lib/fpm-exec.sh` and `cli_php_pathdir` call it — never
   hand-roll the flag string in either (that's exactly how the CLI silently lost

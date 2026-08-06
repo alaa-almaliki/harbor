@@ -147,6 +147,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ok`/`FAIL` lines.
 
 ### Fixed
+- **A manifest `php_ini` value no longer gets silently overridden on the web by
+  an app's `.user.ini`.** Harbor now renders manifest `php_ini` as
+  `fastcgi_param PHP_ADMIN_VALUE` instead of plain `PHP_VALUE`. A plain
+  `PHP_VALUE` is overridable by a docroot `.user.ini` — and Magento **ships**
+  one (`.user.ini`/`pub/.user.ini` set `memory_limit = 756M`) — so a manifest
+  `php_ini: { memory_limit: 4G }` reached only the CLI (which never reads
+  `.user.ini`) while web requests were silently capped at 756M and OOM'd there.
+  `PHP_ADMIN_VALUE` can't be overridden by `.user.ini` or `ini_set()`, so the
+  manifest is now authoritative on both surfaces. **Re-render affected projects
+  (`harbor link <name>` or `harbor render <name>`) to apply.** Only keys you set
+  in `php_ini` are affected; Xdebug is unaffected (it rides the FPM pool).
 - **`harbor db import` no longer takes a pre-import backup for a dump it then
   rejects as truncated.** The truncation guard now runs *before* the auto-backup,
   not after — a truncated dump aborts with nothing loaded, so backing up first

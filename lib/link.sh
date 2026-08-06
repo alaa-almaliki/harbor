@@ -79,7 +79,16 @@ link_server_names() {
   echo "$out"
 }
 
-# fastcgi_param PHP_VALUE block from manifest php_ini (handles dotted keys)
+# fastcgi_param PHP_ADMIN_VALUE block from manifest php_ini (handles dotted keys).
+# ADMIN, not plain PHP_VALUE, on purpose: a plain PHP_VALUE is overridable by a
+# docroot `.user.ini` (and by `ini_set()`), and Magento SHIPS one — `.user.ini`
+# and `pub/.user.ini` set `memory_limit = 756M`. With plain PHP_VALUE the app's
+# .user.ini silently wins, so a manifest `php_ini: { memory_limit: 4G }` never
+# reaches the web SAPI (only the CLI, which doesn't read .user.ini, honored it)
+# and requests OOM at 756M. PHP_ADMIN_VALUE can't be overridden, so the manifest
+# is authoritative on the web surface — matching "manifest is the source of
+# truth" and the both-surfaces php_ini rule (CLAUDE.md §2). Only keys the user
+# put in `php_ini` are affected; xdebug rides the pool, not this block.
 link_php_value_block() {
   local mf="$1" pair out=""
   [ -f "$mf" ] || return 0
@@ -93,7 +102,7 @@ EOF
   # NOT `[ -n "$out" ] && printf …` — a project with no php_ini keys would make
   # this function return nonzero; harmless at today's call site (a prefix
   # assignment swallows it) but a trap for the next plain caller. CLAUDE.md §3.
-  if [ -n "$out" ]; then printf '        fastcgi_param PHP_VALUE "%s";' "$out"; fi
+  if [ -n "$out" ]; then printf '        fastcgi_param PHP_ADMIN_VALUE "%s";' "$out"; fi
 }
 
 # Normalise a `multistore.stores` path value to a bare segment. The manifest may
