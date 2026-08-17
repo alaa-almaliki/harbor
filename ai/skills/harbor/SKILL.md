@@ -178,7 +178,8 @@ are overwritten. Connection details (host/port/creds) are in
 
 ```yaml
 framework: laravel          # plain | laravel | symfony | codeigniter | magento
-php: "8.3"                  # pinned version  (also mirror to .php-version)
+php: "8.3"                  # pinned version — change it with `harbor php switch <ver>`,
+                            #   not by hand (see the table below)
 node: "20"                  # optional -> .nvmrc
 docroot: public             # override auto-detected web root (Laravel: public, Magento: pub)
 domains: [extra.test]       # extra hostnames beyond <name>.test
@@ -193,7 +194,7 @@ After editing the manifest (all of these need an explicit `<name>`):
 | You changed… | Run |
 |---|---|
 | `services:` (add/version/remove a DB/search/queue) | `harbor services add\|rm <name> <svc>...` (or hand-edit + `harbor render <name>`), then `harbor up <name>` — **confirms** before dropping a service whose data volume still exists (data is kept either way; `HARBOR_YES=1` skips) |
-| `php:` (and `.php-version`) | `harbor link <name>` (re-points the vhost to the new pool) |
+| `php:` (and `.php-version`) | Don't hand-edit — run **`harbor php switch <name> <ver>`**, which writes both and re-points the vhost in one step. Editing only `.php-version` does nothing: the manifest outranks it. |
 | `docroot:` / `domains:` | `harbor link <name>` |
 | `extensions:` | `harbor doctor <name>` (validates; install missing PHP ext via `pecl`) |
 

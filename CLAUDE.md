@@ -380,7 +380,26 @@ and **[SemVer](https://semver.org)**.
   `link` — a bare `*.test` is NOT trusted (Secure Transport/browsers reject
   wildcards under the reserved `.test` TLD).
 - **PHP:** concurrent ondemand pools, one socket per version; site pins via
-  `.php-version`; xdebug global toggle, trigger-based, port 9003.
+  manifest `php:` → `.php-version` → global default (`link_php_source` is the
+  ONE place that precedence lives); xdebug global toggle, trigger-based, port
+  9003. **There are exactly three version knobs, and they must stay three** —
+  `harbor php <ver>` (default for NEW sites), `harbor php switch [<name>] <ver>`
+  (one project), `harbor php use <ver>` (the brew-linked shell `php`, which
+  Harbor itself never reads). They are trivially confusable, so a new knob needs
+  a genuinely new scope, not a new spelling of one of these; `php_switch` is where
+  per-project switching belongs. A **downgrade confirms, an upgrade doesn't**,
+  and the prompt is asked *before* any work so declining costs nothing; word it
+  for what actually happens (the switch is reversible and touches no data — it's
+  code built for the newer PHP that won't come back), never alarmingly.
+  `switch` **converges the whole environment** —
+  pool, manifest, `.php-version`, vhost — because a manifest value the vhost never
+  got is the exact half-applied state the command exists to prevent; it stops at
+  the environment and never touches `vendor/`/`composer.lock`, which are the
+  app's. It writes `.php-version` only when the project already has one (Harbor
+  doesn't invent files, but a stale one beside a changed manifest is a trap,
+  since the manifest silently outranks it). Its manifest write is armed with an
+  EXIT trap **before** the write — the `cmd_services` pattern — because `die`s in
+  `cmd_link`'s graph call `exit` and would sail past an explicit revert branch.
 - **Magento multi-store:** one mode per project. **Domain** → `map $http_host`.
   **Path** → three pieces that only work *together*, all in `lib/link.sh`; adding
   one without the others silently 404s every prefixed URL:

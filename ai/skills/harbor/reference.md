@@ -95,7 +95,8 @@ standard `:3306`, stop any other local MySQL first.
 |---|---|
 | `harbor php [<ver>]` | Show pool status / set the default version for new sites. |
 | `harbor php <script\|flag> …` | Anything that isn't a bare `X.Y`, `sync` or `use` goes to PHP itself, under **this project's** PHP (not the terminal's): `harbor php -v` (which version am I on?), `harbor php -m` (its extensions), `harbor php index.php cron/queue process` (run a script). Runs in your cwd, not the project root. |
-| `harbor php use <ver>` | Switch the brew-linked CLI `php` (terminal/IDE/global composer). Independent of per-project pinning. |
+| `harbor php switch [<name>] <ver>` | Move **this project** to `<ver>`, end to end: creates the FPM pool if needed, writes the manifest `php:` key, updates `.php-version` if the project keeps one, re-links the vhost, and re-reads the project's PHP to confirm. Upgrade and downgrade are the same command; re-run with the old version to go back. A downgrade **confirms** first (`HARBOR_YES=1` skips it — needed if you're running non-interactively); an upgrade doesn't. Stops with the `brew install` line if `<ver>` isn't installed. Never touches `vendor/`/`composer.lock` — re-run `harbor composer install` yourself if the move crosses a platform requirement. |
+| `harbor php use <ver>` | Switch the brew-linked CLI `php` (terminal/IDE/global composer). Independent of per-project pinning — this is **not** how you change the project's version (that's `harbor php switch`). |
 | `harbor xdebug on\|off\|status` | Toggle Xdebug across pools **and** the project CLI (port 9003). While on, the CLI shim exports `XDEBUG_TRIGGER=1` for you — no prefix needed on `harbor run`/`php`/`magento`. The browser still sends its own trigger. `XDEBUG_CLI_TRIGGER=0` in `etc/config` opts out. |
 
 ### Logs & health
@@ -141,7 +142,7 @@ The single source of truth. Edit it, then run the matching regenerate command
 
 ```yaml
 framework: magento          # plain | laravel | symfony | codeigniter | magento
-php: "8.3"                  # pinned PHP (mirror to .php-version)
+php: "8.3"                  # pinned PHP — change via `harbor php switch <ver>`, not by hand
 node: "20"                  # optional -> .nvmrc
 docroot: pub                # web root override (Laravel/Symfony: public, Magento: pub)
 domains: [shop.test]        # extra hostnames beyond <name>.test

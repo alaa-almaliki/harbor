@@ -45,7 +45,7 @@ Works with **plain PHP, Magento, Laravel, Symfony, and CodeIgniter** side by sid
 - [Quick start](#quick-start)
 
 **Guides**
-- [How-to (recipes)](#how-to-recipes) — new project, migrate an app, EOL PHP, Xdebug, MySQL 8 auth, switch stacks
+- [How-to (recipes)](#how-to-recipes) — new project, migrate an app, EOL PHP, Xdebug, MySQL 8 auth, [upgrade/downgrade PHP](#f-upgrade-or-downgrade-a-projects-php), switch stacks
 - [Core concepts](#core-concepts) — domains & TLS, PHP versions, the manifest, ports, databases, the sandbox
 - [Running projects side by side](#running-projects-side-by-side)
 - [Database & import workflow](#database--import-workflow)
@@ -275,10 +275,9 @@ own log if a page errors.
 Not in homebrew-core — install from the shivammathur tap, then let Harbor pick it up:
 ```bash
 brew install shivammathur/php/php@7.2
-harbor php sync              # creates the 7.2 ondemand pool
+harbor php switch legacy 7.2    # creates the pool, switches, re-points the vhost
 ```
-Then pin it per project (`.php-version` and/or manifest `php: "7.2"`, then
-`harbor link <name>` to re-point the vhost).
+`switch` creates the pool itself, so no separate `harbor php sync` is needed.
 
 ### D. Xdebug on an EOL PHP
 Old Xdebug won't compile with current clang, so use a prebuilt binary — **not** pecl:
@@ -296,12 +295,47 @@ project created before that, flip the existing user once:
 harbor mysql myapp -e "ALTER USER 'myapp'@'%' IDENTIFIED WITH mysql_native_password BY 'myapp'; FLUSH PRIVILEGES;"
 ```
 
-### F. Change a project's PHP version
-Edit `projects/<name>/.harbor/harbor.yml` `php:` (and `.php-version`), then:
+### F. Upgrade or downgrade a project's PHP
+One command, either direction — it works out which way you're going and says so:
+
 ```bash
-harbor link <name>          # re-points the vhost fastcgi to the new pool's socket
+harbor php switch shop 8.4     # upgrade
+harbor php switch legacy 8.1   # downgrade — confirms first
+harbor php switch 8.3          # no name needed inside projects/<name>
 ```
-No `up`/re-import needed — PHP is host-side, the DB is untouched.
+
+**Upgrading** (say 8.2 → 8.4):
+```bash
+brew install php@8.4                # only if you don't have it yet
+harbor php switch shop 8.4          # pool + manifest + .php-version + vhost
+harbor composer install             # rebuild vendor/ for the new platform
+harbor run php -v                   # confirm; or: harbor describe shop
+```
+`switch` creates the FPM pool for 8.4 if this is its first project, so there's no
+separate `harbor php sync`. It stops with the exact `brew install` line if the
+version isn't installed — Harbor never installs PHP for you.
+
+**Downgrading** (8.4 → 8.1) is the same command, with a confirm before it does
+anything:
+```
+warn shop: php 8.4 -> 8.1 is a DOWNGRADE
+  - reversible (harbor php switch shop 8.4), but vendor/ and any code needing php 8.4 stay as they are
+Move 'shop' back to php 8.1? [y/N]
+```
+Answer `n` and nothing has been touched. The prompt exists because the *switch*
+is trivially reversible but your `vendor/` isn't — packages resolved against 8.4
+may not run on 8.1, so follow a downgrade with `harbor composer update` (or
+restore an old `composer.lock`). `HARBOR_YES=1 harbor php switch …` skips the
+prompt for scripts; there is no `--yes` flag. An upgrade never prompts.
+
+**Rolling back** is just the same command with the old version. No `harbor up`,
+no re-import: PHP runs host-side, so containers and the database are untouched
+either way. If anything fails mid-switch, Harbor puts the manifest and
+`.php-version` back and tells you which version you're left on.
+
+What it does **not** do: touch `vendor/`, `composer.lock`, or any app code —
+that's yours to decide, which is why the two `composer` lines above are separate
+steps. See `harbor php switch --help` for the full contract.
 
 ### G. Switch between Harbor and another local Docker stack
 ```bash
@@ -335,9 +369,34 @@ verification** — see [Running projects side by side](#running-projects-side-by
 
 All installed PHP versions run **concurrently** as on-demand FPM pools, so a
 Magento site on 8.3 and a Laravel site on 8.4 can run at the same time. A site
-picks its version with a `.php-version` file (or `harbor link --php 8.3`); nginx
-routes the site to the matching pool. `harbor php` shows pool status and sets the
-default version for new sites.
+picks its version from the manifest `php:` key, a `.php-version` file, or the
+global default — in that order. nginx routes the site to the matching pool.
+
+To move a project to another version, use `harbor php switch` — one command that
+does everything the switch needs, in either direction:
+
+```bash
+harbor php switch shop 8.3     # from anywhere
+harbor php switch 8.1          # inside projects/shop
+harbor php switch legacy 7.4   # downgrade — same command, confirms first
+```
+
+It creates the pool if that version doesn't have one yet, writes the manifest
+`php:` key, updates `.php-version` if the project keeps one, re-links the vhost to the
+new pool's socket, and re-reads the project's PHP to prove the switch took. It
+stops at the environment: `vendor/` and `composer.lock` are yours, so re-run
+`harbor composer install` yourself if the move crosses a platform requirement —
+which is why a **downgrade confirms** before it does anything, while an upgrade
+just runs. `HARBOR_YES=1` skips the prompt (there is no `--yes` flag).
+Step-by-step for both directions: [recipe F](#f-upgrade-or-downgrade-a-projects-php).
+
+Three commands, three scopes — easy to reach for the wrong one:
+
+| Command | Changes |
+|---|---|
+| `harbor php <ver>` | the default for **new** sites; no existing project moves |
+| `harbor php switch [<name>] <ver>` | **one project** — web and `harbor run`/`composer` |
+| `harbor php use <ver>` | **your shell's** `php` (brew's link); Harbor ignores it |
 
 > **PHP is the only multi-version layer.** nginx is not: Harbor runs exactly one
 > nginx (the brew-installed one, on `:80/:443`) that serves every site, and there
@@ -830,6 +889,7 @@ above.
 | `harbor php [<ver>]` | Show pool status / set the default version for new sites. |
 | `harbor php <script\|flag>...` | Anything that isn't a bare `X.Y` version, `sync` or `use` goes to PHP itself, run as **this project's** PHP (cwd project, else the global default) through the same shim `harbor run` uses — so `harbor php -v`, `harbor php -m` and `harbor php index.php cron/queue process` all work, xdebug toggle and manifest `php_ini` included. Runs in your cwd, not the project root (`harbor run php …` for that). `--help` stays Harbor's; php's own long help is `harbor php -help`. |
 | `harbor php sync` | Re-create pools after `brew install`/uninstall of a `php@x`. |
+| `harbor php switch [<name>] <ver>` | Move **one project** to `<ver>`, end to end: creates the pool if that version doesn't have one yet, writes the manifest `php:` key, rewrites `.php-version` if the project keeps one, re-links the vhost to the new socket, then re-reads the project's PHP to confirm. Upgrade and downgrade are the same command; re-run with the old version to go back. A downgrade **confirms** first, before doing any work (`HARBOR_YES=1` skips; no `--yes` flag) — an upgrade doesn't. Stops with the `brew install` command if `<ver>` isn't installed; never touches `vendor/` or `composer.lock`. Sudo: the relink reloads nginx. |
 | `harbor php use <ver>` | Switch the **brew-linked** CLI `php` (plain terminal / IDE / global composer): unlinks the current version, links `<ver>`. Independent of Harbor's per-project pinning — `harbor run`/nginx still use each project's own version. Re-running it for the version already linked is a no-op, and if the link fails the previous one is restored — brew can't relink atomically, and a half-done switch would leave you with no `php` at all. |
 | `harbor xdebug on\|off\|status` | Toggle Xdebug across pools **and** the project CLI. While on, the CLI shim exports `XDEBUG_TRIGGER=1` for you (`XDEBUG_CLI_TRIGGER=0` in the config opts out); the browser still sends its own trigger. |
 

@@ -22,7 +22,7 @@ dnsmasq; mkcert (CA installed); Docker 29.4 + compose v2; Composer 2.9; node via
 | Area | Decision |
 |------|----------|
 | **PHP execution** | **Concurrent `ondemand` FPM pools** — every installed version runs its own pool on its own socket (`var/php-<ver>.sock`). Idle cost is just the master (~5–15 MB each). No switching. |
-| **PHP per site** | Each site pins its version via a `.php-version` file (or `harbor link --php`); nginx routes that site to the matching socket. |
+| **PHP per site** | Each site pins its version via the manifest `php:` key or a `.php-version` file (set both with `harbor php switch`); nginx routes that site to the matching socket. |
 | **Xdebug** | `harbor xdebug on\|off\|status`; layered via `-d zend_extension=…` flags (no edits to Homebrew php.ini), **trigger-based**, client `127.0.0.1:9003`. One toggle, both surfaces: all FPM pools **and** the project CLI (`run`/`composer`/`magento`/…), from the same `xdebug_dflags` helper. The **trigger** is the one thing the two surfaces don't share (`xdebug_cli_trigger`): the CLI shim exports `XDEBUG_TRIGGER=1` while the toggle is on (no browser extension exists out there), while the web keeps needing an explicit trigger so a page load doesn't open a session per asset. `XDEBUG_CLI_TRIGGER=0` opts out. |
 | **Service topology** | **Per-project compose stacks**; **manual `harbor up`/`down` only** (no auto-stop). |
 | **Shared services** | **Mailpit** (SMTP `127.0.0.1:1025`, UI `:8025`) and **Redis** (`127.0.0.1:6379`), one shared stack, always on. |
@@ -234,6 +234,8 @@ harbor setup                          # one-time host prep (gated by doctor)
 harbor php [<ver>]                     # show pool status / set default version
 harbor php <script|flag>...            # run THIS project's php (-v, -m, index.php args…)
 harbor php sync                        # re-create pools after brew install/uninstall php@x
+harbor php switch [<name>] <ver>          # move ONE project to <ver>: pool + manifest + vhost
+harbor php use <ver>                   # switch the brew-linked shell php (not Harbor's)
 harbor xdebug on|off|status
 harbor new <name> <framework>         # scaffold + init + up + wire + install + link + open
 harbor init <name> [framework] [--existing] [--multistore domain|path] [--php <ver>]
@@ -343,6 +345,20 @@ rendered into Harbor's `etc/`; nothing is written into brew dirs):
 - nginx site config `fastcgi_pass`es to the socket for that site's pinned version.
 - `harbor php` lists pool status and the default version; `harbor php <ver>` sets
   the default for new sites (does **not** switch existing sites).
+- **Switching one project:** `harbor php switch [<name>] <ver>` is the per-project
+  knob. It converges everything the environment needs in one command — creates
+  the pool for `<ver>` if it has none, writes the manifest `php:` key, rewrites
+  `.php-version` only when the project already keeps one (the manifest outranks
+  it, so a stale one is a trap), re-links the vhost to the new socket, then
+  re-reads the project's PHP to prove the switch took. Upgrade and downgrade are
+  one command; a **downgrade confirms** first, asked before any work is done so
+  declining costs nothing (`HARBOR_YES=1` bypasses; no `--yes` flag). The prompt
+  is worded for what actually happens — the switch is reversible and touches no
+  data; it's code built for the newer PHP that won't come back on its own.
+  The manifest write is armed with an EXIT trap before it happens
+  (the `cmd_services` pattern), so a `die` anywhere in `cmd_link`'s graph can't
+  leave the manifest set to a version the vhost never got. It stops at the
+  environment: `vendor/`/`composer.lock` are the app's, never Harbor's.
 - **Xdebug**: `fpm-exec.sh` reads `var/xdebug` and toggles **`xdebug.mode`** —
   `on` → `-d xdebug.mode=debug,develop -d xdebug.start_with_request=trigger
   -d xdebug.client_port=9003`; `off` → `-d xdebug.mode=off`. It only adds

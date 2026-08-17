@@ -39,7 +39,7 @@ help_passthrough() {
 # test/test_help.sh asserts this matches help_topic's arms and bin/harbor's
 # dispatch.
 # shellcheck disable=SC2086  # deliberate word-split of the command list
-help_topics() { printf '%s\n' $_HARBOR_CMDS db-sandbox | grep -vE '^(version|help)$' | sort; }
+help_topics() { printf '%s\n' $_HARBOR_CMDS db-sandbox php-switch | grep -vE '^(version|help)$' | sort; }
 
 # help_intercept <cmd> <args...> — print the topic when the user asked US for
 # help, and return 0 so the caller stops. Returns 1 (silently) to fall through.
@@ -236,39 +236,90 @@ EOF
   ;;
 
   php) cat <<'EOF'
-harbor php — PHP versions and pools. Four different knobs — see below.
+harbor php — PHP versions and pools. Five different knobs — see below.
 
-Usage: harbor php [<ver> | sync | use <ver> | <script|flag> ...]
+Usage: harbor php [<ver> | sync | switch [<name>] <ver> | use <ver>
+                   | <script|flag> ...]
 
-  (no args)      Show pool status: default version, xdebug state, per-version pool
-  <ver>          Set the DEFAULT PHP for NEW sites only (existing pins unchanged).
-                 Only a bare X.Y counts as a version — `1.2.php` is a script.
-  sync           Re-create pools after `brew install`/uninstall of a php@x
-  use <ver>      Switch the BREW-LINKED cli `php` (plain terminal / IDE / global
-                 composer). Independent of Harbor: `harbor run` and nginx always
-                 use each project's own pinned version regardless. Restores the
-                 previous link if the switch fails.
-  anything else  Passed to THIS PROJECT's php — the cwd's project, else the
-                 global default — through the same shim `harbor run` uses, so
-                 the xdebug toggle and the manifest's php_ini apply. Scripts,
-                 flags, `-r`: `harbor php -v`, `harbor php -m`,
-                 `harbor php index.php cron/queue process`.
-                 Runs in YOUR cwd, not the project root (use `harbor run php …`
-                 for that). `--help`/`-h` stay Harbor's (this text); php's own
-                 long help is `harbor php -help`.
+  (no args)         Show pool status: default version, xdebug state, per-version pool
+  <ver>             Set the DEFAULT PHP for NEW sites only (existing projects
+                    unchanged). Only a bare X.Y counts as a version — `1.2.php`
+                    is a script.
+  sync              Re-create pools after `brew install`/uninstall of a php@x
+  switch [<n>] <v>  Move ONE PROJECT to a PHP version and converge everything
+                    that follows (pool, manifest, .php-version, vhost). The
+                    per-project knob — see `harbor php switch --help`.
+  use <ver>         Switch the BREW-LINKED cli `php` (plain terminal / IDE /
+                    global composer). Independent of Harbor: `harbor run` and
+                    nginx always use each project's own version regardless.
+                    Restores the previous link if the switch fails.
+  anything else     Passed to THIS PROJECT's php — the cwd's project, else the
+                    global default — through the same shim `harbor run` uses, so
+                    the xdebug toggle and the manifest's php_ini apply. Scripts,
+                    flags, `-r`: `harbor php -v`, `harbor php -m`,
+                    `harbor php index.php cron/queue process`.
+                    Runs in YOUR cwd, not the project root (use `harbor run php
+                    …` for that). `--help`/`-h` stay Harbor's (this text); php's
+                    own long help is `harbor php -help`.
 
-All installed versions run concurrently as on-demand pools — a project pins its
-version via manifest `php:` or a .php-version file, not via this command.
+All installed versions run concurrently as on-demand pools. Three knobs, three
+scopes, easy to reach for the wrong one:
+  harbor php <ver>          -> NEW sites        (the default, nothing existing)
+  harbor php switch <ver>   -> ONE project      (web + harbor run/composer)
+  harbor php use <ver>      -> YOUR shell's php (brew's link; Harbor ignores it)
 
 Examples:
-  harbor php                # what's running
-  harbor php -v             # the version THIS project actually runs
-  harbor php index.php x/y  # run a script under the project's PHP
-  harbor php 8.3            # new projects default to 8.3
-  harbor php use 8.3        # my terminal's `php` becomes 8.3 (hash -r after)
+  harbor php                   # what's running
+  harbor php -v                # the version THIS project actually runs
+  harbor php index.php x/y     # run a script under the project's PHP
+  harbor php 8.3               # new projects default to 8.3
+  harbor php switch shop 8.3   # move the `shop` site to 8.3, end to end
+  harbor php use 8.3           # my terminal's `php` becomes 8.3 (hash -r after)
 
-See also: harbor describe (the whole project: php, services, db, routing) ·
-harbor xdebug --help · harbor link <name> (re-point a site's pool)
+See also: harbor php switch --help · harbor describe (the whole project: php,
+services, db, routing) · harbor xdebug --help
+EOF
+  ;;
+
+  php-switch) cat <<'EOF'
+harbor php switch — move ONE PROJECT to a PHP version, end to end
+
+Usage: harbor php switch [<name>] <ver>        (no flags)
+       ( <name> optional inside a project dir or a `harbor shell` )
+
+Does everything the ENVIRONMENT needs, so no follow-up command is required:
+  1. creates the php-fpm pool for <ver> if it doesn't have one yet
+     (so a just-brew-installed PHP needs no separate `harbor php sync`)
+  2. writes the manifest `php:` — the source of truth
+  3. rewrites .php-version, but only if the project already keeps one
+     (the manifest outranks it, so a stale one is a trap, not a spare)
+  4. re-links the vhost to the new pool's socket and reloads nginx
+  5. re-reads the project's php to prove it actually reports <ver>
+
+Upgrades and downgrades are the same command; it works out which way you went
+and says so. Nothing here destroys data — run it again with the old version to
+go back. A DOWNGRADE [confirms] first, before doing any work, since code built
+for the newer PHP won't come back on its own (`HARBOR_YES=1` skips the prompt;
+there is no --yes flag). An upgrade never prompts.
+
+It does NOT touch your app: vendor/ and composer.lock are yours, so re-run
+`harbor composer install` yourself if the switch crosses a platform requirement.
+
+Sudo: the relink reloads nginx.
+If php@<ver> isn't installed it stops and tells you the brew command — Harbor
+never installs PHP for you.
+
+Not to be confused with:
+  harbor php <ver>       the default for NEW sites; changes no existing project
+  harbor php use <ver>   your shell's `php` (brew's link); sites never read it
+
+Examples:
+  harbor php switch shop 8.3     # from anywhere
+  harbor php switch 8.1          # inside projects/shop
+  harbor php switch legacy 7.4   # downgrade; same command, confirms first
+
+See also: harbor php --help · harbor describe <name> (which of the three
+sources set the version) · harbor link <name>
 EOF
   ;;
 

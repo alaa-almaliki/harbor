@@ -175,6 +175,132 @@ php_use() {
   step "open a new terminal (or run 'hash -r') if your shell still resolves the old php"
 }
 
+# --- harbor php switch -------------------------------------------------------
+
+# Is <a> an older PHP than <b>? Numeric per component on purpose: a string
+# compare puts 8.10 BELOW 8.9, and these versions stay put for years.
+_php_ver_lt() {
+  local a="$1" b="$2" amaj amin bmaj bmin
+  amaj="${a%%.*}"; amin="${a#*.}"
+  bmaj="${b%%.*}"; bmin="${b#*.}"
+  if [ "$amaj" -ne "$bmaj" ]; then
+    if [ "$amaj" -lt "$bmaj" ]; then return 0; else return 1; fi
+  fi
+  if [ "$amin" -lt "$bmin" ]; then return 0; fi
+  return 1
+}
+
+# Undo a switch's writes: the manifest line verbatim (comment and all), plus
+# .php-version if the project kept one. One function so the EXIT trap armed
+# before the write stays a single expression.
+_php_switch_restore() {
+  local mf="$1" raw="$2" had="$3" pvfile="$4" pvold="$5"
+  manifest_restore_line "$mf" php "$raw" "$had"
+  if [ -n "$pvold" ]; then printf '%s\n' "$pvold" > "$pvfile"; fi
+}
+
+# harbor php switch [<name>] <ver> — point ONE PROJECT at a PHP version and
+# converge everything in the ENVIRONMENT that has to follow, so no second command
+# is needed: the FPM pool for that version (created here when `harbor php sync`
+# was never run for it), the manifest `php:`, an existing .php-version, and the
+# vhost's fastcgi_pass. It stops at the environment by design — vendor/ and
+# composer.lock belong to the app, and when to rebuild them is the user's call.
+#
+# Not to be confused with `harbor php use`, which switches the host-global
+# brew-linked `php`. The two never affect each other: switching a project here
+# doesn't change what a plain `php` in your shell resolves to, and `use` doesn't
+# change what a site or `harbor run` executes.
+php_switch() {
+  resolve_project "${1-}" "harbor php switch [<name>] <ver>"
+  [ "$_RP_SHIFT" = 1 ] && shift
+  local name="$_RP_NAME" ver="${1-}"
+  [ -n "$ver" ] || usage_die php-switch "harbor php switch [<name>] <ver>"
+  valid_php_version "$ver" || die "unsupported php version '$ver' (have: $HARBOR_PHP_VERSIONS)"
+  # Harbor never brew-installs on a user's behalf (CLAUDE.md §1.9) — advise, stop.
+  [ -x "$(php_fpm_bin "$ver")" ] \
+    || die "php@$ver not installed → brew install php@$ver  (then: harbor php switch $name $ver)"
+
+  local dir mf cur; dir="$(project_dir "$name")"; mf="$(manifest_path "$name")"
+  cur="$(link_php "$name" "$dir")"
+
+  # Already converged? Every piece has to agree — the pool, the manifest `php:`,
+  # and the vhost. The manifest is the source of truth, but the vhost is what
+  # actually serves requests, so "the manifest says 8.3" is not done on its own;
+  # that gap is the whole reason this command exists, and a `switch` that finds it
+  # half-applied (a manifest version whose pool was never created, say) heals it
+  # rather than reporting success.
+  local vhost sock; sock="$(php_sock "$ver")"
+  vhost="$HARBOR_NGINX_SITES/$name.$HARBOR_TLD.conf"
+  if [ "$cur" = "$ver" ] && [ "$(manifest_get "$mf" php "")" = "$ver" ] \
+     && [ -f "$(php_fpm_conf "$ver")" ] && launchd_agent_loaded "$(php_ld_label "$ver")" \
+     && [ -f "$vhost" ] && grep -Fq "unix:$sock;" "$vhost"; then
+    ok "$name already on php $ver — nothing to do"
+    return 0
+  fi
+
+  local move="switch"
+  if [ "$cur" != "$ver" ]; then
+    if _php_ver_lt "$ver" "$cur"; then move="downgrade"; else move="upgrade"; fi
+  fi
+
+  # Confirm a downgrade — asked BEFORE any work, so declining costs nothing.
+  # Worded for what actually happens: the switch itself is reversible (re-run
+  # with the old version) and touches no data, but code built for the newer PHP
+  # is the part that won't come back on its own. Overstating it would just train
+  # people to hit `y`, which is what makes the genuinely destructive prompts
+  # dangerous. HARBOR_YES=1 bypasses; there is no --yes flag.
+  if [ "$move" = downgrade ]; then
+    warn "$name: php $cur -> $ver is a DOWNGRADE"
+    step "reversible (harbor php switch $name $cur), but vendor/ and any code needing php $cur stay as they are"
+    confirm "Move '$name' back to php $ver?" || { warn "aborted — $name stays on php $cur"; return 1; }
+  fi
+  log "$name: php $cur -> $ver ($move)"
+
+  # Pools are normally created by setup / `harbor php sync`; create just this
+  # one here so a freshly brew-installed PHP needs no separate sync step.
+  if [ ! -f "$(php_fpm_conf "$ver")" ] || ! launchd_agent_loaded "$(php_ld_label "$ver")"; then
+    ensure_dirs
+    chmod +x "$HARBOR_LIB/fpm-exec.sh" 2>/dev/null || true
+    php_render_pool "$ver"
+    php_install_pool "$ver"
+    step "php $ver pool -> $(php_sock "$ver")"
+  fi
+
+  local raw had=0 pvfile="$dir/.php-version" pvold=""
+  raw="$(manifest_raw_line "$mf" php)"
+  manifest_key_present "$mf" php && had=1
+  [ -f "$pvfile" ] && pvold="$(tr -d ' \n\r' < "$pvfile")"
+
+  # Arm the restore BEFORE the write, for the reason cmd_services documents: a
+  # `die` deeper in cmd_link's graph calls exit and would sail straight past an
+  # explicit revert branch, leaving the manifest set to a version the vhost
+  # never got. No other EXIT trap exists in this call graph (verified).
+  trap '_php_switch_restore "$mf" "$raw" "$had" "$pvfile" "$pvold"' EXIT
+  manifest_set_line "$mf" php "\"$ver\""
+  # .php-version is rewritten only when the project already keeps one: Harbor
+  # doesn't invent files, but leaving a stale one beside a changed manifest is a
+  # trap — the manifest silently outranks it (link_php_source).
+  if [ -n "$pvold" ]; then printf '%s\n' "$ver" > "$pvfile"; fi
+
+  if ! cmd_link "$name"; then
+    _php_switch_restore "$mf" "$raw" "$had" "$pvfile" "$pvold"
+    trap - EXIT
+    die "link failed — reverted $name to php $cur"
+  fi
+  trap - EXIT
+
+  # Prove it rather than assume it: this shim is exactly what `harbor run` /
+  # `composer` / `magento` execute for the project.
+  local shim out first
+  shim="$(cli_php_pathdir "$ver" "$name")/php"
+  out="$("$shim" -v 2>/dev/null || true)"
+  first="${out%%$'\n'*}"
+  case "$out" in
+    "PHP $ver."*) ok "$name is on php $ver — web and CLI" ;;
+    *) warn "switched to php $ver but the project's php reports: ${first:-nothing}" ;;
+  esac
+}
+
 # Only a bare `X.Y` is a version to set as the default. Anything else — a script,
 # a flag, `-r '…'` — belongs to php. Deliberately strict: `1.2.php` is a file, and
 # `8.9` is a version Harbor should reject by name rather than hand to php as a
@@ -205,9 +331,10 @@ php_passthrough() {
 cmd_php() {
   local arg="${1-}"
   case "$arg" in
-    "")   php_status ;;
-    sync) php_sync ;;
-    use)  shift; php_use "${1-}" ;;
+    "")     php_status ;;
+    sync)   php_sync ;;
+    use)    shift; php_use "${1-}" ;;
+    switch) shift; php_switch "$@" ;;
     *)
       if ! _php_looks_like_version "$arg"; then php_passthrough "$@"; return; fi
       valid_php_version "$arg" || die "unsupported version '$arg' (have: $HARBOR_PHP_VERSIONS)"

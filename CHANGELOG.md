@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`harbor php switch [<name>] <ver>`** — move one project to a PHP version in a
+  single command. Changing a project's PHP used to be a hand-edit of the manifest
+  followed by `harbor link` (and a `harbor php sync` first, if the version had
+  just been installed), with a stale `.php-version` left silently outranked by
+  the manifest. `switch` now converges the whole environment: it creates the
+  php-fpm pool for that version if it doesn't have one yet, writes the manifest
+  `php:` key, rewrites `.php-version` **only if the project already keeps one**,
+  re-links the vhost to the new pool's socket, and then re-reads the project's
+  PHP to confirm it really reports the requested version. Upgrades and downgrades
+  are the same command — it reports which way you went. Nothing here destroys
+  data and re-running with the old version goes back, but a **downgrade
+  confirms first** (before doing any work), since code built for the newer PHP
+  won't come back on its own; `HARBOR_YES=1` skips the prompt and there is no
+  `--yes` flag. An upgrade never prompts. If the version
+  isn't installed it stops and prints the `brew install php@<ver>` to run —
+  Harbor never installs PHP for you. It deliberately stops at the environment
+  and never touches `vendor/`, `composer.lock`, or any app code. `<name>` is
+  optional inside a project directory. Distinct from the two knobs it sits
+  beside: `harbor php <ver>` sets the default for **new** sites, and `harbor php
+  use <ver>` switches the **brew-linked** shell `php`.
 - **`harbor db restore [<name>] [--list] [--checkpoint N] [--no-backup]`** — roll a
   project's database back to one of the pre-import backups Harbor takes before
   every import/pull. Checkpoints are numbered **newest-first** (`#1` = your last
