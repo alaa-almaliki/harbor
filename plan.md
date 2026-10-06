@@ -120,7 +120,7 @@ php_ini:   { memory_limit: 2G, "opcache.validate_timestamps": 1 }   # per-projec
 services: { mysql: "mysql:8.0", opensearch: "opensearchproject/opensearch:2.19.0", rabbitmq: "rabbitmq:3.13-management-alpine" }   # name: image (redis/mailpit shared)
 db:        { name: shop, user: shop, password: shop, image: mysql:8.0 }
 multistore: { mode: domain, stores: { de: de.shop.test, fr: fr.shop.test } }
-import:    { strip_definers: true, rules: import-rules }   # hooks live in .harbor/hooks/
+import:    { strip_definers: true, exclude: [mailchimp_notification, report_*] }   # strip_definers: false == --keep-definers; exclude: tables whose data is skipped; rules in .harbor/import-rules, hooks in .harbor/hooks/
 remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media, user: dbuser }   # db pull / media pull; user optional (pw via env/prompt)
 ```
 A project may also drop a `.harbor/nginx.conf` snippet (committable) that is
@@ -461,7 +461,10 @@ rendered into Harbor's `etc/`; nothing is written into brew dirs):
 - **RAM tuning** baked into the templates: OpenSearch `-Xms512m -Xmx512m` with
   `plugins.security.disabled=true` and ML off; MySQL with a modest
   `innodb_buffer_pool_size` and `performance_schema=OFF`. Overridable via global
-  config / manifest.
+  config / manifest. MySQL also runs with `--skip-log-bin`: the MySQL 8 default
+  binlog makes a non-SUPER app user's `CREATE TRIGGER` fail (error 1419 — hit by
+  Magento's indexer on `setup:upgrade`) and duplicates every imported row on
+  disk, never purged. A dev server has no replica to feed. (MariaDB: off already.)
 - **Readiness:** compose services declare `healthcheck`s; `harbor up` blocks until
   MySQL and OpenSearch actually accept connections before returning, so
   `install`/`import` never race a half-booted stack.
@@ -552,7 +555,14 @@ allocator keeps their stacks from colliding. A consumer calls a provider at
     2. **strip DEFINER** (automatic — removes `DEFINER=…`/`SQL SECURITY DEFINER`
        so a missing prod user can't break the import; `--keep-definers` to disable).
        Runs as a stream filter fused with step 1 — one pass over the bytes, not
-       copy-then-rewrite-in-place.
+       copy-then-rewrite-in-place. **`import.exclude`** (manifest
+       `import: { exclude: [t, log_*] }`) rides the same `sed`: INSERT/REPLACE
+       statements into matching tables (`*` = wildcard; multi-line statements
+       too) are dropped, their CREATE TABLE kept, so the tables load empty —
+       skipping both their load and their serialized-replace scan. Patterns are
+       validated before the backup; the dropped tables are reported and a
+       pattern matching nothing warns. `--no-exclude` loads everything;
+       `db restore` always passes it (verbatim reload).
     3. **pre-import hooks** — each executable in `.harbor/hooks/pre-import.d/*`
        (global `etc/hooks/pre-import.d/*` first) runs with `$HARBOR_DUMP` + env;
        mutates the dump in place (e.g. `sed -i "$HARBOR_DUMP" …`).
@@ -732,6 +742,14 @@ nvm, per-version xdebug). Each item checked for installed / configured / running
 **Report only** — prints `brew install …`. Non-zero exit if required missing.
 `setup` gates on required; `init/up/link` run a relevant subset with fail-fast,
 fix-hint errors.
+
+**Per-project front-controller check** — `harbor doctor <name>` and `harbor link`
+flag a docroot with no `index.php`/`index.html` (`link_frontcontroller_hint`,
+`lib/link.sh`): nginx would answer `/` with a bare 403. Magento projects
+gitignore `/pub/*`, and `pub/index.php` & co. are deployed from
+`magento/magento2-base` by composer — a clone whose `vendor/` arrived any other
+way has a `pub/` with only the committed `errors/`. The hint is a no-clobber
+`cp -Rn vendor/magento/magento2-base/pub/. pub/`.
 
 **Per-project extension check** — `harbor doctor <name>` (and `up`/`install`)
 validates the **PHP extensions** the project needs against its *pinned* version:

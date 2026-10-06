@@ -35,11 +35,17 @@ _project_services() {
 
 # the db server command line — engine-aware. MariaDB rejects MySQL 8's
 # `--default-authentication-plugin` flag (and defaults to native auth anyway).
+# --skip-log-bin: MySQL 8 turns the binary log on by default, which (a) makes
+# CREATE TRIGGER by a non-SUPER user fail with error 1419 — Magento's indexer
+# does exactly that as the app user during setup:upgrade — and (b) writes every
+# imported row a second time, never purged (7.8G on one Magento project). A
+# local dev server has no replica or point-in-time recovery to feed. MariaDB
+# already defaults binlog off.
 _db_command() {
   local image="$1" pool="$2"
   case "$image" in
     *mariadb*) printf '["--performance-schema=OFF", "--innodb-buffer-pool-size=%s"]' "$pool" ;;
-    *)         printf '["--performance-schema=OFF", "--innodb-buffer-pool-size=%s", "--default-authentication-plugin=mysql_native_password"]' "$pool" ;;
+    *)         printf '["--performance-schema=OFF", "--innodb-buffer-pool-size=%s", "--default-authentication-plugin=mysql_native_password", "--skip-log-bin"]' "$pool" ;;
   esac
 }
 

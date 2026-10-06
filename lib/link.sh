@@ -35,6 +35,29 @@ link_docroot() {
   if [ -n "$sub" ]; then echo "$dir/$sub"; else echo "$dir"; fi
 }
 
+# link_frontcontroller_hint <framework> <docroot> <project-dir> — succeeds when
+# the docroot has an index.php/index.html; otherwise prints a fix hint and
+# returns 1. Without one nginx answers `/` with 403 ("directory index …
+# forbidden"), which says nothing about the cause. The common case is Magento:
+# projects gitignore /pub/*, and pub/index.php & co. are copied in from
+# magento/magento2-base by composer — a clone whose vendor/ arrived any other
+# way (copied, or a `composer install` that found nothing to install) has a
+# pub/ holding only what's committed.
+link_frontcontroller_hint() {
+  local framework="$1" docroot="$2" dir="$3"
+  [ -d "$docroot" ] || { printf 'docroot does not exist: %s' "$docroot"; return 1; }
+  if [ -f "$docroot/index.php" ] || [ -f "$docroot/index.html" ]; then return 0; fi
+  if [ "$framework" = magento ] && [ -d "$dir/vendor/magento/magento2-base/pub" ]; then
+    printf 'no %s/index.php (nginx will 403) → restore Magento'"'"'s pub/ files without overwriting: cp -Rn %s/vendor/magento/magento2-base/pub/. %s/' \
+      "$docroot" "$dir" "$docroot"
+  elif [ "$framework" = magento ]; then
+    printf 'no %s/index.php (nginx will 403) and no vendor/ → harbor composer <name> install' "$docroot"
+  else
+    printf 'no index.php or index.html in %s (nginx will 403) → check the docroot (manifest docroot:) or the checkout' "$docroot"
+  fi
+  return 1
+}
+
 # A project's PHP version AND where it came from, as "<ver>|<source>". The one
 # place the precedence lives — link_php is a thin wrapper so the version a site
 # is rendered with and the version `harbor describe` reports can never drift.
@@ -303,7 +326,12 @@ _link_build() {
   [ -x "$(php_fpm_bin "$phpver")" ] || die "php@$phpver not installed → brew install php@$phpver"
   sock="$(php_sock "$phpver")"
   names="$(link_server_names "$name")"
-  [ -d "$docroot" ] || warn "docroot does not exist yet: $docroot (site will 404 until created)"
+  if [ ! -d "$docroot" ]; then
+    warn "docroot does not exist yet: $docroot (site will 404 until created)"
+  else
+    local fch
+    if ! fch="$(link_frontcontroller_hint "$framework" "$docroot" "$dir")"; then warn "${fch//<name>/$name}"; fi
+  fi
 
   body_tmpl="$HARBOR_TEMPLATES/nginx/body/$framework.conf.tmpl"
   [ -f "$body_tmpl" ] || body_tmpl="$HARBOR_TEMPLATES/nginx/body/plain.conf.tmpl"

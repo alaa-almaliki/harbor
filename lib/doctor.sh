@@ -106,6 +106,16 @@ _d_project() {
     _d_ok "extensions" "all present"
   fi
 
+  # docroot front controller — the 403 that otherwise only shows in nginx's log
+  local pdir pdocroot fch
+  pdir="$(project_dir "$name")"
+  pdocroot="$(link_docroot "$name" "$framework" "$pdir")"
+  if fch="$(link_frontcontroller_hint "$framework" "$pdocroot" "$pdir")"; then
+    _d_ok "front controller" "${pdocroot#"$pdir"/}/index.*"
+  else
+    _d_bad "front controller" "${fch//<name>/$name}"
+  fi
+
   # Docker file-sharing hint for containerized tools (best effort)
   if manifest_has "$mf" tools; then
     _d_miss "docker file-sharing" "ensure $HARBOR_PROJECTS and \$TMPDIR are shared in Docker Desktop"

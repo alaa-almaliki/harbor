@@ -99,7 +99,10 @@ harbor doctor — report host requirements; never installs anything
 
 Usage: harbor doctor [<name>]
 
-  <name>    Also check that project's PHP extensions against its pinned version
+  <name>    Also check that project's PHP extensions against its pinned version,
+            and that its docroot has a front controller (index.php/.html) —
+            without one nginx answers 403. Magento gets a copy-paste fix
+            (restore pub/ from vendor/magento/magento2-base, no overwrite).
 
 Reports: required tools (brew, php-fpm, nginx, dnsmasq, mkcert + CA, docker),
 Harbor's own config (/etc/resolver/test, cert, CA bundle, nginx.conf), and
@@ -1121,11 +1124,13 @@ import flags (also accepted by `pull`):
   --no-backup        Skip the automatic pre-import backup
   --force            Best-effort load: skip statements the server rejects, and
                      load a dump that looks truncated (refused by default)
-  --keep-definers    Keep DEFINER= clauses (stripped by default)
+  --keep-definers    Keep DEFINER= clauses (stripped by default; manifest
+                     import: { strip_definers: false } makes it permanent)
   --replace OLD=NEW  Serialized-safe search/replace after load (repeatable)
   --stream-replace   Do --replace with sed before load (faster, NOT serialize-safe)
   --no-hooks         Skip .harbor/hooks/
   --no-rules         Skip .harbor/import-rules
+  --no-exclude       Load every table (ignore manifest import.exclude)
   --reconfigure      Magento: fix base URLs + search engine after import
 
 Requires a `mysql` service. A project with none (`services: {}` or no `mysql`
@@ -1172,6 +1177,8 @@ Recurring rules/fixups live in the project, seeded as inert samples by init:
   .harbor/hooks/post-import.d/*.sql    SQL run after every import — pin records
                                        to local values (base URLs, dev passwords)
   .harbor/hooks/pre-import.d/          executables that edit the dump pre-load
+  import: { exclude: [t, log_*] }      manifest: tables whose DATA is skipped
+                                       (schema still created; * = wildcard)
   .harbor/remote.env                   gitignored; HARBOR_REMOTE_* for pull auth
 
 Examples:

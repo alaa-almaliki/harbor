@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`harbor doctor <name>` and `harbor link` catch a docroot with no front
+  controller.** A docroot with no `index.php`/`index.html` made nginx answer
+  `/` with a bare 403 ("directory index … forbidden"), and the cause only
+  showed in the nginx log. The usual case is a Magento clone: projects
+  gitignore `/pub/*`, and `pub/index.php` & co. come from
+  `magento/magento2-base` via composer, so a `vendor/` that arrived any other
+  way leaves `pub/` holding only `errors/`. Magento gets a copy-paste
+  no-overwrite fix (`cp -Rn vendor/magento/magento2-base/pub/. pub/`).
+- **Manifest `import: { strip_definers: false }`** now keeps DEFINER clauses on
+  every import, the same as passing `--keep-definers` each time. The manifest
+  template has always advertised `import: { strip_definers: … }`, but nothing
+  read it. The default is unchanged (strip); an unrecognised value keeps it.
+- **Exclude tables from `db import` / `db pull`** with a manifest key:
+  `import: { exclude: [mailchimp_notification, ga4_mp_hit_queue, report_viewed_*] }`.
+  The listed tables' data (`INSERT`/`REPLACE` statements, multi-line ones
+  included) is dropped from the dump before load; their `CREATE TABLE` still
+  runs, so they exist locally, empty. `*` is a wildcard. Bulky queue/log tables
+  could be most of a production dump and each row also cost a serialized
+  search/replace `UPDATE` — on a 1.8 GB Magento dump, three such tables were
+  1.5 GB of it, and one of them alone took over an hour of search/replace.
+  The filter runs inside the existing DEFINER-strip pass, so it adds no extra
+  pass over the dump. Patterns are validated before the backup, the import reports
+  which tables were dropped, and a pattern that matched nothing warns (typo
+  guard). `--no-exclude` loads everything once; `db restore` always reloads
+  verbatim.
 - **`harbor php switch [<name>] <ver>`** — move one project to a PHP version in a
   single command. Changing a project's PHP used to be a hand-edit of the manifest
   followed by `harbor link` (and a `harbor php sync` first, if the version had
@@ -141,6 +166,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `harbor render <name> && harbor up <name>` to apply. No host-footprint change.
 
 ### Changed
+- **`CLAUDE.md` slimmed to the critical rules; the detail moved into the
+  `harbor-contributing` skill.** The agent guide had grown to 47k characters, and
+  because `~/harbor` is an ancestor directory of every project under
+  `projects/`, all of it loaded into every session for every app — roughly 11.8k
+  tokens of Harbor-internals guidance sitting in context while working on an
+  unrelated Magento or Laravel site. `CLAUDE.md` now keeps only §1 Critical rules,
+  §8 Don't, and a pointer table; §2-§7 moved verbatim into
+  `.claude/skills/harbor-contributing/reference-*.md`, which load on demand when
+  the skill is invoked. No rule changed — the same text is authoritative in a
+  file that loads when it's relevant. The after-every-change checklist keeps a
+  resident trigger in `CLAUDE.md` so it still fires without the skill loaded.
 - **The global config moved into Harbor's own tree — `etc/config` instead of
   `~/.config/harbor/config`.** _(host footprint: removes the last config file
   Harbor kept outside its repo.)_ `etc/` is gitignored and machine-specific, so
@@ -167,6 +203,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ok`/`FAIL` lines.
 
 ### Fixed
+- **MySQL now runs with the binary log off** (`--skip-log-bin`; MariaDB already
+  defaulted off). MySQL 8 turns binlog on by default, which made Magento's
+  `setup:upgrade` fail with `SQLSTATE[HY000]: General error: 1419 You do not have
+  the SUPER privilege and binary logging is enabled` when the indexer creates
+  triggers as the app user. It also wrote every imported row a second time
+  and never purged it: 7.8 GB in one Magento project's data volume. Existing
+  projects pick it up with `harbor render <name> && harbor up <name>` (data is
+  kept). To reclaim old binlog space, run `harbor mysql <name> -e "RESET MASTER;"`
+  **before** that restart. Once binlog is off, MySQL no longer manages those files.
 - **A manifest `php_ini` value no longer gets silently overridden on the web by
   an app's `.user.ini`.** Harbor now renders manifest `php_ini` as
   `fastcgi_param PHP_ADMIN_VALUE` instead of plain `PHP_VALUE`. A plain

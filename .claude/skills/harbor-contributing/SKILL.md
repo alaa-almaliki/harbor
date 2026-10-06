@@ -11,6 +11,23 @@ Harbor is a **bash** CLI (no runtime language deps) targeting **macOS system bas
 plan/README are the source of truth — if a change contradicts them, update them in
 the same commit.
 
+## Full rules — read the reference file for the area you're touching
+
+`CLAUDE.md` keeps only the critical rules and the "Don't" list resident. The detail
+lives here, beside this skill, and is **authoritative** — read the one matching your
+change before writing code:
+
+| File | Covers |
+|---|---|
+| `reference-host-pollution.md` | §2 — what Harbor may/may not write outside its repo (nginx, php-fpm, xdebug, dnsmasq, TLS) |
+| `reference-bash.md` | §3 — bash 3.2 traps, `set -e` under conditions, mktemp, `grep -q`/SIGPIPE, secrets, safety rules |
+| `reference-conventions.md` | §5 — paths, ports, credentials, domains, the three PHP version knobs, Magento multi-store |
+| `reference-extending.md` | §6 — adding a command, framework, backing service, CLI tool, or singleton stack |
+| `reference-testing.md` | §6.5 — the zero-dependency bash test suite and its rules |
+| `reference-workflow.md` | §4 + §7 — CHANGELOG discipline and the required after-every-change checklist |
+
+The summaries below are a fast orientation, not a substitute for those files.
+
 ## Non-negotiable rules (from CLAUDE.md)
 1. **No host pollution.** Never write into brew config dirs (`etc/nginx`, `etc/php/*`,
    `etc/dnsmasq*`). Render config from `templates/` into Harbor's `etc/`; run Harbor's

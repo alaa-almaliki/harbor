@@ -120,4 +120,19 @@ assert_contains "current_php_source: no project -> says so" "global default" \
 assert_eq "current_php_source: HARBOR_PROJECT wins with no arg" "7.4" \
   "$(x="$(HARBOR_PROJECT=pvfile current_php_source "")"; printf '%s' "${x%%|*}")"
 
+# --- link_frontcontroller_hint: docroot with no index.* (the silent 403) -------
+fc="$tmp/fc"; mkdir -p "$fc/ok/pub" "$fc/mage/pub/errors" "$fc/mage/vendor/magento/magento2-base/pub" "$fc/novendor/pub" "$fc/plain"
+touch "$fc/ok/pub/index.php"
+assert_ok "front controller: pub/index.php present" link_frontcontroller_hint magento "$fc/ok/pub" "$fc/ok"
+assert_fail "front controller: magento pub/ with only errors/ fails" \
+  link_frontcontroller_hint magento "$fc/mage/pub" "$fc/mage"
+assert_contains "front controller: magento hint restores from magento2-base, no-clobber" \
+  "cp -Rn $fc/mage/vendor/magento/magento2-base/pub/. $fc/mage/pub/" \
+  "$(link_frontcontroller_hint magento "$fc/mage/pub" "$fc/mage")"
+assert_contains "front controller: magento without vendor/ points at composer" \
+  "harbor composer <name> install" "$(link_frontcontroller_hint magento "$fc/novendor/pub" "$fc/novendor")"
+touch "$fc/plain/index.html"
+assert_ok "front controller: index.html counts" link_frontcontroller_hint plain "$fc/plain" "$fc/plain"
+assert_fail "front controller: missing docroot fails" link_frontcontroller_hint laravel "$fc/nope" "$fc"
+
 report

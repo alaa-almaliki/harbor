@@ -83,6 +83,59 @@ gzip -c "$tmp/def.sql" > "$tmp/def.sql.gz"
 assert_eq "definer strip: gz stream matches too" \
   "$(cat "$tmp/def-inplace.sql")" "$(_db_stream "$tmp/def.sql.gz" | LC_ALL=C sed -E "$_DEFINER_SED")"
 
+# --- import.exclude: pattern validation + data-dropping stream filter --------
+assert_eq "exclude re: literal, * wildcard, \$ bracketed" \
+  'log_a|sales_[A-Za-z0-9_$]*|a[$]b' "$(_db_exclude_re log_a 'sales_*' 'a$b')"
+assert_fail "exclude re: rejects regex/SQL chars" _db_exclude_re 'x;DROP'
+assert_fail "exclude re: rejects a dot (no db.table)" _db_exclude_re 'db.t'
+assert_fail "exclude re: rejects an empty pattern" _db_exclude_re ''
+
+{
+  printf 'CREATE TABLE `log_a` (id int);\n'
+  printf 'INSERT INTO `log_a` VALUES (1),(2);\n'
+  printf 'INSERT INTO `log_a_keep` VALUES (1);\n'
+  printf 'INSERT INTO `sales_daily` (a) VALUES\n(1),\n(2);\n'   # phpMyAdmin multi-line
+  printf 'INSERT IGNORE INTO `log_a` VALUES (3);\n'
+  printf 'REPLACE INTO `sales_monthly` VALUES (4);\n'
+  printf 'INSERT INTO `orders` VALUES (5);\n'
+} > "$tmp/excl.sql"
+exrep="$tmp/excl rep"; : > "$exrep"   # space: `w <file>` takes the rest of the line
+exout="$(LC_ALL=C sed -E "$(_db_exclude_sed "$(_db_exclude_re log_a 'sales_*')" "$exrep")" < "$tmp/excl.sql")"
+assert_eq "exclude sed: schema + unmatched tables kept, matched data dropped" \
+  "$(printf 'CREATE TABLE `log_a` (id int);\nINSERT INTO `log_a_keep` VALUES (1);\nINSERT INTO `orders` VALUES (5);')" \
+  "$exout"
+assert_eq "exclude sed: one table name per dropped statement (multi-line too)" \
+  "$(printf 'log_a\nlog_a\nsales_daily\nsales_monthly')" "$(sort "$exrep")"
+# fused with the DEFINER strip the way db_import runs it: both still apply
+: > "$exrep"
+fused="$(_db_exclude_sed "$(_db_exclude_re log_a)" "$exrep")
+$_DEFINER_SED"
+assert_eq "exclude sed + DEFINER strip fused in one script" \
+  "$(printf 'CREATE  PROCEDURE p()  BEGIN END;\nINSERT INTO `t` VALUES (1);')" \
+  "$(printf 'CREATE DEFINER=`prod`@`%%` PROCEDURE p() SQL SECURITY DEFINER BEGIN END;\nINSERT INTO `log_a` VALUES (9);\nINSERT INTO `t` VALUES (1);\n' | LC_ALL=C sed -E "$fused")"
+: > "$exrep"; printf 'log_a\nlog_a\nsales_daily\n' > "$exrep"
+exwarn="$(_db_exclude_report "$exrep" log_a 'sales_*' typo_tbl 2>&1)"
+assert_contains "exclude report: lists dropped tables" "log_a (2 stmt)" "$exwarn"
+assert_contains "exclude report: warns on a pattern that matched nothing" \
+  "'typo_tbl' matched no table data" "$exwarn"
+
+# --- manifest import.strip_definers -----------------------------------------
+sdm="$tmp/sd.yml"
+printf 'framework: magento\n' > "$sdm"
+assert_ok "strip_definers: absent key defaults on" _db_strip_definers_enabled "$sdm"
+printf 'import: { strip_definers: false, exclude: [x] }\n' > "$sdm"
+assert_fail "strip_definers: false keeps definers" _db_strip_definers_enabled "$sdm"
+printf 'import: { strip_definers: true }\n' > "$sdm"
+assert_ok "strip_definers: true strips" _db_strip_definers_enabled "$sdm"
+printf 'import: { strip_definers: flase }\n' > "$sdm"
+assert_ok "strip_definers: unrecognised value keeps the safe default" _db_strip_definers_enabled "$sdm"
+
+# --- _db_command: server flags (binlog off on MySQL; MariaDB-safe) ----------
+assert_contains "db command: MySQL skips the binary log (trigger error 1419)" \
+  '"--skip-log-bin"' "$(_db_command mysql:8.0 256M)"
+assert_fail "db command: MariaDB gets no MySQL-only auth flag" \
+  grep -q default-authentication-plugin <<< "$(_db_command mariadb:11.4 256M)"
+
 # --- _fk_wrapped: FK + unique checks off around the dump ----------------------
 printf 'INSERT INTO `t` VALUES (1);\n' > "$tmp/fk.sql"
 fkout="$(_fk_wrapped "$tmp/fk.sql")"

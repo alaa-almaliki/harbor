@@ -101,6 +101,82 @@ strip_definers() {
   LC_ALL=C sed -i '' -E "$_DEFINER_SED" "$1"
 }
 
+# _db_strip_definers_enabled <manifest> — manifest `import: { strip_definers:
+# false }` makes every import behave like --keep-definers. Default true, and
+# anything but a recognised false (a typo included) keeps that safe default.
+_db_strip_definers_enabled() {
+  case "$(manifest_get "$1" import.strip_definers true)" in
+    false|False|FALSE|no|No|off|0) return 1 ;;
+  esac
+  return 0
+}
+
+# Manifest `import: { exclude: [t1, log_*] }` — tables whose DATA is dropped
+# from the dump before load (their CREATE TABLE still runs, so they exist,
+# empty). For bulky queue/log tables: they cost load time AND serialized-replace
+# time (one UPDATE per matching row) for data no local site needs.
+#
+# _db_exclude_re <pattern...> — validate table patterns and print one awk ERE
+# alternation for them. `*` is the only wildcard (any run of name chars). Names
+# are restricted to MySQL's unquoted identifier chars, so nothing a user types
+# can smuggle regex syntax in; returns 1 naming the bad pattern otherwise.
+_db_exclude_re() {
+  local p alt=""
+  for p in "$@"; do
+    case "$p" in
+      ''|*[!A-Za-z0-9_\$*]*) printf '%s' "$p"; return 1 ;;
+    esac
+    # `[$]`, not `\$`: awk -v processes backslash escapes in the value
+    p="${p//\$/[\$]}"
+    p="${p//\*/[A-Za-z0-9_\$]*}"
+    if [ -z "$alt" ]; then alt="$p"; else alt="$alt|$p"; fi
+  done
+  printf '%s' "$alt"
+}
+
+# _db_exclude_sed <alt-re> <report-file> — print a sed -E script that drops
+# every INSERT/REPLACE statement into a table matching <alt-re>, writing the
+# table name to <report-file> once per dropped statement. A statement may span
+# lines (phpMyAdmin puts each VALUES tuple on its own line), so a match pulls
+# lines in with N until one ends in `;`, then deletes the lot. sed, not awk:
+# measured on a 1.8G Magento dump, an awk pass-through alone took 35s vs ~2s
+# for a sed /d — and as a sed script it fuses into the DEFINER strip's
+# process, where a deleted line also skips those substitutions.
+_db_exclude_sed() {
+  printf '%s\n' \
+    "/^(INSERT( IGNORE)?|REPLACE) INTO \`($1)\`/{" \
+    ':x' \
+    '/;[[:space:]]*$/!{' 'N' 'bx' '}' \
+    's/^[^`]*`([^`]*)`.*$/\1/' \
+    "w $2" \
+    'd' '}'
+}
+
+# _db_exclude_report <report-file> <pattern...> — say which tables' data was
+# dropped, and warn for a pattern that matched nothing: a typo'd table name
+# would otherwise silently load the very data it was meant to skip.
+_db_exclude_report() {
+  local rep="$1" p t c hit dropped="" counts; shift
+  counts="$(sort "$rep" | uniq -c)"
+  while read -r c t; do
+    [ -n "$t" ] || continue
+    dropped="$dropped${dropped:+, }$t ($c stmt)"
+  done <<EOF
+$counts
+EOF
+  if [ -n "$dropped" ]; then step "excluded data: $dropped"; fi
+  for p in "$@"; do
+    hit=0
+    while read -r c t; do
+      # shellcheck disable=SC2254  # $p is a validated glob on purpose
+      case "$t" in $p) hit=1; break ;; esac
+    done <<EOF
+$counts
+EOF
+    if [ "$hit" = 0 ]; then warn "import.exclude: '$p' matched no table data in this dump (typo?)"; fi
+  done
+}
+
 # harbor db create [<name>] [db] [user] [pass]
 db_create() {
   resolve_project "${1-}" "harbor db create [<name>] [db] [user] [pass]"
@@ -351,12 +427,12 @@ _run_hooks() {
   done
 }
 
-# harbor db import [<name>] <file> [db] [--no-backup --keep-definers --no-hooks --no-rules --stream-replace --reconfigure --force --replace OLD=NEW]
+# harbor db import [<name>] <file> [db] [--no-backup --keep-definers --no-hooks --no-rules --no-exclude --stream-replace --reconfigure --force --replace OLD=NEW]
 db_import() {
   resolve_project "${1-}" "harbor db import [<name>] <file> [db]"
   [ "$_RP_SHIFT" = 1 ] && shift; local name="$_RP_NAME"
   local t0=$SECONDS truncated=0
-  local file="" db="" nobackup=0 keepdef=0 nohooks=0 norules=0 streamrep=0 reconf=0 force=0
+  local file="" db="" nobackup=0 keepdef=0 nohooks=0 norules=0 noexclude=0 streamrep=0 reconf=0 force=0
   local -a replaces=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -364,6 +440,7 @@ db_import() {
       --keep-definers) keepdef=1; shift ;;
       --no-hooks) nohooks=1; shift ;;
       --no-rules) norules=1; shift ;;
+      --no-exclude) noexclude=1; shift ;;
       --stream-replace) streamrep=1; shift ;;
       --reconfigure) reconf=1; shift ;;
       --force) force=1; shift ;;
@@ -418,13 +495,38 @@ db_import() {
   fi
   if [ "$nohooks" = 0 ]; then _validate_hooks "$name"; fi
 
+  # manifest import.strip_definers: false == --keep-definers on every import
+  if [ "$keepdef" = 0 ] && ! _db_strip_definers_enabled "$(manifest_path "$name")"; then keepdef=1; fi
+
+  # manifest import.exclude → one sed alternation (validated here, pre-backup)
+  local -a excl=(); local exclre="" exclrep="$tmpd/excluded"
+  if [ "$noexclude" = 0 ]; then
+    # read -a, not excl=($(…)): an unquoted expansion would glob a pattern
+    # like report_* against files in the cwd
+    read -r -a excl <<< "$(manifest_list "$(manifest_path "$name")" import.exclude)" || true
+  fi
+  if [ "${#excl[@]}" -gt 0 ]; then
+    exclre="$(_db_exclude_re "${excl[@]}")" \
+      || die "import.exclude: invalid table pattern '$exclre' (letters, digits, _ and \$, with * as wildcard) → fix $(manifest_path "$name")"
+  fi
+
   # ensure target db exists
   _db_mysql "$name" -e "CREATE DATABASE IF NOT EXISTS \`$db\` CHARACTER SET utf8mb4;"
 
   # 1+2. decompress AND strip DEFINER in one streaming pass — the old
   # copy-then-sed-in-place rewrote the whole (multi-GB) file twice.
+  # import.exclude rides the same sed (its script runs first, so a dropped
+  # line also skips the DEFINER substitutions) — excluding costs no extra pass.
   local work="$tmpd/dump.sql" t1=$SECONDS
-  if [ "$keepdef" = 0 ]; then
+  if [ -n "$exclre" ]; then
+    local sedscript; sedscript="$(_db_exclude_sed "$exclre" "$exclrep")"
+    if [ "$keepdef" = 0 ]; then sedscript="$sedscript
+$_DEFINER_SED"; fi
+    log "decompressing $file (excluding data: ${excl[*]})"
+    : > "$exclrep"
+    _db_stream "$file" | LC_ALL=C sed -E "$sedscript" > "$work"
+    _db_exclude_report "$exclrep" "${excl[@]}"
+  elif [ "$keepdef" = 0 ]; then
     log "decompressing $file (stripping DEFINER clauses)"
     _db_stream "$file" | LC_ALL=C sed -E "$_DEFINER_SED" > "$work"
   else
@@ -546,7 +648,7 @@ EOF
 # harbor db restore [<name>] [--list] [--checkpoint N] [--no-backup]
 # Roll the project DB back to a pre-import backup. Checkpoints are numbered
 # newest-first (#1 = the backup from your last import). A verbatim reload — no
-# import-rules, no hooks, DEFINERs kept — because a pre-import backup is already
+# import-rules, no hooks, no import.exclude, DEFINERs kept — because a pre-import backup is already
 # your own local, wired data. Snapshots the current DB first (so the restore is
 # itself undoable) by delegating the load to db_import, which owns the
 # auto-backup + retention machinery.
@@ -608,7 +710,7 @@ db_restore() {
   # Verbatim reload via the existing loader. --no-rules/--no-hooks/--keep-definers
   # make it faithful; db_import takes the pre-restore snapshot (+ prune/report)
   # unless --no-backup. Plain call (not `if …`) so set -e stays live inside it.
-  local -a impflags=(--no-rules --no-hooks --keep-definers)
+  local -a impflags=(--no-rules --no-hooks --no-exclude --keep-definers)
   [ "$nobackup" = 1 ] && impflags+=(--no-backup)
   db_import "$name" "$safe" "$db" "${impflags[@]}"
   rm -f "$safe"

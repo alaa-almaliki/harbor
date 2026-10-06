@@ -422,7 +422,7 @@ php_ini: { memory_limit: 2G, "opcache.validate_timestamps": 1 }
 services: { mysql: "mysql:8.0", opensearch: "opensearchproject/opensearch:2.19.0", rabbitmq: "rabbitmq:3.13-management-alpine" }
 db:        { name: shop, user: shop, password: shop }   # image lives in services.mysql
 multistore: { mode: domain, stores: { de: de.shop.test, fr: fr.shop.test } }
-import:    { strip_definers: true, rules: import-rules }
+import:    { strip_definers: true, exclude: [mailchimp_notification, report_*] }   # rules: .harbor/import-rules
 remote:    { host: user@prod, db: shopdb, media: /var/www/pub/media }   # + optional user: dbuser
 ```
 
@@ -540,7 +540,9 @@ silently skipped (forgotten `chmod +x`, a `*.sql` in `pre-import.d/`) warns:
    one that ends mid-statement loads only the tables before the cut, silently.
    `--force` loads the partial dump anyway.
 2. **Strip DEFINER** clauses automatically (so a missing prod user can't break the
-   import). Disable with `--keep-definers`.
+   import). Disable with `--keep-definers`, or for every import with
+   `import: { strip_definers: false }` in the manifest. In the same pass, **excluded tables**
+   (manifest `import: { exclude: [...] }`, see below) have their data dropped.
 3. **Pre-import hooks** — every executable in `.harbor/hooks/pre-import.d/` runs
    with `$HARBOR_DUMP`, e.g. `sed -i "$HARBOR_DUMP" …`.
 4. **Load** into the project's MySQL.
@@ -565,7 +567,22 @@ backups. Run bare (`harbor db restore <name>`) it lists the checkpoints
 newest-first and asks which to restore (Enter picks the latest, `q` cancels);
 `--checkpoint N` restores one directly, and `--list` just shows them. It
 snapshots the current DB first (so the rollback is itself undoable) and reloads
-verbatim — no rules or hooks.
+verbatim — no rules, hooks, or exclusions.
+
+**Skipping bulky tables** — queue/log tables (Mailchimp notifications, GA4 hit
+queues, `report_*`) can be most of a production dump, and every row costs load
+time *and* a serialized-replace pass. List them in the manifest and their data is
+dropped from the dump before load; their `CREATE TABLE` still runs, so the
+tables exist, just empty:
+
+```yaml
+import: { exclude: [mailchimp_notification, ga4_mp_hit_queue, report_viewed_*] }
+```
+
+`*` matches any run of name characters. Patterns are checked before any work
+starts; each import reports which tables were dropped and warns about a pattern
+that matched nothing (a typo would otherwise load the data you meant to skip).
+Applies to `db import` and `db pull`; `--no-exclude` loads everything once.
 
 **You don't have to start from scratch** — `harbor init`/`new` (and
 `harbor render` for existing projects) seed a commented-out
@@ -873,7 +890,7 @@ above.
 
 | Command | Description |
 |---------|-------------|
-| `harbor doctor [<name>]` | Report host requirements (and a project's PHP extensions). Report-only. |
+| `harbor doctor [<name>]` | Report host requirements (and a project's PHP extensions + docroot front controller). Report-only. |
 | `harbor setup` | One-time host preparation (DNS, TLS, FPM pools, shared stack). |
 | `harbor stop` / `harbor start` | Pause/resume Harbor's own services (frees `:80/:443/:6379/:1025/:8025` for another stack). |
 | `harbor restart` | Restart Harbor's own services — `stop` then `start`. Project stacks are left alone. |
