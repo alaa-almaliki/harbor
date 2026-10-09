@@ -371,7 +371,10 @@ rendered into Harbor's `etc/`; nothing is written into brew dirs):
   `fastcgi_param PHP_VALUE "memory_limit=2G\nopcache.validate_timestamps=1\n…";`
   into that site's vhost — not at the pool. The **same `php_ini:` is also applied
   to the project's CLI** — `cli_php_pathdir` emits it as `-d key=value` flags in
-  the per-project php shim — so `harbor magento`/`run`/`composer` honor
+  the per-project php shim, and also writes it to `var/run/cli/<name>/<ver>/conf.d/harbor.ini`,
+  exported as `PHP_INI_SCAN_DIR=":<that dir>"` (leading `:` keeps the version's own
+  conf.d) so PHP processes relaunched via `PHP_BINARY` (paratest workers, Symfony
+  Process) inherit it — so `harbor magento`/`run`/`composer` honor
   `memory_limit` etc. (the manifest is the single source of truth for web and CLI
   ini alike; a Magento `di:compile` no longer OOMs at the host's 128M default).
   Dev-friendly opcache (`validate_timestamps=1`) is the default so code edits show

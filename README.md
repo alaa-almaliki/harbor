@@ -643,7 +643,9 @@ Customizations supported per project:
 - **php.ini** — `php_ini:` is applied per-site for web (via `PHP_VALUE`) **and to
   the project's CLI** (`run`/`composer`/`magento`/`artisan`/…, via `-d` flags), so
   e.g. `memory_limit: 2G` applies to `harbor magento setup:di:compile` too, not
-  just web requests. Projects on the same PHP version can differ.
+  just web requests. PHP processes the CLI starts itself via `PHP_BINARY`
+  (paratest workers, Symfony Process) get it too: the shim also puts it on
+  `PHP_INI_SCAN_DIR`, in an ini file under Harbor's own `var/`. Projects on the same PHP version can differ.
 - **Extensions** — `extensions:` is validated by `harbor doctor <name>`.
 
 ### Optional backing services

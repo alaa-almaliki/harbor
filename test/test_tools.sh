@@ -41,4 +41,19 @@ assert_eq "ini flags: missing manifest yields nothing" \
   "" \
   "$(_cli_php_ini_flags "$tmp/nope.yml")"
 
+# --- ini-file lines (PHP_INI_SCAN_DIR body, inherited by PHP_BINARY children) -
+cat > "$mf" <<'YML'
+php_ini: { memory_limit: 2G, max_execution_time: 0 }
+YML
+assert_eq "ini lines: one key=value per line, manifest order" \
+  "memory_limit=2G
+max_execution_time=0" \
+  "$(_cli_php_ini_lines "$mf")"
+
+cat > "$mf" <<'YML'
+framework: laravel
+YML
+assert_eq "ini lines: no php_ini block yields nothing" "" "$(_cli_php_ini_lines "$mf")"
+assert_eq "ini lines: missing manifest yields nothing" "" "$(_cli_php_ini_lines "$tmp/nope.yml")"
+
 report

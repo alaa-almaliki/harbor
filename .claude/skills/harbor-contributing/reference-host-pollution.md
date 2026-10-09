@@ -16,7 +16,9 @@ This is the project's defining constraint. Concretely:
   `fastcgi_param PHP_ADMIN_VALUE`). Do **not** write into `…/etc/php/*/conf.d/`. Manifest
   `php_ini:` is applied to **both** surfaces from the same source: FPM via
   `link_php_value_block` (`PHP_ADMIN_VALUE`) and the project CLI via `cli_php_pathdir`
-  (`-d` flags in the per-project php shim). Keep the two in sync — a php_ini change
+  (`-d` flags in the per-project php shim, plus a `conf.d/harbor.ini` beside it on
+  `PHP_INI_SCAN_DIR=":<dir>"` so children relaunched via `PHP_BINARY` inherit it —
+  `-d` alone dies with the first process). Keep the two in sync — a php_ini change
   that only reaches one surface (e.g. `memory_limit` on web but not
   `harbor magento`) is a bug. **The web block MUST be `PHP_ADMIN_VALUE`, not plain
   `PHP_VALUE`** — a plain `PHP_VALUE` is overridable by a docroot `.user.ini`

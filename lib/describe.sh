@@ -36,7 +36,10 @@ printf("ini_loaded=%s\n", php_ini_loaded_file() ? php_ini_loaded_file() : "-");
 printf("ini_scandir=%s\n", PHP_CONFIG_FILE_SCAN_DIR ? PHP_CONFIG_FILE_SCAN_DIR : "-");
 $s = php_ini_scanned_files();
 $f = $s ? array_filter(array_map("trim", explode(",", $s))) : array();
-printf("ini_scanned=%s\n", $f ? implode(" ", array_map("basename", $f)) : "-");
+// basename for files in the compiled-in scan dir; full path for the rest (the
+// shim adds its own dir via PHP_INI_SCAN_DIR — not brew'\''s conf.d, so say so).
+$f = array_map(function ($p) { return dirname($p) === PHP_CONFIG_FILE_SCAN_DIR ? basename($p) : $p; }, $f);
+printf("ini_scanned=%s\n", $f ? implode(" ", $f) : "-");
 printf("extensions=%d\n", count(get_loaded_extensions()));
 foreach ($keys as $k) { $v = ini_get($k); printf("%s=%s\n", $k, ($v === false || $v === "") ? "-" : $v); }
 ' 2>/dev/null

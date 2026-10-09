@@ -203,6 +203,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ok`/`FAIL` lines.
 
 ### Fixed
+- **A project's `php_ini` now reaches PHP processes that the CLI starts.** The shim
+  passed `php_ini` as `-d` flags, which only the first process sees. Tools that
+  relaunch PHP via `PHP_BINARY`, such as paratest workers or Symfony Process with
+  `PhpExecutableFinder`, got the real binary and fell back to brew's
+  `memory_limit = 128M`. A project with `php_ini: { memory_limit: 2G }` had its
+  parallel tests die at 134217728 bytes. The shim now also writes the values to
+  `var/run/cli/<name>/<ver>/conf.d/harbor.ini` and exports
+  `PHP_INI_SCAN_DIR=":<that dir>"`. The leading `:` keeps the version's own
+  `conf.d` scanned, and children inherit the variable. The file is inside
+  Harbor's `var/`, so brew's config is not touched. `harbor describe` shows the
+  full path of any scanned ini that lives outside brew's `conf.d`.
 - **MySQL now runs with the binary log off** (`--skip-log-bin`; MariaDB already
   defaulted off). MySQL 8 turns binlog on by default, which made Magento's
   `setup:upgrade` fail with `SQLSTATE[HY000]: General error: 1419 You do not have

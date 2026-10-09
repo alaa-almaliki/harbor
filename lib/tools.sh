@@ -19,6 +19,14 @@ EOF
   printf '%s' "$out"
 }
 
+# The same manifest php_ini as ini-file lines (`key=value`, one per line; empty if
+# none) — the body of the shim's scan-dir ini, see cli_php_pathdir.
+_cli_php_ini_lines() {
+  local mf="$1"
+  [ -f "$mf" ] || return 0
+  manifest_pairs "$mf" php_ini
+}
+
 # a dir containing a `php` that is the project's version (+xdebug when 'on', +the
 # project's manifest php_ini). Keyed by project so two projects sharing a PHP
 # version but pinning different ini don't clobber each other's shim.
@@ -37,9 +45,25 @@ cli_php_pathdir() {
   if xdebug_cli_trigger; then trig='export XDEBUG_TRIGGER="${XDEBUG_TRIGGER:-1}"'; fi
   # manifest php_ini last so it wins over Harbor's own defaults if a project pins one.
   [ -n "$name" ] && ini="$(_cli_php_ini_flags "$(manifest_path "$name")")"
+  # The -d flags reach only this process. Anything that relaunches PHP via
+  # PHP_BINARY (paratest workers, Symfony Process + PhpExecutableFinder) gets the
+  # real binary and would fall back to brew's php.ini (memory_limit=128M). So the
+  # php_ini also goes into an ini file in Harbor's own run dir, put on
+  # PHP_INI_SCAN_DIR, which children inherit. The leading `:` keeps the version's
+  # compiled-in conf.d scanned too; brew's files are never touched. Rewritten (or
+  # removed) every run, so dropping php_ini from the manifest drops the file.
+  local inidir="$d/conf.d" lines="" scan=""
+  mkdir -p "$inidir"
+  rm -f "$inidir/harbor.ini"
+  [ -n "$name" ] && lines="$(_cli_php_ini_lines "$(manifest_path "$name")")"
+  if [ -n "$lines" ]; then
+    printf '%s\n' "$lines" > "$inidir/harbor.ini"
+    scan="export PHP_INI_SCAN_DIR=\":$inidir\""
+  fi
   cat > "$d/php" <<EOF
 #!/usr/bin/env bash
 $trig
+$scan
 exec "$real" $dflags $ini "\$@"
 EOF
   chmod +x "$d/php"
